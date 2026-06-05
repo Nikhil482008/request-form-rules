@@ -1,0 +1,1136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Request Form Rules — Rule Studio (Preview)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background:#cbd5e1; border-radius: 6px; }
+</style>
+</head>
+<body class="bg-slate-100 text-slate-800">
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+const { useState, useMemo, useRef } = React;
+
+/* ============================================================ DOMAIN DATA */
+const FIELDS = [
+  { id:"priority",      label:"Priority",        type:"select", options:["Low","Medium","High"] },
+  { id:"category",      label:"Category",        type:"select", options:["Hardware","Network","Software"] },
+  { id:"group",         label:"Group",           type:"select", options:["IT Support","HR","Finance"] },
+  { id:"status",        label:"Status",          type:"select", options:["Open","In Progress","Closed"] },
+  { id:"assignee",      label:"Assignee",        type:"text" },
+  { id:"assetTag",      label:"Asset Tag",       type:"text" },
+  { id:"dueDate",       label:"Due Date",        type:"date" },
+  { id:"approverNotes", label:"Approver Notes",  type:"text" },
+  { id:"cost",          label:"Cost",            type:"number" },
+];
+const fieldOf  = id => FIELDS.find(f => f.id === id) || { id, label:id, type:"text" };
+const fLabel   = id => fieldOf(id).label;
+
+const AUDIENCES = [
+  { id:"ALL",        label:"All Users",        actor:"any user" },
+  { id:"REQUESTERS", label:"Requesters",       actor:"a requester" },
+  { id:"TECHNICIANS",label:"Technicians",      actor:"a technician" },
+  { id:"LOGGED_IN",  label:"Logged-in Users",  actor:"a logged-in user" },
+];
+const audActor = id => (AUDIENCES.find(a=>a.id===id)||{}).actor || "a user";
+
+const LIFECYCLES = [
+  { id:"CREATE",      label:"On Create",          verb:"creates a request" },
+  { id:"EDIT",        label:"On Edit",            verb:"edits a request" },
+  { id:"CREATE_EDIT", label:"On Create & Edit",   verb:"creates or edits a request" },
+];
+const MOMENTS = [
+  { id:"ON_LOAD",         label:"When the form opens" },
+  { id:"ON_FIELD_CHANGE", label:"While the form is being filled" },
+  { id:"ON_SUBMIT",       label:"When the form is submitted" },
+];
+const momentLabel = id => (MOMENTS.find(m=>m.id===id)||{}).label || id;
+const lcVerb = id => (LIFECYCLES.find(l=>l.id===id)||{}).verb || "uses a request";
+const LIFECYCLES_FRIENDLY = [
+  { id:"CREATE",      label:"New requests only" },
+  { id:"EDIT",        label:"Existing requests only" },
+  { id:"CREATE_EDIT", label:"New and existing requests" },
+];
+// "Execute On" options (screenshot-style labels) — map to lifecycle ids
+const EXECUTE_ON = [
+  { id:"CREATE",      label:"New Form" },
+  { id:"EDIT",        label:"Edit Form" },
+  { id:"CREATE_EDIT", label:"New & Edit Form" },
+];
+// who experiences the rule, in plain language
+const AUD_FRIENDLY = [
+  { id:"ALL",        label:"Everyone" },
+  { id:"REQUESTERS", label:"Requesters only" },
+  { id:"TECHNICIANS",label:"Technicians only" },
+  { id:"LOGGED_IN",  label:"Signed-in users only" },
+];
+const audFriendly = id => (AUD_FRIENDLY.find(a=>a.id===id)||{}).label || id;
+const audPlural = id => ({ ALL:"everyone", REQUESTERS:"requesters", TECHNICIANS:"technicians", LOGGED_IN:"signed-in users" }[id] || "everyone");
+
+const OPERATORS = [
+  { id:"BECOMES",       label:"becomes" },
+  { id:"EQUALS",        label:"is" },
+  { id:"NOT_EQUALS",    label:"is not" },
+  { id:"GREATER_THAN",  label:"is greater than" },
+  { id:"LESS_THAN",     label:"is less than" },
+  { id:"CONTAINS",      label:"contains" },
+  { id:"IS_EMPTY",      label:"is empty" },
+  { id:"IS_NOT_EMPTY",  label:"is not empty" },
+];
+const opLabel = id => (OPERATORS.find(o=>o.id===id)||{}).label || id;
+const VALUELESS = ["IS_EMPTY","IS_NOT_EMPTY"];
+
+const ACTION_TYPES = [
+  { id:"MANDATE",  label:"Make required",  phrase:(f)=>`make ${f} required` },
+  { id:"OPTIONAL", label:"Make optional",  phrase:(f)=>`make ${f} optional` },
+  { id:"SHOW",     label:"Show",           phrase:(f)=>`show ${f}` },
+  { id:"HIDE",     label:"Hide",           phrase:(f)=>`hide ${f}` },
+  { id:"ENABLE",   label:"Make editable",  phrase:(f)=>`make ${f} editable` },
+  { id:"DISABLE",  label:"Make read-only", phrase:(f)=>`make ${f} read-only` },
+  { id:"SET_VALUE",label:"Set value",      phrase:(f,v)=>`set ${f} to ${v||"…"}` },
+];
+const REVERSIBLE = ["SHOW","HIDE","MANDATE","OPTIONAL","ENABLE","DISABLE"];
+const OPPOSITE = { SHOW:"HIDE", HIDE:"SHOW", MANDATE:"OPTIONAL", OPTIONAL:"MANDATE", ENABLE:"DISABLE", DISABLE:"ENABLE" };
+const actionPhrase = a => {
+  const t = ACTION_TYPES.find(x=>x.id===a.type);
+  return t ? t.phrase(fLabel(a.fieldId), a.value) : a.type;
+};
+
+let _uid = 100;
+const uid = p => `${p}_${++_uid}`;
+
+/* ============================================================ FACTORIES */
+const newCondition = () => ({ id:uid("c"), fieldId:"priority", op:"BECOMES", value:"High" });
+const newAction    = () => ({ id:uid("a"), type:"MANDATE", fieldId:"assignee", value:"" });
+const newBlock     = () => ({ id:uid("b"), match:"ALL", mode:"ACTION", conditions:[newCondition()], actions:[newAction()] });
+const newRule = () => ({
+  id: uid("rule"),
+  name: "",
+  description: "",
+  trigger: { lifecycle:"CREATE", moment:"ON_FIELD_CHANGE", fieldId:"priority" },
+  scope:   { audience:"TECHNICIANS" },
+  blocks:  [ newBlock() ],
+  advanced:{ reverseOnFalse:false, enforceSystemWide:false },
+  status:  "ENABLED",
+  audit:   { createdBy:"You", createdAt:"just now", modifiedBy:"You", modifiedAt:"just now", version:1 },
+});
+
+/* ============================================================ SEED RULES */
+const SEED = [
+  { id:"rule_1",
+    trigger:{ lifecycle:"CREATE", moment:"ON_FIELD_CHANGE", fieldId:"priority" },
+    scope:{ audience:"TECHNICIANS" },
+    blocks:[{ id:"b1", match:"ALL",
+      conditions:[{id:"c1", fieldId:"priority", op:"BECOMES", value:"High"}],
+      actions:[{id:"a1", type:"MANDATE", fieldId:"assignee", value:""}] }],
+    advanced:{ reverseOnFalse:false, enforceSystemWide:false }, status:"ENABLED",
+    audit:{ createdBy:"Priya", createdAt:"21 Apr 2026 05:24 PM", modifiedBy:"Marco", modifiedAt:"2h ago", version:3 } },
+
+  { id:"rule_2",
+    trigger:{ lifecycle:"CREATE_EDIT", moment:"ON_LOAD" },
+    scope:{ audience:"ALL" },
+    blocks:[{ id:"b1", match:"ALL", conditions:[],
+      actions:[{id:"a1", type:"HIDE", fieldId:"approverNotes", value:""}] }],
+    advanced:{ reverseOnFalse:false, enforceSystemWide:false }, status:"ENABLED",
+    audit:{ createdBy:"Marco", createdAt:"21 Apr 2026 05:14 PM", modifiedBy:"Marco", modifiedAt:"3d ago", version:1 } },
+
+  { id:"rule_3",
+    trigger:{ lifecycle:"EDIT", moment:"ON_SUBMIT" },
+    scope:{ audience:"REQUESTERS" },
+    blocks:[{ id:"b1", match:"ALL",
+      conditions:[{id:"c1", fieldId:"cost", op:"GREATER_THAN", value:"5000"}],
+      actions:[{id:"a1", type:"MANDATE", fieldId:"dueDate", value:""}] }],
+    advanced:{ reverseOnFalse:false, enforceSystemWide:false }, status:"DISABLED",
+    audit:{ createdBy:"Priya", createdAt:"20 Apr 2026 12:12 PM", modifiedBy:"Priya", modifiedAt:"1w ago", version:2 } },
+
+  { id:"rule_4",
+    trigger:{ lifecycle:"CREATE", moment:"ON_FIELD_CHANGE", fieldId:"priority" },
+    scope:{ audience:"ALL" },
+    blocks:[{ id:"b1", match:"ALL",
+      conditions:[{id:"c1", fieldId:"priority", op:"BECOMES", value:"High"}],
+      actions:[{id:"a1", type:"OPTIONAL", fieldId:"assignee", value:""}] }],
+    advanced:{ reverseOnFalse:false, enforceSystemWide:false }, status:"ENABLED",
+    audit:{ createdBy:"Marco", createdAt:"20 Apr 2026 10:24 AM", modifiedBy:"Marco", modifiedAt:"1d ago", version:1 } },
+
+  { id:"rule_5",
+    trigger:{ lifecycle:"EDIT", moment:"ON_FIELD_CHANGE", fieldId:"category" },
+    scope:{ audience:"TECHNICIANS" },
+    blocks:[{ id:"b1", match:"ALL",
+      conditions:[{id:"c1", fieldId:"category", op:"BECOMES", value:"Hardware"}],
+      actions:[{id:"a1", type:"SET_VALUE", fieldId:"status", value:"In Progress"}] }],
+    advanced:{ reverseOnFalse:false, enforceSystemWide:false }, status:"ENABLED",
+    audit:{ createdBy:"Priya", createdAt:"18 Apr 2026 08:36 AM", modifiedBy:"Priya", modifiedAt:"5d ago", version:2 } },
+
+  { id:"rule_6",
+    trigger:{ lifecycle:"CREATE_EDIT", moment:"ON_LOAD" },
+    scope:{ audience:"ALL" },
+    blocks:[{ id:"b1", match:"ALL",
+      conditions:[{id:"c1", fieldId:"category", op:"BECOMES", value:"Software"}],
+      actions:[{id:"a1", type:"HIDE", fieldId:"assetTag", value:""}] }],
+    advanced:{ reverseOnFalse:false, enforceSystemWide:false }, status:"ENABLED",
+    audit:{ createdBy:"Marco", createdAt:"18 Apr 2026 12:37 PM", modifiedBy:"Marco", modifiedAt:"6d ago", version:1 } },
+
+  { id:"rule_7",
+    trigger:{ lifecycle:"EDIT", moment:"ON_FIELD_CHANGE", fieldId:"cost" },
+    scope:{ audience:"LOGGED_IN" },
+    blocks:[{ id:"b1", match:"ALL",
+      conditions:[{id:"c1", fieldId:"cost", op:"GREATER_THAN", value:"1000"}],
+      actions:[{id:"a1", type:"SHOW", fieldId:"approverNotes", value:""}] }],
+    advanced:{ reverseOnFalse:true, enforceSystemWide:false }, status:"ENABLED",
+    audit:{ createdBy:"Priya", createdAt:"20 Apr 2026 01:24 AM", modifiedBy:"Priya", modifiedAt:"1w ago", version:1 } },
+
+  { id:"rule_8",
+    trigger:{ lifecycle:"CREATE_EDIT", moment:"ON_FIELD_CHANGE", fieldId:"priority" },
+    scope:{ audience:"ALL" },
+    blocks:[
+      { id:"b1", match:"ALL",
+        conditions:[{id:"c1", fieldId:"priority", op:"BECOMES", value:"Low"}],
+        actions:[{id:"a1", type:"OPTIONAL", fieldId:"dueDate", value:""}] },
+      { id:"b2", match:"ALL",
+        conditions:[{id:"c2", fieldId:"category", op:"BECOMES", value:"Network"}],
+        actions:[{id:"a2", type:"SHOW", fieldId:"assetTag", value:""}] },
+    ],
+    advanced:{ reverseOnFalse:false, enforceSystemWide:false }, status:"DISABLED",
+    audit:{ createdBy:"Marco", createdAt:"18 Apr 2026 08:28 AM", modifiedBy:"Marco", modifiedAt:"1w ago", version:1 } },
+];
+
+/* ============================================================ SUMMARIZE */
+function triggerClause(rule){
+  let s = `When ${audActor(rule.scope.audience)} ${lcVerb(rule.trigger.lifecycle)}`;
+  if (rule.trigger.moment === "ON_FIELD_CHANGE") s += ` and changes ${fLabel(rule.trigger.fieldId)}`;
+  else if (rule.trigger.moment === "ON_SUBMIT")  s += ` and submits the request`;
+  return s;
+}
+function condClause(block){
+  const parts = block.conditions.map(c =>
+    VALUELESS.includes(c.op) ? `${fLabel(c.fieldId)} ${opLabel(c.op)}`
+                             : `${fLabel(c.fieldId)} ${opLabel(c.op)} ${c.value}`);
+  return parts.join(block.match === "ALL" ? " and " : " or ");
+}
+function listJoin(arr){
+  if (arr.length <= 1) return arr[0] || "";
+  return arr.slice(0,-1).join(", ") + " and " + arr[arr.length-1];
+}
+function actClause(block){ return listJoin(block.actions.map(actionPhrase)); }
+function advClause(rule){
+  const x=[];
+  if (rule.advanced.reverseOnFalse) x.push("reverses when the condition is no longer true");
+  if (rule.advanced.enforceSystemWide) x.push("enforced system-wide");
+  return x;
+}
+const cap = s => s.charAt(0).toUpperCase()+s.slice(1);
+// Requirement-framed sentence: "When Priority becomes High, make Assignee required for technicians."
+function blockSentence(rule, b){
+  const cond = condClause(b);
+  let s = cond ? `when ${cond}, ${actClause(b)}` : actClause(b);
+  if (rule.scope.audience !== "ALL") s += ` for ${audPlural(rule.scope.audience)}`;
+  const adv = advClause(rule); if (adv.length) s += ` (${adv.join(", ")})`;
+  return s;
+}
+function summarize(rule){
+  if (rule.blocks.length === 1) return cap(blockSentence(rule, rule.blocks[0]) + ".");
+  return null; // multiple requirements rendered as a list
+}
+
+/* ============================================================ CONFLICTS */
+const lcSet = lc => lc==="CREATE_EDIT" ? ["CREATE","EDIT"] : [lc];
+const lcOverlap = (a,b) => lcSet(a).some(x => lcSet(b).includes(x));
+const scopeOverlap = (a,b) => a==="ALL" || b==="ALL" || a===b;
+function triggerOverlap(r1,r2){
+  if (!lcOverlap(r1.trigger.lifecycle, r2.trigger.lifecycle)) return false;
+  if (r1.trigger.moment !== r2.trigger.moment) return false;
+  return scopeOverlap(r1.scope.audience, r2.scope.audience);
+}
+const allActions = r => r.blocks.flatMap(b => b.actions);
+function detectConflicts(rule, all){
+  const out = [];
+  const others = all.filter(r => r.id !== rule.id && r.status === "ENABLED");
+  const mine = allActions(rule);
+  for (const o of others){
+    if (!triggerOverlap(rule, o)) continue;
+    for (const da of mine) for (const oa of allActions(o)){
+      if (da.fieldId !== oa.fieldId) continue;
+      if (OPPOSITE[da.type] === oa.type){
+        out.push({ type:"CONTRADICTORY", severity:"HIGH", with:o, field:da.fieldId,
+          text:`This rule does “${actionPhrase(da)}” while ${ruleName(o)} does “${actionPhrase(oa)}” on the same trigger.` });
+      } else if (da.type === oa.type){
+        out.push({ type:"REDUNDANT", severity:"MEDIUM", with:o, field:da.fieldId,
+          text:`This rule duplicates “${actionPhrase(da)}” already done by ${ruleName(o)}.` });
+      } else if (da.type==="SET_VALUE" && oa.type==="SET_VALUE" && da.value!==oa.value){
+        out.push({ type:"CONTRADICTORY", severity:"HIGH", with:o, field:da.fieldId,
+          text:`This rule sets ${fLabel(da.fieldId)} to “${da.value}” but ${ruleName(o)} sets it to “${oa.value}”.` });
+      }
+    }
+  }
+  // dedupe by with+field+type
+  const seen = new Set();
+  return out.filter(c => { const k=c.with.id+c.field+c.type; if(seen.has(k)) return false; seen.add(k); return true; });
+}
+function ruleName(r){
+  const s = summarize(r);
+  if (s) return `“${s.replace(/\.$/,"")}”`;
+  return `a ${r.blocks.length}-block rule`;
+}
+
+/* ============================================================ SIMULATION */
+function evalCondition(c, values){
+  const raw = values[c.fieldId];
+  const v = raw === undefined ? "" : raw;
+  switch(c.op){
+    case "BECOMES":      return String(v) === String(c.value);
+    case "EQUALS":       return String(v) === String(c.value);
+    case "NOT_EQUALS":   return String(v) !== String(c.value);
+    case "GREATER_THAN": return parseFloat(v) >  parseFloat(c.value);
+    case "LESS_THAN":    return parseFloat(v) <  parseFloat(c.value);
+    case "CONTAINS":     return String(v).toLowerCase().includes(String(c.value).toLowerCase());
+    case "IS_EMPTY":     return !v;
+    case "IS_NOT_EMPTY": return !!v;
+    default: return false;
+  }
+}
+function evalBlock(block, values){
+  if (!block.conditions.length) return true;
+  const res = block.conditions.map(c => evalCondition(c, values));
+  return block.match === "ALL" ? res.every(Boolean) : res.some(Boolean);
+}
+function scopeMatchPersona(aud, persona){
+  if (aud === "ALL") return true;
+  if (aud === "LOGGED_IN") return true; // all demo personas are logged in
+  return aud === persona;
+}
+function applyAction(state, a){
+  const s = state[a.fieldId] || (state[a.fieldId] = { visible:true, required:false, enabled:true, value: "" });
+  switch(a.type){
+    case "SHOW": s.visible=true; break;
+    case "HIDE": s.visible=false; break;
+    case "MANDATE": s.required=true; break;
+    case "OPTIONAL": s.required=false; break;
+    case "ENABLE": s.enabled=true; break;
+    case "DISABLE": s.enabled=false; break;
+    case "SET_VALUE": s.value=a.value; break;
+  }
+}
+function simulate(draft, all, persona, values, moment){
+  const ruleset = [...all.filter(r => r.id !== draft.id && r.status === "ENABLED"), draft];
+  const applicable = ruleset.filter(r => r.trigger.moment === moment && scopeMatchPersona(r.scope.audience, persona));
+  const state = {};
+  // init touched fields
+  applicable.forEach(r => allActions(r).forEach(a => {
+    if (!state[a.fieldId]) state[a.fieldId] = { visible:true, required:false, enabled:true, value: values[a.fieldId]||"" };
+  }));
+  const trace = [];
+  applicable.forEach(r => r.blocks.forEach((b, bi) => {
+    const matched = evalBlock(b, values);
+    if (matched){
+      b.actions.forEach(a => applyAction(state, a));
+      trace.push({ ruleId:r.id, isDraft:r.id===draft.id, blockIndex:bi, matched:true, actions:b.actions });
+    } else {
+      trace.push({ ruleId:r.id, isDraft:r.id===draft.id, blockIndex:bi, matched:false, actions:[] });
+    }
+  }));
+  return { state, trace, applicableCount: applicable.length };
+}
+
+/* ============================================================ UI ATOMS */
+const cx = (...a) => a.filter(Boolean).join(" ");
+function Select({ value, onChange, options, className }){
+  return (
+    <select value={value} onChange={e=>onChange(e.target.value)}
+      className={cx("h-9 rounded-md border border-slate-300 bg-white px-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500", className)}>
+      {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+    </select>
+  );
+}
+function TextInput({ value, onChange, type="text", placeholder, className }){
+  return <input type={type} value={value} placeholder={placeholder}
+    onChange={e=>onChange(e.target.value)}
+    className={cx("h-9 rounded-md border border-slate-300 bg-white px-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500", className)} />;
+}
+function Btn({ children, onClick, variant="default", size="md", className }){
+  const v = {
+    default:"bg-sky-600 text-white hover:bg-sky-700",
+    outline:"border border-slate-300 bg-white hover:bg-slate-50",
+    ghost:"hover:bg-slate-100 text-slate-600",
+    danger:"text-red-600 hover:bg-red-50",
+    soft:"bg-slate-100 hover:bg-slate-200 text-slate-700",
+  }[variant];
+  const s = { md:"h-9 px-3 text-sm", sm:"h-8 px-2 text-xs", icon:"h-8 w-8" }[size];
+  return <button onClick={onClick} className={cx("inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition-colors", v, s, className)}>{children}</button>;
+}
+function TriggerChip({ trigger }){
+  const map = { ON_LOAD:["On load","bg-sky-50 text-sky-700 border-sky-200"],
+                ON_FIELD_CHANGE:["On change","bg-violet-50 text-violet-700 border-violet-200"],
+                ON_SUBMIT:["On submit","bg-amber-50 text-amber-700 border-amber-200"] };
+  const [label, cls] = map[trigger.moment];
+  const txt = trigger.moment==="ON_FIELD_CHANGE" ? `${label} · ${fLabel(trigger.fieldId)}` : label;
+  return <span className={cx("inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium whitespace-nowrap", cls)}>{txt}</span>;
+}
+function SeverityBadge({ severity }){
+  const m = { HIGH:["⛔ High","bg-red-50 text-red-700 border-red-200"],
+              MEDIUM:["⚠ Medium","bg-amber-50 text-amber-700 border-amber-200"],
+              LOW:["◦ Low","bg-slate-100 text-slate-600 border-slate-200"] }[severity];
+  return <span className={cx("inline-flex items-center rounded border px-1.5 py-0.5 text-[11px] font-semibold", m[1])}>{m[0]}</span>;
+}
+
+/* ============================================================ LIST LABELS + ICONS */
+const execLabel = lc => ({ CREATE:"On Create", EDIT:"On Edit", CREATE_EDIT:"On Create and Edit" }[lc] || lc);
+const eventLabel = m => ({ ON_LOAD:"On Form Load", ON_FIELD_CHANGE:"On Field Change", ON_SUBMIT:"On Form Submit" }[m] || m);
+const applicableLabel = a => ({ ALL:"All Users", REQUESTERS:"All Requesters", TECHNICIANS:"All Technicians", LOGGED_IN:"All Logged-in Users" }[a] || a);
+function genSlug(rule){
+  const b = rule.blocks[0]; if (!b) return "rule";
+  const parts = [];
+  const c = b.conditions[0]; if (c) parts.push(`${c.fieldId}_${String(c.value||opLabel(c.op)).toLowerCase().replace(/\s+/g,"")}`);
+  const a = b.actions[0]; if (a) parts.push(`${a.type.toLowerCase()}_${a.fieldId}`);
+  if (rule.blocks.length>1) parts.push(`plus${rule.blocks.length-1}`);
+  return parts.join("_") || "rule";
+}
+const svgProps = { width:16, height:16, viewBox:"0 0 24 24", fill:"none", stroke:"currentColor", strokeWidth:2, strokeLinecap:"round", strokeLinejoin:"round" };
+const IconMove   = () => (<svg {...svgProps}><polyline points="5 9 2 12 5 15"/><polyline points="9 5 12 2 15 5"/><polyline points="15 19 12 22 9 19"/><polyline points="19 9 22 12 19 15"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="2" x2="12" y2="22"/></svg>);
+const IconCopy   = () => (<svg {...svgProps}><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>);
+const IconEdit   = () => (<svg {...svgProps}><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>);
+const IconTrash  = () => (<svg {...svgProps}><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>);
+const IconSearch = () => (<svg {...svgProps}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>);
+const IconFilter = () => (<svg {...svgProps} width="14" height="14"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>);
+
+/* ============================================================ RULES LIST */
+function RulesList({ rules, setRules, onCreate, onEdit }){
+  const [expanded, setExpanded] = useState(null);
+  const [q, setQ] = useState("");
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [filterOpen, setFilterOpen] = useState(false);
+
+  const conflictsByRule = useMemo(() => { const m={}; rules.forEach(r => m[r.id]=detectConflicts(r,rules)); return m; }, [rules]);
+
+  const toggleStatus = id => setRules(rs => rs.map(r => r.id===id ? {...r, status:r.status==="ENABLED"?"DISABLED":"ENABLED"} : r));
+  const duplicate = r => setRules(rs => { const i=rs.findIndex(x=>x.id===r.id); const copy={...JSON.parse(JSON.stringify(r)), id:uid("rule"), audit:{...r.audit, createdBy:"You", createdAt:"just now", version:1}}; const n=[...rs]; n.splice(i+1,0,copy); return n; });
+  const remove = id => setRules(rs => rs.filter(r => r.id!==id));
+
+  const visible = rules.filter(r => {
+    if (statusFilter!=="ALL" && r.status!==statusFilter) return false;
+    if (q.trim()){ const hay = ((summarize(r)||triggerClause(r))+" "+genSlug(r)).toLowerCase(); return hay.includes(q.trim().toLowerCase()); }
+    return true;
+  });
+
+  return (
+    <div className="min-h-full bg-white">
+      <div className="mx-auto max-w-[1400px] px-8 py-6">
+        {/* header + breadcrumb */}
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold text-slate-800">Request Form Rules</h1>
+          <nav className="flex items-center gap-2 text-sm">
+            <span className="font-medium text-sky-600">Admin</span>
+            <span className="text-slate-300">›</span>
+            <span className="text-slate-500">Request Management</span>
+            <span className="text-slate-300">›</span>
+            <span className="text-slate-700">Request Form Rules</span>
+          </nav>
+        </div>
+
+        {/* toolbar */}
+        <div className="mt-5 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="relative w-[460px] max-w-[55vw]">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><IconSearch/></span>
+              <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Select field to search..."
+                className="h-11 w-full rounded-full border border-slate-200 bg-white pl-10 pr-4 text-sm shadow-sm focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-300" />
+            </div>
+            <div className="relative">
+              <button onClick={()=>setFilterOpen(o=>!o)} className="flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm text-slate-600 shadow-sm hover:bg-slate-50">
+                {statusFilter==="ALL"?"All":statusFilter==="ENABLED"?"Enabled":"Disabled"} <span className="text-slate-400"><IconFilter/></span>
+              </button>
+              {filterOpen && (
+                <React.Fragment>
+                  <div className="fixed inset-0 z-40" onClick={()=>setFilterOpen(false)}/>
+                  <div className="absolute z-50 mt-1 w-40 rounded-lg border border-slate-200 bg-white p-1 shadow-xl">
+                    {[["ALL","All"],["ENABLED","Enabled"],["DISABLED","Disabled"]].map(([v,l])=>(
+                      <button key={v} onClick={()=>{setStatusFilter(v);setFilterOpen(false);}} className={cx("block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-slate-100", statusFilter===v&&"bg-slate-50 font-medium")}>{l}</button>
+                    ))}
+                  </div>
+                </React.Fragment>
+              )}
+            </div>
+          </div>
+          <button onClick={onCreate} className="h-11 shrink-0 rounded-full bg-sky-500 px-6 text-sm font-semibold text-white shadow-sm hover:bg-sky-600">Create Request Form Rule</button>
+        </div>
+
+        {/* table */}
+        <div className="mt-5">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 text-slate-600">
+                <th className="w-10 py-3 pl-1"><input type="checkbox" className="rounded border-slate-300"/></th>
+                <th className="py-3 pr-4 font-semibold">Name</th>
+                <th className="w-40 py-3 pr-4 font-semibold">Rule Execution On</th>
+                <th className="w-40 py-3 pr-4 font-semibold">Rule Applicable For</th>
+                <th className="w-36 py-3 pr-4 font-semibold">Rule Event</th>
+                <th className="w-48 py-3 pr-4 font-semibold">Created Date</th>
+                <th className="w-20 py-3 pr-4 font-semibold">Enabled</th>
+                <th className="w-32 py-3 font-semibold">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map((r, idx) => {
+                const conflicts = conflictsByRule[r.id] || [];
+                const sum = summarize(r);
+                const open = expanded === r.id;
+                return (
+                  <React.Fragment key={r.id}>
+                    <tr className={cx("border-b border-slate-100 hover:bg-slate-50/60", r.status==="DISABLED" && "opacity-60")}>
+                      <td className="py-4 pl-1 align-top"><input type="checkbox" className="rounded border-slate-300"/></td>
+                      <td className="py-4 pr-4 align-top">
+                        <div className="cursor-pointer" onClick={()=>setExpanded(open?null:r.id)}>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-slate-800">{idx+1}. {r.name || (sum ? sum.replace(/\.$/,"") : genSlug(r))}</span>
+                            {conflicts.length>0 && <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">⚠ {conflicts.length}</span>}
+                          </div>
+                          <div className="mt-0.5 text-xs text-slate-400">{sum || `${r.blocks.length} requirements`}</div>
+                        </div>
+                      </td>
+                      <td className="py-4 pr-4 align-top text-slate-600">{execLabel(r.trigger.lifecycle)}</td>
+                      <td className="py-4 pr-4 align-top text-slate-600">{applicableLabel(r.scope.audience)}</td>
+                      <td className="py-4 pr-4 align-top text-slate-600">{eventLabel(r.trigger.moment)}</td>
+                      <td className="py-4 pr-4 align-top text-slate-500">{r.audit.createdAt}</td>
+                      <td className="py-4 pr-4 align-top">
+                        <button onClick={()=>toggleStatus(r.id)} aria-label="Toggle enabled"
+                          className={cx("relative inline-block h-6 w-11 rounded-full transition-colors", r.status==="ENABLED"?"bg-emerald-500":"bg-slate-300")}>
+                          <span className={cx("absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all", r.status==="ENABLED"?"left-[22px]":"left-0.5")}/>
+                        </button>
+                      </td>
+                      <td className="py-4 align-top">
+                        <div className="flex items-center gap-3">
+                          <button title="Reorder" className="cursor-grab text-slate-400 hover:text-slate-600"><IconMove/></button>
+                          <button title="Duplicate" onClick={()=>duplicate(r)} className="text-slate-400 hover:text-slate-600"><IconCopy/></button>
+                          <button title="Edit" onClick={()=>onEdit(r.id)} className="text-sky-500 hover:text-sky-700"><IconEdit/></button>
+                          <button title="Delete" onClick={()=>remove(r.id)} className="text-red-400 hover:text-red-600"><IconTrash/></button>
+                        </div>
+                      </td>
+                    </tr>
+                    {open && (
+                      <tr className="border-b border-slate-100 bg-slate-50/50">
+                        <td></td>
+                        <td colSpan={7} className="px-1 pb-5 pt-1">
+                          <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm">
+                            <p className="text-slate-700"><span className="font-medium">In plain English:</span> {sum || "Multiple requirements:"}</p>
+                            {!sum && <ol className="mt-1 list-decimal space-y-0.5 pl-5 text-slate-600">{r.blocks.map(b=><li key={b.id}>{b.conditions.length?`When ${condClause(b)}, `:""}{actClause(b)}.</li>)}</ol>}
+                            {conflicts.length>0 && (
+                              <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-800">
+                                <div className="font-semibold">⚠ {conflicts.length} thing{conflicts.length>1?"s":""} to review</div>
+                                {conflicts.map((c,i)=><div key={i} className="mt-1 text-xs">{c.text}</div>)}
+                              </div>
+                            )}
+                            <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3 text-xs text-slate-500">
+                              <span>v{r.audit.version} · modified {r.audit.modifiedAt} by {r.audit.modifiedBy} · created {r.audit.createdAt} by {r.audit.createdBy}</span>
+                              <span className="flex gap-3">
+                                <button onClick={()=>onEdit(r.id)} className="font-medium text-sky-600 hover:underline">Edit</button>
+                                <button onClick={()=>duplicate(r)} className="font-medium text-slate-500 hover:underline">Duplicate</button>
+                                <button onClick={()=>remove(r.id)} className="font-medium text-red-500 hover:underline">Delete</button>
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+          {visible.length===0 && <div className="py-16 text-center text-sm text-slate-400">No rules match your search.</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================ TOKEN BUILDER UI */
+function Dropdown({ trigger, children, align }){
+  const [open,setOpen]=useState(false);
+  return (
+    <span className="relative inline-block align-middle">
+      <span onClick={()=>setOpen(o=>!o)}>{trigger}</span>
+      {open && (
+        <React.Fragment>
+          <div className="fixed inset-0 z-40" onClick={()=>setOpen(false)} />
+          <div className={cx("absolute z-50 mt-1 min-w-[190px] rounded-lg border border-slate-200 bg-white p-1 shadow-xl", align==="right"&&"right-0")}>
+            {typeof children==="function" ? children(()=>setOpen(false)) : children}
+          </div>
+        </React.Fragment>
+      )}
+    </span>
+  );
+}
+const TOKEN_STYLE = {
+  field: "bg-sky-50 text-sky-700 border-sky-200 hover:bg-sky-100",
+  op:    "bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200",
+  value: "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100",
+  verb:  "bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100",
+};
+function TokenBtn({ label, kind, warn, placeholder }){
+  return (
+    <button className={cx("inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[15px] font-medium transition-colors",
+      placeholder ? "border-dashed border-slate-300 bg-white text-slate-400 hover:text-slate-600" : TOKEN_STYLE[kind||"op"],
+      warn && "ring-2 ring-amber-300")}>
+      {label}<span className="text-[9px] opacity-50">▼</span>{warn && <span className="text-amber-500">⚠</span>}
+    </button>
+  );
+}
+function PickList({ items, onPick, search }){
+  const [q,setQ]=useState("");
+  const filtered = search ? items.filter(i=>i.label.toLowerCase().includes(q.toLowerCase())) : items;
+  return (
+    <div>
+      {search && <input autoFocus value={q} onChange={e=>setQ(e.target.value)} placeholder="Search…"
+        className="mb-1 w-full rounded border border-slate-200 px-2 py-1 text-sm focus:border-sky-400 focus:outline-none" />}
+      <div className="max-h-56 overflow-y-auto">
+        {filtered.map(i=>(
+          <button key={i.value} onClick={()=>onPick(i.value)} className="block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-sky-50">{i.label}</button>
+        ))}
+        {filtered.length===0 && <p className="px-2 py-1 text-sm text-slate-400">No matches</p>}
+      </div>
+    </div>
+  );
+}
+function FieldToken({ value, onChange, kind, warn }){
+  return <Dropdown trigger={<TokenBtn label={fLabel(value)} kind={kind||"field"} warn={warn} />}>
+    {close => <PickList search items={FIELDS.map(f=>({value:f.id,label:f.label}))} onPick={v=>{onChange(v);close();}} />}
+  </Dropdown>;
+}
+function OpToken({ value, onChange }){
+  return <Dropdown trigger={<TokenBtn label={opLabel(value)} kind="op" />}>
+    {close => <PickList items={OPERATORS.map(o=>({value:o.id,label:o.label}))} onPick={v=>{onChange(v);close();}} />}
+  </Dropdown>;
+}
+function ValueToken({ field, value, onChange }){
+  const f = fieldOf(field);
+  if (f.type==="select")
+    return <Dropdown trigger={<TokenBtn label={value||"choose"} kind="value" placeholder={!value} />}>
+      {close => <PickList items={f.options.map(o=>({value:o,label:o}))} onPick={v=>{onChange(v);close();}} />}
+    </Dropdown>;
+  return <Dropdown trigger={<TokenBtn label={(value===""||value==null)?"a value":String(value)} kind="value" placeholder={value===""||value==null} />}>
+    {close => <div className="p-1">
+      <input autoFocus type={f.type==="number"?"number":"text"} defaultValue={value}
+        onKeyDown={e=>{ if(e.key==="Enter"){ onChange(e.target.value); close(); } }} onBlur={e=>onChange(e.target.value)}
+        className="w-40 rounded border border-slate-200 px-2 py-1 text-sm focus:border-sky-400 focus:outline-none" />
+      <p className="mt-1 px-1 text-[11px] text-slate-400">Press Enter</p>
+    </div>}
+  </Dropdown>;
+}
+function VerbToken({ value, onChange }){
+  const label = (ACTION_TYPES.find(t=>t.id===value)||{}).label || value;
+  return <Dropdown trigger={<TokenBtn label={label} kind="verb" />}>
+    {close => <PickList items={ACTION_TYPES.map(t=>({value:t.id,label:t.label}))} onPick={v=>{onChange(v);close();}} />}
+  </Dropdown>;
+}
+function Pill({ labelPrefix, value, items, onChange }){
+  return <Dropdown trigger={
+    <button className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1 text-sm text-slate-600 hover:bg-slate-50">
+      <span className="text-slate-400">{labelPrefix}</span><span className="font-medium text-slate-700">{value}</span><span className="text-[9px] opacity-50">▼</span>
+    </button>}>
+    {close => <PickList items={items} onPick={v=>{onChange(v);close();}} />}
+  </Dropdown>;
+}
+
+/* ============================================================ V3 WORKSPACE HELPERS */
+const blockWhen = (rule,b) => b.when || rule.trigger.moment;
+const blockWho  = (rule,b) => b.who  || rule.scope.audience;
+function blockSummary(rule, b){
+  const actor = audActor(blockWho(rule,b));
+  let lead = `when ${actor} ${lcVerb(rule.trigger.lifecycle)}`;
+  const m = blockWhen(rule,b);
+  if (m==="ON_SUBMIT") lead += " and submits the request";
+  else if (m==="ON_LOAD") lead += " and opens the form";
+  const cond = condClause(b);
+  const s = lead + (cond ? ` and ${cond}` : "") + (b.actions.length ? `, ${actClause(b)}` : ", do nothing yet");
+  return cap(s + ".");
+}
+function blockOverlap(rA,bA,rB,bB){
+  if (blockWhen(rA,bA) !== blockWhen(rB,bB)) return false;
+  return scopeOverlap(blockWho(rA,bA), blockWho(rB,bB));
+}
+function workspaceConflicts(draft, allRules){
+  const map = {}; draft.blocks.forEach(b => map[b.id]=[]);
+  const others = allRules.filter(r => r.id!==draft.id && r.status==="ENABLED");
+  draft.blocks.forEach((b,bi)=>{
+    draft.blocks.forEach((ob,obi)=>{
+      if (obi===bi || !blockOverlap(draft,b,draft,ob)) return;
+      b.actions.forEach(a=>ob.actions.forEach(oa=>{
+        if (a.fieldId!==oa.fieldId) return;
+        if (OPPOSITE[a.type]===oa.type) map[b.id].push({severity:"HIGH",field:a.fieldId,text:`Conflicts with Block ${obi+1}: it does “${actionPhrase(oa)}” in the same situation.`,jumpBlock:ob.id});
+        else if (a.type===oa.type && obi>bi) map[b.id].push({severity:"MEDIUM",field:a.fieldId,text:`Same as Block ${obi+1}: both “${actionPhrase(a)}”.`,jumpBlock:ob.id});
+      }));
+    });
+    others.forEach(o=>o.blocks.forEach(ob=>{
+      if (!blockOverlap(draft,b,o,ob)) return;
+      b.actions.forEach(a=>ob.actions.forEach(oa=>{
+        if (a.fieldId!==oa.fieldId) return;
+        if (OPPOSITE[a.type]===oa.type) map[b.id].push({severity:"HIGH",field:a.fieldId,text:`Conflicts with rule “${o.name||genSlug(o)}”: it does “${actionPhrase(oa)}” in the same situation.`});
+        else if (a.type===oa.type) map[b.id].push({severity:"MEDIUM",field:a.fieldId,text:`Same as rule “${o.name||genSlug(o)}”: both “${actionPhrase(a)}”.`});
+      }));
+    }));
+  });
+  Object.keys(map).forEach(k=>{const seen=new Set();map[k]=map[k].filter(c=>{const key=c.field+c.text;if(seen.has(key))return false;seen.add(key);return true;});});
+  return map;
+}
+function previewBlock(b, values){
+  const matched = evalBlock(b, values);
+  return { matched, effects: matched ? b.actions.map(a=>({field:a.fieldId, text:actionPhrase(a)})) : [] };
+}
+const cloneBlock = b => { const nb=JSON.parse(JSON.stringify(b)); nb.id=uid("b"); (nb.conditions||[]).forEach(c=>c.id=uid("c")); (nb.actions||[]).forEach(a=>a.id=uid("a")); return nb; };
+
+/* ============================================================ RULE STUDIO (V3 BLOCK WORKSPACE) */
+function RuleStudio({ initial, isNew, allRules, onCancel, onSave }){
+  const [draft, setDraft] = useState(() => JSON.parse(JSON.stringify(initial)));
+  const update = fn => setDraft(d => { const n = JSON.parse(JSON.stringify(d)); fn(n); return n; });
+  const [showDesc, setShowDesc] = useState(!!initial.description);
+  const [showTest, setShowTest] = useState(false);
+  const [dismissed, setDismissed] = useState(() => new Set());
+  const [expandedId, setExpandedId] = useState(() => (initial.blocks[0] && initial.blocks[0].id) || null);
+  const [previewOpen, setPreviewOpen] = useState({});
+  const [samples, setSamples] = useState({});
+
+  const confMap = useMemo(() => workspaceConflicts(draft, allRules), [draft, allRules]);
+  const blockConfs = b => (confMap[b.id]||[]).filter(c => !dismissed.has(b.id+"|"+c.field+"|"+c.text));
+  const totalConflicts = draft.blocks.reduce((n,b)=>n+blockConfs(b).length, 0);
+
+  const setMatch = (bi,v)=>update(d=>d.blocks[bi].match=v);
+  const addCond  = bi=>update(d=>d.blocks[bi].conditions.push(newCondition()));
+  const setCond  = (bi,ci,k,v)=>update(d=>{d.blocks[bi].conditions[ci][k]=v;});
+  const rmCond   = (bi,ci)=>update(d=>d.blocks[bi].conditions.splice(ci,1));
+  const addAct   = bi=>update(d=>d.blocks[bi].actions.push(newAction()));
+  const setAct   = (bi,ai,k,v)=>update(d=>{d.blocks[bi].actions[ai][k]=v;});
+  const rmAct    = (bi,ai)=>update(d=>d.blocks[bi].actions.splice(ai,1));
+  const removeBlock = bi=>update(d=>d.blocks.splice(bi,1));
+  const setBlockWhen = (bi,v)=>update(d=>{d.blocks[bi].when=v; if(bi===0) d.trigger.moment=v;});
+  const setBlockWho  = (bi,v)=>update(d=>{d.blocks[bi].who=v;  if(bi===0) d.scope.audience=v;});
+  const dismiss = (b,c)=>setDismissed(s=>{const n=new Set(s);n.add(b.id+"|"+c.field+"|"+c.text);return n;});
+  const addBlock = ()=>{ const nb=newBlock(); setDraft(d=>{const n=JSON.parse(JSON.stringify(d)); n.blocks.push(nb); return n;}); setExpandedId(nb.id); };
+  const duplicateBlock = bi=>{ const nb=cloneBlock(draft.blocks[bi]); setDraft(d=>{const n=JSON.parse(JSON.stringify(d)); n.blocks.splice(bi+1,0,nb); return n;}); setExpandedId(nb.id); };
+
+  const valid = (draft.name||"").trim().length>0 && draft.blocks.length>0 && draft.blocks.every(b=>b.actions.length>0);
+
+  const sampleVal = (bid,fid)=> (samples[bid+":"+fid] || "");
+  const setSample = (bid,fid,v)=> setSamples(s=>({...s,[bid+":"+fid]:v}));
+  const blockSampleValues = b=>{ const o={}; b.conditions.forEach(c=>{o[c.fieldId]=sampleVal(b.id,c.fieldId);}); return o; };
+
+  return (
+    <div className="flex h-full min-h-0 flex-1 flex-col bg-slate-50">
+      {/* header + breadcrumb */}
+      <div className="border-b border-slate-200 bg-white px-8 py-4">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <nav className="flex items-center gap-2 text-xs">
+              <button onClick={onCancel} className="font-medium text-sky-600 hover:underline">Admin</button>
+              <span className="text-slate-300">›</span>
+              <span className="text-slate-500">Request Management</span>
+              <span className="text-slate-300">›</span>
+              <button onClick={onCancel} className="text-slate-500 hover:underline">Request Form Rules</button>
+              <span className="text-slate-300">›</span>
+              <span className="text-slate-700">{isNew ? "Create" : "Edit"}</span>
+            </nav>
+            <h1 className="mt-1 text-xl font-bold text-slate-800">{isNew ? "Create Request Form Rule" : "Edit Request Form Rule"}</h1>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <button onClick={onCancel} className="h-10 rounded-full border border-slate-200 bg-white px-5 text-sm font-medium text-slate-600 hover:bg-slate-50">Cancel</button>
+            <button onClick={()=>onSave(draft)} className={cx("h-10 rounded-full bg-sky-500 px-6 text-sm font-semibold text-white shadow-sm hover:bg-sky-600", !valid && "opacity-50 pointer-events-none")}>Save rules</button>
+          </div>
+        </div>
+      </div>
+
+      {/* workspace body */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-3xl px-6 py-6">
+
+          {/* workspace meta */}
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex flex-wrap items-end gap-4">
+              <div className="min-w-[240px] flex-1">
+                <label className="block text-sm font-semibold text-slate-700">Rule set name <span className="text-red-500">*</span></label>
+                <input value={draft.name} onChange={e=>update(d=>d.name=e.target.value)} placeholder="e.g. Hardware request automation"
+                  className="mt-1.5 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-300" />
+              </div>
+              <div className="w-52">
+                <label className="block text-sm font-semibold text-slate-700">Execute on</label>
+                <Select value={draft.trigger.lifecycle} onChange={v=>update(d=>d.trigger.lifecycle=v)} options={EXECUTE_ON.map(l=>({value:l.id,label:l.label}))} className="mt-1.5 h-10 w-full" />
+              </div>
+            </div>
+            {!showDesc
+              ? <button onClick={()=>setShowDesc(true)} className="mt-2 text-sm font-medium text-sky-600 hover:underline">Add description</button>
+              : <textarea value={draft.description} onChange={e=>update(d=>d.description=e.target.value)} rows={2} placeholder="Describe this rule set…"
+                  className="mt-3 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-300" />}
+          </div>
+
+          {/* blocks heading */}
+          <div className="mb-2 mt-6 flex items-center justify-between">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Rule blocks ({draft.blocks.length})</h2>
+            <span className="text-xs text-slate-400">Each block is one IF → THEN business rule</span>
+          </div>
+
+          {/* block cards */}
+          <div className="space-y-3">
+            {draft.blocks.map((b,bi)=>{
+              const expanded = expandedId===b.id;
+              const bConf = blockConfs(b);
+              const bConfFields = new Set(bConf.map(c=>c.field));
+              const pOpen = !!previewOpen[b.id];
+              const pv = pOpen ? previewBlock(b, blockSampleValues(b)) : null;
+              return (
+                <div key={b.id} className={cx("overflow-hidden rounded-xl border bg-white shadow-sm", bConf.length?"border-amber-200":"border-slate-200")}>
+                  {/* card header (collapsed summary) */}
+                  <div className="flex items-center gap-3 px-4 py-3">
+                    <span className="cursor-grab text-slate-300">⠿</span>
+                    <button onClick={()=>setExpandedId(expanded?null:b.id)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+                      <span className={cx("h-2 w-2 shrink-0 rounded-full", b.actions.length?"bg-emerald-400":"bg-slate-300")} />
+                      <span className="min-w-0">
+                        <span className="block truncate font-medium text-slate-800">{blockSummary(draft,b)}</span>
+                        <span className="block text-xs text-slate-400">{eventLabel(blockWhen(draft,b))} · {audFriendly(blockWho(draft,b))}</span>
+                      </span>
+                    </button>
+                    {bConf.length>0 && <span className="shrink-0 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">⚠ {bConf.length}</span>}
+                    <button title="Duplicate" onClick={()=>duplicateBlock(bi)} className="shrink-0 text-slate-400 hover:text-slate-600"><IconCopy/></button>
+                    <button title="Delete" onClick={()=>removeBlock(bi)} className="shrink-0 text-red-400 hover:text-red-600"><IconTrash/></button>
+                    <button onClick={()=>setExpandedId(expanded?null:b.id)} className="shrink-0 text-slate-400">{expanded?"▾":"▸"}</button>
+                  </div>
+
+                  {expanded && (
+                    <div className="border-t border-slate-100 px-4 py-4">
+                      {/* context chips: when / who */}
+                      <div className="mb-4 flex flex-wrap items-center gap-2">
+                        <Dropdown trigger={<span className="cursor-pointer rounded-full border border-slate-200 bg-white px-3 py-1 text-sm hover:bg-slate-50"><span className="text-slate-400">Runs </span><span className="font-medium text-slate-700">{eventLabel(blockWhen(draft,b))}</span> <span className="text-[9px] opacity-50">▼</span></span>}>
+                          {close => <PickList items={MOMENTS.map(m=>({value:m.id,label:eventLabel(m.id)}))} onPick={v=>{setBlockWhen(bi,v);close();}} />}
+                        </Dropdown>
+                        <Dropdown trigger={<span className="cursor-pointer rounded-full border border-slate-200 bg-white px-3 py-1 text-sm hover:bg-slate-50"><span className="text-slate-400">for </span><span className="font-medium text-slate-700">{audFriendly(blockWho(draft,b))}</span> <span className="text-[9px] opacity-50">▼</span></span>}>
+                          {close => <PickList items={AUD_FRIENDLY.map(a=>({value:a.id,label:a.label}))} onPick={v=>{setBlockWho(bi,v);close();}} />}
+                        </Dropdown>
+                      </div>
+
+                      {/* IF */}
+                      <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+                        <div className="mb-2 flex items-center justify-between">
+                          <span className="text-xs font-bold uppercase tracking-wide text-slate-500">If</span>
+                          {b.conditions.length>1 && (
+                            <div className="flex items-center gap-3 text-xs text-slate-600">
+                              <label className="flex cursor-pointer items-center gap-1"><input type="radio" checked={b.match==="ALL"} onChange={()=>setMatch(bi,"ALL")} className="accent-sky-500"/> all</label>
+                              <label className="flex cursor-pointer items-center gap-1"><input type="radio" checked={b.match==="ANY"} onChange={()=>setMatch(bi,"ANY")} className="accent-sky-500"/> any</label>
+                            </div>
+                          )}
+                        </div>
+                        <div className="space-y-2">
+                          {b.conditions.length===0 && <p className="text-sm italic text-slate-400">No conditions — this block runs every time.</p>}
+                          {b.conditions.map((c,ci)=>(
+                            <div key={c.id} className="flex items-center gap-2">
+                              <button onClick={()=>rmCond(bi,ci)} className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-red-500 text-sm leading-none text-white hover:bg-red-600">−</button>
+                              <div className="flex flex-1 flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-white p-1.5">
+                                <Dropdown trigger={<span className="cursor-pointer rounded-md bg-slate-100 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-200">{fLabel(c.fieldId)} ▾</span>}>
+                                  {close => <PickList search items={FIELDS.map(f=>({value:f.id,label:f.label}))} onPick={v=>{setCond(bi,ci,"fieldId",v);close();}} />}
+                                </Dropdown>
+                                <Dropdown trigger={<span className="cursor-pointer px-1 text-sm text-slate-500 hover:text-slate-700">{opLabel(c.op)} ▾</span>}>
+                                  {close => <PickList items={OPERATORS.map(o=>({value:o.id,label:o.label}))} onPick={v=>{setCond(bi,ci,"op",v);close();}} />}
+                                </Dropdown>
+                                {!VALUELESS.includes(c.op) && (
+                                  fieldOf(c.fieldId).type==="select"
+                                    ? <Dropdown trigger={<span className={cx("cursor-pointer rounded-md border px-3 py-1.5 text-sm", c.value?"border-slate-200 bg-slate-50 text-slate-700":"border-dashed border-slate-300 text-slate-400")}>{c.value||"choose value"} ▾</span>}>
+                                        {close => <PickList items={fieldOf(c.fieldId).options.map(o=>({value:o,label:o}))} onPick={v=>{setCond(bi,ci,"value",v);close();}} />}
+                                      </Dropdown>
+                                    : <input value={c.value} onChange={e=>setCond(bi,ci,"value",e.target.value)} type={fieldOf(c.fieldId).type==="number"?"number":"text"} placeholder="value"
+                                        className="flex-1 rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-sky-400 focus:outline-none" />
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <button onClick={()=>addCond(bi)} className="mt-2 flex items-center gap-2 text-sm font-medium text-sky-600 hover:underline">
+                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-sm leading-none text-white">+</span> Add condition
+                        </button>
+                      </div>
+
+                      {/* THEN */}
+                      <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+                        <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Then do this</span>
+                        <div className="mt-2 space-y-2">
+                          {b.actions.map((a,ai)=>(
+                            <div key={a.id} className="flex items-center gap-2">
+                              <button onClick={()=>rmAct(bi,ai)} className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-red-500 text-sm leading-none text-white hover:bg-red-600">−</button>
+                              <div className={cx("flex flex-1 flex-wrap items-center gap-2 rounded-md border p-1.5", bConfFields.has(a.fieldId)?"border-amber-300 ring-1 ring-amber-200":"border-slate-200 bg-white")}>
+                                <Dropdown trigger={<span className="cursor-pointer rounded-md bg-slate-100 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-200">{(ACTION_TYPES.find(t=>t.id===a.type)||{}).label} ▾</span>}>
+                                  {close => <PickList items={ACTION_TYPES.map(t=>({value:t.id,label:t.label}))} onPick={v=>{setAct(bi,ai,"type",v);close();}} />}
+                                </Dropdown>
+                                <Dropdown trigger={<span className="cursor-pointer px-2 text-sm text-slate-700 hover:text-slate-900">{fLabel(a.fieldId)} ▾</span>}>
+                                  {close => <PickList search items={FIELDS.map(f=>({value:f.id,label:f.label}))} onPick={v=>{setAct(bi,ai,"fieldId",v);close();}} />}
+                                </Dropdown>
+                                {a.type==="SET_VALUE" && <span className="text-sm text-slate-400">to</span>}
+                                {a.type==="SET_VALUE" && (
+                                  fieldOf(a.fieldId).type==="select"
+                                    ? <Dropdown trigger={<span className="cursor-pointer rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700">{a.value||"choose"} ▾</span>}>
+                                        {close => <PickList items={fieldOf(a.fieldId).options.map(o=>({value:o,label:o}))} onPick={v=>{setAct(bi,ai,"value",v);close();}} />}
+                                      </Dropdown>
+                                    : <input value={a.value} onChange={e=>setAct(bi,ai,"value",e.target.value)} placeholder="value" className="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-sky-400 focus:outline-none" />
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <button onClick={()=>addAct(bi)} className="mt-2 flex items-center gap-2 text-sm font-medium text-sky-600 hover:underline">
+                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-sm leading-none text-white">+</span> Add action
+                        </button>
+                      </div>
+
+                      {/* inline conflicts for this block */}
+                      {bConf.map((c,i)=>(
+                        <div key={i} className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm">
+                          <p className="text-amber-800"><span className="font-medium">{c.severity==="HIGH"?"Conflict: ":"Heads up: "}</span>{c.text}</p>
+                          <div className="mt-1.5 flex flex-wrap gap-3 text-xs font-medium">
+                            {c.jumpBlock && <button onClick={()=>setExpandedId(c.jumpBlock)} className="text-amber-700 hover:underline">Jump to that block</button>}
+                            <button onClick={()=>dismiss(b,c)} className="text-amber-700 hover:underline">Let this block win</button>
+                            <button onClick={()=>dismiss(b,c)} className="text-slate-400 hover:underline">Ignore</button>
+                          </div>
+                        </div>
+                      ))}
+
+                      {/* lightweight inline preview */}
+                      <div className="mt-3">
+                        <button onClick={()=>setPreviewOpen(s=>({...s,[b.id]:!s[b.id]}))} className="text-sm font-medium text-sky-600 hover:underline">{pOpen?"▾":"▸"} Preview result</button>
+                        {pOpen && (
+                          <div className="mt-2 rounded-lg border border-slate-200 bg-white p-3 text-sm">
+                            {b.conditions.length>0 ? (
+                              <div className="flex flex-wrap items-center gap-3">
+                                <span className="text-slate-500">Try a value:</span>
+                                {b.conditions.map(c=>(
+                                  <span key={c.id} className="flex items-center gap-1.5">
+                                    <span className="text-slate-500">{fLabel(c.fieldId)} =</span>
+                                    {fieldOf(c.fieldId).type==="select"
+                                      ? <Select value={sampleVal(b.id,c.fieldId)} onChange={v=>setSample(b.id,c.fieldId,v)} options={[{value:"",label:"—"},...fieldOf(c.fieldId).options.map(o=>({value:o,label:o}))]} className="h-8" />
+                                      : <input value={sampleVal(b.id,c.fieldId)} onChange={e=>setSample(b.id,c.fieldId,e.target.value)} className="h-8 w-28 rounded-md border border-slate-300 px-2 text-sm focus:border-sky-400 focus:outline-none" />}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : <p className="text-slate-500">This block always runs.</p>}
+                            <div className="mt-2">
+                              {pv && pv.matched
+                                ? <div className="space-y-1">{pv.effects.map((e,i)=>(<div key={i} className="flex items-center gap-2 text-slate-700"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500"/> {cap(e.text)}.</div>))}</div>
+                                : <p className="text-slate-400">Conditions not met — nothing happens with these values.</p>}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* add block + templates */}
+          <div className="mt-4 rounded-xl border border-dashed border-slate-300 bg-white p-4 text-center">
+            <button onClick={addBlock} className="rounded-full bg-sky-500 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-sky-600">+ Add rule block</button>
+            <p className="mt-2 text-xs text-slate-400">Each block is one independent IF → THEN business rule.</p>
+          </div>
+        </div>
+      </div>
+
+      {/* sticky footer */}
+      <div className="flex items-center justify-between border-t border-slate-200 bg-white px-5 py-3">
+        <span className={cx("text-sm font-medium", totalConflicts ? "text-amber-600" : "text-emerald-600")}>
+          {totalConflicts ? `⚠ ${totalConflicts} conflict${totalConflicts>1?"s":""} across ${draft.blocks.length} block${draft.blocks.length>1?"s":""}` : `✓ No conflicts · ${draft.blocks.length} block${draft.blocks.length>1?"s":""}`}
+        </span>
+        <div className="flex items-center gap-2">
+          <button onClick={()=>setShowTest(true)} className="h-10 rounded-full border border-sky-200 bg-sky-50 px-5 text-sm font-medium text-sky-700 hover:bg-sky-100">▷ Test the whole form</button>
+          <button onClick={onCancel} className="h-10 rounded-full border border-slate-200 bg-white px-5 text-sm font-medium text-slate-600 hover:bg-slate-50">Cancel</button>
+          <button onClick={()=>onSave(draft)} className={cx("h-10 rounded-full bg-sky-500 px-6 text-sm font-semibold text-white shadow-sm hover:bg-sky-600", !valid && "opacity-50 pointer-events-none")}>Save rules</button>
+        </div>
+      </div>
+
+      {/* Test-whole-form drawer (on demand) */}
+      {showTest && (
+        <React.Fragment>
+          <div className="fixed inset-0 z-40 bg-black/20" onClick={()=>setShowTest(false)} />
+          <div className="fixed right-0 top-0 z-50 h-full w-[380px] overflow-y-auto bg-white p-4 shadow-2xl">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="font-semibold">Test the whole form</h3>
+              <button onClick={()=>setShowTest(false)} className="text-slate-400 hover:text-slate-700">✕</button>
+            </div>
+            <PreviewPanel draft={draft} allRules={allRules} />
+          </div>
+        </React.Fragment>
+      )}
+    </div>
+  );
+}
+
+/* ============================================================ PREVIEW PANEL */
+function PreviewPanel({ draft, allRules }){
+  const [persona, setPersona] = useState(draft.scope.audience==="ALL"?"TECHNICIANS":draft.scope.audience);
+  const [moment, setMoment]   = useState(draft.trigger.moment);
+  const refFields = useMemo(() => {
+    const s = new Set();
+    if (draft.trigger.moment==="ON_FIELD_CHANGE") s.add(draft.trigger.fieldId);
+    draft.blocks.forEach(b => b.conditions.forEach(c => s.add(c.fieldId)));
+    return [...s];
+  }, [draft]);
+  const [values, setValues] = useState({});
+  const [result, setResult] = useState(null);
+
+  const setVal = (id,v) => setValues(o=>({...o,[id]:v}));
+  const run = () => setResult(simulate(draft, allRules, persona, values, moment));
+
+  return (
+    <div>
+      <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Preview &amp; Test</p>
+      <div className="rounded-md border border-slate-200 p-3 space-y-2 text-sm">
+        <div className="flex items-center gap-2">
+          <span className="w-16 text-slate-500">Run as</span>
+          <Select value={persona} onChange={setPersona} options={AUDIENCES.filter(a=>a.id!=="ALL").map(a=>({value:a.id,label:a.label}))} className="h-8 flex-1" />
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="w-16 text-slate-500">Moment</span>
+          <Select value={moment} onChange={setMoment} options={MOMENTS.map(m=>({value:m.id,label:m.label}))} className="h-8 flex-1" />
+        </div>
+        <div className="border-t border-slate-100 pt-2">
+          <p className="mb-1 text-xs font-medium text-slate-500">Test values</p>
+          {refFields.length===0 && <p className="text-xs italic text-slate-400">No condition fields — rule always matches.</p>}
+          {refFields.map(id=>(
+            <div key={id} className="mb-1 flex items-center gap-2">
+              <span className="w-24 text-xs text-slate-500">{fLabel(id)}</span>
+              {fieldOf(id).type==="select"
+                ? <Select value={values[id]||""} onChange={v=>setVal(id,v)} options={[{value:"",label:"—"},...fieldOf(id).options.map(o=>({value:o,label:o}))]} className="h-8 flex-1" />
+                : <TextInput value={values[id]||""} onChange={v=>setVal(id,v)} type={fieldOf(id).type==="number"?"number":"text"} className="h-8 flex-1" />}
+            </div>
+          ))}
+        </div>
+        <Btn onClick={run} className="w-full">▷ Run simulation</Btn>
+
+        {result && (
+          <div className="border-t border-slate-100 pt-2 space-y-2">
+            <p className="text-xs font-medium text-slate-500">Execution trace ({result.applicableCount} applicable rule{result.applicableCount!==1?"s":""})</p>
+            <div className="space-y-1">
+              {result.trace.filter(t=>t.matched).length===0 && <p className="text-xs italic text-slate-400">No blocks matched these values.</p>}
+              {result.trace.filter(t=>t.matched).map((t,i)=>(
+                <div key={i} className={cx("rounded px-2 py-1 text-xs", t.isDraft?"bg-sky-50 text-sky-800":"bg-slate-50 text-slate-600")}>
+                  <span className="font-semibold">{t.isDraft?"This rule":"Rule "+t.ruleId.replace("rule_","#")}</span> · block {t.blockIndex+1} matched
+                  <span className="block text-slate-500">→ {t.actions.map(actionPhrase).join("; ")}</span>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs font-medium text-slate-500">Resulting form state</p>
+            <div className="space-y-1">
+              {Object.keys(result.state).map(fid=>{
+                const s = result.state[fid];
+                return (
+                  <div key={fid} className="flex items-center gap-2 text-xs">
+                    <span className={cx("inline-block h-2 w-2 rounded-full", s.visible?"bg-emerald-500":"bg-slate-300")} />
+                    <span className="font-medium">{fLabel(fid)}</span>
+                    <span className="text-slate-500">
+                      {s.visible?"visible":"hidden"}{s.required?", required":""}{!s.enabled?", disabled":""}{s.value?`, = ${s.value}`:""}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================ VERSION SWITCHER */
+const VERSIONS = [
+  { id:"v1", label:"Version 1", note:"Sentence-first builder", href:"rule-studio-v1.html" },
+  { id:"v2", label:"Version 2", note:"Structured form",        href:"rule-studio-demo.html" },
+  { id:"v3", label:"Version 3", note:"Block workspace",        href:"rule-studio-v3.html" },
+  { id:"v4", label:"Version 4", note:"Starter cards",          href:"rule-studio-v4.html" },
+  { id:"v5", label:"Version 5", note:"Guided composer",        href:"rule-studio-v5.html" },
+  { id:"v6", label:"Version 6", note:"Refined classic form",   href:"rule-studio-v6.html" },
+];
+const currentVersionId = () => {
+  const p = (typeof window!=="undefined" && window.location.pathname) || "";
+  if (p.indexOf("v6") >= 0) return "v6";
+  if (p.indexOf("v5") >= 0) return "v5";
+  if (p.indexOf("v4") >= 0) return "v4";
+  if (p.indexOf("v3") >= 0) return "v3";
+  if (p.indexOf("v1") >= 0) return "v1";
+  return "v2";
+};
+function VersionBar(){
+  const [open,setOpen]=useState(false);
+  const cur = currentVersionId();
+  const curV = VERSIONS.find(v=>v.id===cur) || VERSIONS[1];
+  return (
+    <div className="flex shrink-0 items-center justify-between border-b border-slate-800 bg-slate-900 px-4 py-1.5 text-xs text-slate-300">
+      <span className="font-semibold tracking-wide text-slate-100">Request Form Rules · Rule Studio</span>
+      <div className="relative">
+        <button onClick={()=>setOpen(o=>!o)} className="inline-flex items-center gap-2 rounded-md bg-slate-800 px-3 py-1 font-medium text-white hover:bg-slate-700">
+          <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400" />
+          {curV.label} · {curV.note}
+          <span className="opacity-60">▾</span>
+        </button>
+        {open && (
+          <React.Fragment>
+            <div className="fixed inset-0 z-40" onClick={()=>setOpen(false)} />
+            <div className="absolute right-0 z-50 mt-1 w-60 overflow-hidden rounded-lg border border-slate-200 bg-white p-1 text-slate-700 shadow-xl">
+              <p className="px-2 py-1 text-[11px] uppercase tracking-wide text-slate-400">Switch version</p>
+              {VERSIONS.map(v=>(
+                <a key={v.id} href={v.href}
+                   className={cx("flex items-center justify-between rounded px-2 py-2 text-sm hover:bg-slate-100", v.id===cur && "bg-slate-50")}>
+                  <span><span className="font-medium">{v.label}</span><span className="block text-xs text-slate-400">{v.note}</span></span>
+                  {v.id===cur && <span className="text-xs font-medium text-emerald-600">current</span>}
+                </a>
+              ))}
+            </div>
+          </React.Fragment>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================ APP */
+function App(){
+  const [rules, setRules] = useState(() => SEED.map(r => ({ ...r, name: r.name || genSlug(r) })));
+  const [view, setView] = useState({ screen:"list" }); // {screen:'studio', id|null}
+
+  const startCreate = () => setView({ screen:"studio", rule:newRule(), isNew:true });
+  const startEdit = id => setView({ screen:"studio", rule:rules.find(r=>r.id===id), isNew:false });
+  const cancel = () => setView({ screen:"list" });
+  const save = draft => {
+    setRules(rs => rs.some(r=>r.id===draft.id) ? rs.map(r=>r.id===draft.id?draft:r) : [...rs, draft]);
+    setView({ screen:"list" });
+  };
+
+  return (
+    <div className="flex h-screen flex-col">
+      <VersionBar />
+      {view.screen==="studio"
+        ? <RuleStudio initial={view.rule} isNew={view.isNew} allRules={rules} onCancel={cancel} onSave={save} />
+        : <div className="flex-1 overflow-y-auto"><RulesList rules={rules} setRules={setRules} onCreate={startCreate} onEdit={startEdit} /></div>}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+
+<script>
+// Same-origin self-compile to surface the REAL Babel error (cross-origin window.onerror hides it as "Script error.")
+window.addEventListener('load', function(){
+  setTimeout(function(){
+    var rootEl = document.getElementById('root');
+    try {
+      var el = document.querySelector('script[type="text/babel"]');
+      if (window.Babel && el) { window.Babel.transform(el.textContent, { presets: ['react'] }); }
+    } catch (err) {
+      (rootEl||document.body).innerHTML = '<pre style="white-space:pre-wrap;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:16px;margin:24px;font:12px ui-monospace,monospace">[Compile error]\n' + (err && err.message ? err.message : err) + '</pre>';
+    }
+  }, 600);
+});
+</script>
+</body>
+</html>

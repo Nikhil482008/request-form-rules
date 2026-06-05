@@ -1,0 +1,898 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Request Form Rules — Rule Studio (Preview)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background:#cbd5e1; border-radius: 6px; }
+</style>
+</head>
+<body class="bg-slate-100 text-slate-800">
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+const { useState, useMemo, useRef } = React;
+
+/* ============================================================ DOMAIN DATA */
+const FIELDS = [
+  { id:"priority",      label:"Priority",        type:"select", options:["Low","Medium","High"] },
+  { id:"category",      label:"Category",        type:"select", options:["Hardware","Network","Software"] },
+  { id:"group",         label:"Group",           type:"select", options:["IT Support","HR","Finance"] },
+  { id:"status",        label:"Status",          type:"select", options:["Open","In Progress","Closed"] },
+  { id:"assignee",      label:"Assignee",        type:"text" },
+  { id:"assetTag",      label:"Asset Tag",       type:"text" },
+  { id:"dueDate",       label:"Due Date",        type:"date" },
+  { id:"approverNotes", label:"Approver Notes",  type:"text" },
+  { id:"cost",          label:"Cost",            type:"number" },
+];
+const fieldOf  = id => FIELDS.find(f => f.id === id) || { id, label:id, type:"text" };
+const fLabel   = id => fieldOf(id).label;
+
+const AUDIENCES = [
+  { id:"ALL",        label:"All Users",        actor:"any user" },
+  { id:"REQUESTERS", label:"Requesters",       actor:"a requester" },
+  { id:"TECHNICIANS",label:"Technicians",      actor:"a technician" },
+  { id:"LOGGED_IN",  label:"Logged-in Users",  actor:"a logged-in user" },
+];
+const audActor = id => (AUDIENCES.find(a=>a.id===id)||{}).actor || "a user";
+
+const LIFECYCLES = [
+  { id:"CREATE",      label:"On Create",          verb:"creates a request" },
+  { id:"EDIT",        label:"On Edit",            verb:"edits a request" },
+  { id:"CREATE_EDIT", label:"On Create & Edit",   verb:"creates or edits a request" },
+];
+const MOMENTS = [
+  { id:"ON_LOAD",         label:"When the form opens" },
+  { id:"ON_FIELD_CHANGE", label:"While the form is being filled" },
+  { id:"ON_SUBMIT",       label:"When the form is submitted" },
+];
+const momentLabel = id => (MOMENTS.find(m=>m.id===id)||{}).label || id;
+const lcVerb = id => (LIFECYCLES.find(l=>l.id===id)||{}).verb || "uses a request";
+const LIFECYCLES_FRIENDLY = [
+  { id:"CREATE",      label:"New requests only" },
+  { id:"EDIT",        label:"Existing requests only" },
+  { id:"CREATE_EDIT", label:"New and existing requests" },
+];
+// who experiences the rule, in plain language
+const AUD_FRIENDLY = [
+  { id:"ALL",        label:"Everyone" },
+  { id:"REQUESTERS", label:"Requesters only" },
+  { id:"TECHNICIANS",label:"Technicians only" },
+  { id:"LOGGED_IN",  label:"Signed-in users only" },
+];
+const audFriendly = id => (AUD_FRIENDLY.find(a=>a.id===id)||{}).label || id;
+const audPlural = id => ({ ALL:"everyone", REQUESTERS:"requesters", TECHNICIANS:"technicians", LOGGED_IN:"signed-in users" }[id] || "everyone");
+
+const OPERATORS = [
+  { id:"BECOMES",       label:"becomes" },
+  { id:"EQUALS",        label:"is" },
+  { id:"NOT_EQUALS",    label:"is not" },
+  { id:"GREATER_THAN",  label:"is greater than" },
+  { id:"LESS_THAN",     label:"is less than" },
+  { id:"CONTAINS",      label:"contains" },
+  { id:"IS_EMPTY",      label:"is empty" },
+  { id:"IS_NOT_EMPTY",  label:"is not empty" },
+];
+const opLabel = id => (OPERATORS.find(o=>o.id===id)||{}).label || id;
+const VALUELESS = ["IS_EMPTY","IS_NOT_EMPTY"];
+
+const ACTION_TYPES = [
+  { id:"MANDATE",  label:"Make required",  phrase:(f)=>`make ${f} required` },
+  { id:"OPTIONAL", label:"Make optional",  phrase:(f)=>`make ${f} optional` },
+  { id:"SHOW",     label:"Show",           phrase:(f)=>`show ${f}` },
+  { id:"HIDE",     label:"Hide",           phrase:(f)=>`hide ${f}` },
+  { id:"ENABLE",   label:"Make editable",  phrase:(f)=>`make ${f} editable` },
+  { id:"DISABLE",  label:"Make read-only", phrase:(f)=>`make ${f} read-only` },
+  { id:"SET_VALUE",label:"Set value",      phrase:(f,v)=>`set ${f} to ${v||"…"}` },
+];
+const REVERSIBLE = ["SHOW","HIDE","MANDATE","OPTIONAL","ENABLE","DISABLE"];
+const OPPOSITE = { SHOW:"HIDE", HIDE:"SHOW", MANDATE:"OPTIONAL", OPTIONAL:"MANDATE", ENABLE:"DISABLE", DISABLE:"ENABLE" };
+const actionPhrase = a => {
+  const t = ACTION_TYPES.find(x=>x.id===a.type);
+  return t ? t.phrase(fLabel(a.fieldId), a.value) : a.type;
+};
+
+let _uid = 100;
+const uid = p => `${p}_${++_uid}`;
+
+/* ============================================================ FACTORIES */
+const newCondition = () => ({ id:uid("c"), fieldId:"priority", op:"BECOMES", value:"High" });
+const newAction    = () => ({ id:uid("a"), type:"MANDATE", fieldId:"assignee", value:"" });
+const newBlock     = () => ({ id:uid("b"), match:"ALL", conditions:[newCondition()], actions:[newAction()] });
+const newRule = () => ({
+  id: uid("rule"),
+  trigger: { lifecycle:"CREATE", moment:"ON_FIELD_CHANGE", fieldId:"priority" },
+  scope:   { audience:"TECHNICIANS" },
+  blocks:  [ newBlock() ],
+  advanced:{ reverseOnFalse:false, enforceSystemWide:false },
+  status:  "ENABLED",
+  audit:   { createdBy:"You", createdAt:"just now", modifiedBy:"You", modifiedAt:"just now", version:1 },
+});
+
+/* ============================================================ SEED RULES */
+const SEED = [
+  { id:"rule_1",
+    trigger:{ lifecycle:"CREATE", moment:"ON_FIELD_CHANGE", fieldId:"priority" },
+    scope:{ audience:"TECHNICIANS" },
+    blocks:[{ id:"b1", match:"ALL",
+      conditions:[{id:"c1", fieldId:"priority", op:"EQUALS", value:"High"}],
+      actions:[{id:"a1", type:"MANDATE", fieldId:"assignee", value:""}] }],
+    advanced:{ reverseOnFalse:false, enforceSystemWide:false }, status:"ENABLED",
+    audit:{ createdBy:"Priya", createdAt:"May 20", modifiedBy:"Marco", modifiedAt:"2h ago", version:3 } },
+
+  { id:"rule_2",
+    trigger:{ lifecycle:"CREATE_EDIT", moment:"ON_LOAD" },
+    scope:{ audience:"ALL" },
+    blocks:[{ id:"b1", match:"ALL", conditions:[],
+      actions:[{id:"a1", type:"HIDE", fieldId:"approverNotes", value:""}] }],
+    advanced:{ reverseOnFalse:false, enforceSystemWide:false }, status:"ENABLED",
+    audit:{ createdBy:"Marco", createdAt:"May 18", modifiedBy:"Marco", modifiedAt:"3d ago", version:1 } },
+
+  { id:"rule_3",
+    trigger:{ lifecycle:"EDIT", moment:"ON_SUBMIT" },
+    scope:{ audience:"REQUESTERS" },
+    blocks:[{ id:"b1", match:"ALL",
+      conditions:[{id:"c1", fieldId:"cost", op:"GREATER_THAN", value:"5000"}],
+      actions:[{id:"a1", type:"MANDATE", fieldId:"dueDate", value:""}] }],
+    advanced:{ reverseOnFalse:false, enforceSystemWide:false }, status:"DISABLED",
+    audit:{ createdBy:"Priya", createdAt:"May 12", modifiedBy:"Priya", modifiedAt:"1w ago", version:2 } },
+
+  { id:"rule_4",
+    trigger:{ lifecycle:"CREATE", moment:"ON_FIELD_CHANGE", fieldId:"priority" },
+    scope:{ audience:"ALL" },
+    blocks:[{ id:"b1", match:"ALL",
+      conditions:[{id:"c1", fieldId:"priority", op:"EQUALS", value:"High"}],
+      actions:[{id:"a1", type:"OPTIONAL", fieldId:"assignee", value:""}] }],
+    advanced:{ reverseOnFalse:false, enforceSystemWide:false }, status:"ENABLED",
+    audit:{ createdBy:"Marco", createdAt:"May 22", modifiedBy:"Marco", modifiedAt:"1d ago", version:1 } },
+];
+
+/* ============================================================ SUMMARIZE */
+function triggerClause(rule){
+  let s = `When ${audActor(rule.scope.audience)} ${lcVerb(rule.trigger.lifecycle)}`;
+  if (rule.trigger.moment === "ON_FIELD_CHANGE") s += ` and changes ${fLabel(rule.trigger.fieldId)}`;
+  else if (rule.trigger.moment === "ON_SUBMIT")  s += ` and submits the request`;
+  return s;
+}
+function condClause(block){
+  const parts = block.conditions.map(c =>
+    VALUELESS.includes(c.op) ? `${fLabel(c.fieldId)} ${opLabel(c.op)}`
+                             : `${fLabel(c.fieldId)} ${opLabel(c.op)} ${c.value}`);
+  return parts.join(block.match === "ALL" ? " and " : " or ");
+}
+function listJoin(arr){
+  if (arr.length <= 1) return arr[0] || "";
+  return arr.slice(0,-1).join(", ") + " and " + arr[arr.length-1];
+}
+function actClause(block){ return listJoin(block.actions.map(actionPhrase)); }
+function advClause(rule){
+  const x=[];
+  if (rule.advanced.reverseOnFalse) x.push("reverses when the condition is no longer true");
+  if (rule.advanced.enforceSystemWide) x.push("enforced system-wide");
+  return x;
+}
+const cap = s => s.charAt(0).toUpperCase()+s.slice(1);
+// Requirement-framed sentence: "When Priority becomes High, make Assignee required for technicians."
+function blockSentence(rule, b){
+  const cond = condClause(b);
+  let s = cond ? `when ${cond}, ${actClause(b)}` : actClause(b);
+  if (rule.scope.audience !== "ALL") s += ` for ${audPlural(rule.scope.audience)}`;
+  const adv = advClause(rule); if (adv.length) s += ` (${adv.join(", ")})`;
+  return s;
+}
+function summarize(rule){
+  if (rule.blocks.length === 1) return cap(blockSentence(rule, rule.blocks[0]) + ".");
+  return null; // multiple requirements rendered as a list
+}
+
+/* ============================================================ CONFLICTS */
+const lcSet = lc => lc==="CREATE_EDIT" ? ["CREATE","EDIT"] : [lc];
+const lcOverlap = (a,b) => lcSet(a).some(x => lcSet(b).includes(x));
+const scopeOverlap = (a,b) => a==="ALL" || b==="ALL" || a===b;
+function triggerOverlap(r1,r2){
+  if (!lcOverlap(r1.trigger.lifecycle, r2.trigger.lifecycle)) return false;
+  if (r1.trigger.moment !== r2.trigger.moment) return false;
+  return scopeOverlap(r1.scope.audience, r2.scope.audience);
+}
+const allActions = r => r.blocks.flatMap(b => b.actions);
+function detectConflicts(rule, all){
+  const out = [];
+  const others = all.filter(r => r.id !== rule.id && r.status === "ENABLED");
+  const mine = allActions(rule);
+  for (const o of others){
+    if (!triggerOverlap(rule, o)) continue;
+    for (const da of mine) for (const oa of allActions(o)){
+      if (da.fieldId !== oa.fieldId) continue;
+      if (OPPOSITE[da.type] === oa.type){
+        out.push({ type:"CONTRADICTORY", severity:"HIGH", with:o, field:da.fieldId,
+          text:`This rule does “${actionPhrase(da)}” while ${ruleName(o)} does “${actionPhrase(oa)}” on the same trigger.` });
+      } else if (da.type === oa.type){
+        out.push({ type:"REDUNDANT", severity:"MEDIUM", with:o, field:da.fieldId,
+          text:`This rule duplicates “${actionPhrase(da)}” already done by ${ruleName(o)}.` });
+      } else if (da.type==="SET_VALUE" && oa.type==="SET_VALUE" && da.value!==oa.value){
+        out.push({ type:"CONTRADICTORY", severity:"HIGH", with:o, field:da.fieldId,
+          text:`This rule sets ${fLabel(da.fieldId)} to “${da.value}” but ${ruleName(o)} sets it to “${oa.value}”.` });
+      }
+    }
+  }
+  // dedupe by with+field+type
+  const seen = new Set();
+  return out.filter(c => { const k=c.with.id+c.field+c.type; if(seen.has(k)) return false; seen.add(k); return true; });
+}
+function ruleName(r){
+  const s = summarize(r);
+  if (s) return `“${s.replace(/\.$/,"")}”`;
+  return `a ${r.blocks.length}-block rule`;
+}
+
+/* ============================================================ SIMULATION */
+function evalCondition(c, values){
+  const raw = values[c.fieldId];
+  const v = raw === undefined ? "" : raw;
+  switch(c.op){
+    case "BECOMES":      return String(v) === String(c.value);
+    case "EQUALS":       return String(v) === String(c.value);
+    case "NOT_EQUALS":   return String(v) !== String(c.value);
+    case "GREATER_THAN": return parseFloat(v) >  parseFloat(c.value);
+    case "LESS_THAN":    return parseFloat(v) <  parseFloat(c.value);
+    case "CONTAINS":     return String(v).toLowerCase().includes(String(c.value).toLowerCase());
+    case "IS_EMPTY":     return !v;
+    case "IS_NOT_EMPTY": return !!v;
+    default: return false;
+  }
+}
+function evalBlock(block, values){
+  if (!block.conditions.length) return true;
+  const res = block.conditions.map(c => evalCondition(c, values));
+  return block.match === "ALL" ? res.every(Boolean) : res.some(Boolean);
+}
+function scopeMatchPersona(aud, persona){
+  if (aud === "ALL") return true;
+  if (aud === "LOGGED_IN") return true; // all demo personas are logged in
+  return aud === persona;
+}
+function applyAction(state, a){
+  const s = state[a.fieldId] || (state[a.fieldId] = { visible:true, required:false, enabled:true, value: "" });
+  switch(a.type){
+    case "SHOW": s.visible=true; break;
+    case "HIDE": s.visible=false; break;
+    case "MANDATE": s.required=true; break;
+    case "OPTIONAL": s.required=false; break;
+    case "ENABLE": s.enabled=true; break;
+    case "DISABLE": s.enabled=false; break;
+    case "SET_VALUE": s.value=a.value; break;
+  }
+}
+function simulate(draft, all, persona, values, moment){
+  const ruleset = [...all.filter(r => r.id !== draft.id && r.status === "ENABLED"), draft];
+  const applicable = ruleset.filter(r => r.trigger.moment === moment && scopeMatchPersona(r.scope.audience, persona));
+  const state = {};
+  // init touched fields
+  applicable.forEach(r => allActions(r).forEach(a => {
+    if (!state[a.fieldId]) state[a.fieldId] = { visible:true, required:false, enabled:true, value: values[a.fieldId]||"" };
+  }));
+  const trace = [];
+  applicable.forEach(r => r.blocks.forEach((b, bi) => {
+    const matched = evalBlock(b, values);
+    if (matched){
+      b.actions.forEach(a => applyAction(state, a));
+      trace.push({ ruleId:r.id, isDraft:r.id===draft.id, blockIndex:bi, matched:true, actions:b.actions });
+    } else {
+      trace.push({ ruleId:r.id, isDraft:r.id===draft.id, blockIndex:bi, matched:false, actions:[] });
+    }
+  }));
+  return { state, trace, applicableCount: applicable.length };
+}
+
+/* ============================================================ UI ATOMS */
+const cx = (...a) => a.filter(Boolean).join(" ");
+function Select({ value, onChange, options, className }){
+  return (
+    <select value={value} onChange={e=>onChange(e.target.value)}
+      className={cx("h-9 rounded-md border border-slate-300 bg-white px-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500", className)}>
+      {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+    </select>
+  );
+}
+function TextInput({ value, onChange, type="text", placeholder, className }){
+  return <input type={type} value={value} placeholder={placeholder}
+    onChange={e=>onChange(e.target.value)}
+    className={cx("h-9 rounded-md border border-slate-300 bg-white px-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500", className)} />;
+}
+function Btn({ children, onClick, variant="default", size="md", className }){
+  const v = {
+    default:"bg-indigo-600 text-white hover:bg-indigo-700",
+    outline:"border border-slate-300 bg-white hover:bg-slate-50",
+    ghost:"hover:bg-slate-100 text-slate-600",
+    danger:"text-red-600 hover:bg-red-50",
+    soft:"bg-slate-100 hover:bg-slate-200 text-slate-700",
+  }[variant];
+  const s = { md:"h-9 px-3 text-sm", sm:"h-8 px-2 text-xs", icon:"h-8 w-8" }[size];
+  return <button onClick={onClick} className={cx("inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition-colors", v, s, className)}>{children}</button>;
+}
+function TriggerChip({ trigger }){
+  const map = { ON_LOAD:["On load","bg-sky-50 text-sky-700 border-sky-200"],
+                ON_FIELD_CHANGE:["On change","bg-violet-50 text-violet-700 border-violet-200"],
+                ON_SUBMIT:["On submit","bg-amber-50 text-amber-700 border-amber-200"] };
+  const [label, cls] = map[trigger.moment];
+  const txt = trigger.moment==="ON_FIELD_CHANGE" ? `${label} · ${fLabel(trigger.fieldId)}` : label;
+  return <span className={cx("inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium whitespace-nowrap", cls)}>{txt}</span>;
+}
+function SeverityBadge({ severity }){
+  const m = { HIGH:["⛔ High","bg-red-50 text-red-700 border-red-200"],
+              MEDIUM:["⚠ Medium","bg-amber-50 text-amber-700 border-amber-200"],
+              LOW:["◦ Low","bg-slate-100 text-slate-600 border-slate-200"] }[severity];
+  return <span className={cx("inline-flex items-center rounded border px-1.5 py-0.5 text-[11px] font-semibold", m[1])}>{m[0]}</span>;
+}
+
+/* ============================================================ RULES LIST */
+function RulesList({ rules, setRules, onCreate, onEdit }){
+  const [expanded, setExpanded] = useState(null);
+  const conflictsByRule = useMemo(() => {
+    const m = {}; rules.forEach(r => m[r.id] = detectConflicts(r, rules)); return m;
+  }, [rules]);
+  const totalConflicts = useMemo(() => {
+    const set = new Set();
+    rules.forEach(r => conflictsByRule[r.id].forEach(c => set.add([r.id, c.with.id].sort().join("|")+c.field)));
+    return set.size;
+  }, [rules, conflictsByRule]);
+
+  const toggleStatus = id => setRules(rs => rs.map(r => r.id===id ? {...r, status: r.status==="ENABLED"?"DISABLED":"ENABLED"} : r));
+  const duplicate = r => setRules(rs => [...rs, { ...JSON.parse(JSON.stringify(r)), id:uid("rule"), audit:{...r.audit, createdBy:"You", createdAt:"just now", version:1} }]);
+  const remove = id => setRules(rs => rs.filter(r => r.id!==id));
+
+  return (
+    <div className="mx-auto max-w-6xl p-6">
+      <div className="flex items-end justify-between">
+        <div>
+          <p className="text-sm text-slate-500">Form · New Hardware Request</p>
+          <h1 className="text-2xl font-semibold tracking-tight">Rules</h1>
+        </div>
+        <Btn onClick={onCreate}>＋ Create Rule</Btn>
+      </div>
+
+      <nav className="mt-4 flex items-center gap-1 border-b border-slate-200">
+        <span className="border-b-2 border-slate-800 px-3 py-2 text-sm font-medium">Rules</span>
+        <span className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-500">
+          Conflicts
+          {totalConflicts>0 && <span className="rounded-full border border-red-200 bg-red-50 px-1.5 text-xs font-semibold text-red-700">{totalConflicts}</span>}
+        </span>
+        <span className="px-3 py-2 text-sm text-slate-500">Activity Log</span>
+      </nav>
+
+      <div className="mt-4 overflow-hidden rounded-lg border border-slate-200 bg-white">
+        <table className="w-full text-left text-sm">
+          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+            <tr>
+              <th className="w-8 px-3 py-2"></th>
+              <th className="px-3 py-2">Rule</th>
+              <th className="w-36 px-3 py-2">Trigger</th>
+              <th className="w-28 px-3 py-2">Status</th>
+              <th className="w-24 px-3 py-2 text-center">Conflicts</th>
+              <th className="w-10 px-3 py-2"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {rules.map(r => {
+              const conflicts = conflictsByRule[r.id];
+              const sum = summarize(r);
+              const open = expanded === r.id;
+              return (
+                <React.Fragment key={r.id}>
+                  <tr className={cx("group", r.status==="DISABLED" && "opacity-60")}>
+                    <td className="px-3 py-3 align-top">
+                      <button onClick={()=>setExpanded(open?null:r.id)} className="text-slate-400 hover:text-slate-700">{open?"▾":"▸"}</button>
+                    </td>
+                    <td className="px-3 py-3 align-top cursor-pointer" onClick={()=>setExpanded(open?null:r.id)}>
+                      {sum
+                        ? <span className="font-medium text-slate-800">{sum}</span>
+                        : <span><span className="font-medium text-slate-800">{triggerClause(r)}</span> <span className="text-slate-500">— {r.blocks.length} IF→THEN blocks</span></span>}
+                    </td>
+                    <td className="px-3 py-3 align-top"><TriggerChip trigger={r.trigger} /></td>
+                    <td className="px-3 py-3 align-top">
+                      <button onClick={()=>toggleStatus(r.id)} className="inline-flex items-center gap-2">
+                        <span className={cx("relative h-5 w-9 rounded-full transition-colors", r.status==="ENABLED"?"bg-emerald-500":"bg-slate-300")}>
+                          <span className={cx("absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all", r.status==="ENABLED"?"left-4":"left-0.5")} />
+                        </span>
+                        <span className={cx("text-xs font-medium", r.status==="ENABLED"?"text-emerald-600":"text-slate-400")}>{r.status==="ENABLED"?"Live":"Off"}</span>
+                      </button>
+                    </td>
+                    <td className="px-3 py-3 align-top text-center">
+                      {conflicts.length
+                        ? <span className="inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700">⚠ {conflicts.length}</span>
+                        : <span className="text-slate-300">—</span>}
+                    </td>
+                    <td className="px-3 py-3 align-top text-right">
+                      <Btn variant="ghost" size="sm" onClick={()=>onEdit(r.id)}>Edit</Btn>
+                    </td>
+                  </tr>
+                  {open && (
+                    <tr className="bg-slate-50/60">
+                      <td></td>
+                      <td colSpan={5} className="px-3 pb-4 pt-1">
+                        <div className="rounded-md border border-slate-200 bg-white p-4 text-sm">
+                          <div className="grid grid-cols-2 gap-2 text-slate-600">
+                            <div><span className="text-slate-400">WHEN </span>{audActor(r.scope.audience)} · {MOMENTS.find(m=>m.id===r.trigger.moment).label}{r.trigger.moment==="ON_FIELD_CHANGE"?` (${fLabel(r.trigger.fieldId)})`:""}</div>
+                            <div><span className="text-slate-400">FOR </span>{AUDIENCES.find(a=>a.id===r.scope.audience).label}</div>
+                          </div>
+                          <div className="mt-3 space-y-2">
+                            {r.blocks.map((b,i)=>(
+                              <div key={b.id} className="rounded border border-slate-200 bg-slate-50 p-2">
+                                <div><span className="text-slate-400">IF </span>{b.conditions.length? condClause(b): <em className="text-slate-400">always</em>}</div>
+                                <div><span className="text-slate-400">THEN </span>{actClause(b)}</div>
+                              </div>
+                            ))}
+                          </div>
+                          {conflicts.length>0 && (
+                            <div className="mt-3 rounded border border-red-200 bg-red-50 p-2 text-red-700">
+                              <div className="font-semibold">⚠ Conflicts ({conflicts.length})</div>
+                              {conflicts.map((c,i)=><div key={i} className="mt-1 text-xs">{c.text}</div>)}
+                            </div>
+                          )}
+                          <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3 text-xs text-slate-500">
+                            <span>v{r.audit.version} · modified {r.audit.modifiedAt} by {r.audit.modifiedBy} · created {r.audit.createdAt} by {r.audit.createdBy}</span>
+                            <span className="flex gap-1">
+                              <Btn variant="soft" size="sm" onClick={()=>onEdit(r.id)}>Edit</Btn>
+                              <Btn variant="soft" size="sm" onClick={()=>duplicate(r)}>Duplicate</Btn>
+                              <Btn variant="danger" size="sm" onClick={()=>remove(r.id)}>Delete</Btn>
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+        {rules.length===0 && <div className="p-10 text-center text-sm text-slate-500">No rules yet. Click “Create Rule”.</div>}
+      </div>
+      <p className="mt-2 text-xs text-slate-400">{rules.length} rules · live human-readable summaries · real-time conflict detection</p>
+    </div>
+  );
+}
+
+/* ============================================================ TOKEN BUILDER UI */
+function Dropdown({ trigger, children, align }){
+  const [open,setOpen]=useState(false);
+  return (
+    <span className="relative inline-block align-middle">
+      <span onClick={()=>setOpen(o=>!o)}>{trigger}</span>
+      {open && (
+        <React.Fragment>
+          <div className="fixed inset-0 z-40" onClick={()=>setOpen(false)} />
+          <div className={cx("absolute z-50 mt-1 min-w-[190px] rounded-lg border border-slate-200 bg-white p-1 shadow-xl", align==="right"&&"right-0")}>
+            {typeof children==="function" ? children(()=>setOpen(false)) : children}
+          </div>
+        </React.Fragment>
+      )}
+    </span>
+  );
+}
+const TOKEN_STYLE = {
+  field: "bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100",
+  op:    "bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200",
+  value: "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100",
+  verb:  "bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100",
+};
+function TokenBtn({ label, kind, warn, placeholder }){
+  return (
+    <button className={cx("inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[15px] font-medium transition-colors",
+      placeholder ? "border-dashed border-slate-300 bg-white text-slate-400 hover:text-slate-600" : TOKEN_STYLE[kind||"op"],
+      warn && "ring-2 ring-amber-300")}>
+      {label}<span className="text-[9px] opacity-50">▼</span>{warn && <span className="text-amber-500">⚠</span>}
+    </button>
+  );
+}
+function PickList({ items, onPick, search }){
+  const [q,setQ]=useState("");
+  const filtered = search ? items.filter(i=>i.label.toLowerCase().includes(q.toLowerCase())) : items;
+  return (
+    <div>
+      {search && <input autoFocus value={q} onChange={e=>setQ(e.target.value)} placeholder="Search…"
+        className="mb-1 w-full rounded border border-slate-200 px-2 py-1 text-sm focus:border-indigo-400 focus:outline-none" />}
+      <div className="max-h-56 overflow-y-auto">
+        {filtered.map(i=>(
+          <button key={i.value} onClick={()=>onPick(i.value)} className="block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-indigo-50">{i.label}</button>
+        ))}
+        {filtered.length===0 && <p className="px-2 py-1 text-sm text-slate-400">No matches</p>}
+      </div>
+    </div>
+  );
+}
+function FieldToken({ value, onChange, kind, warn }){
+  return <Dropdown trigger={<TokenBtn label={fLabel(value)} kind={kind||"field"} warn={warn} />}>
+    {close => <PickList search items={FIELDS.map(f=>({value:f.id,label:f.label}))} onPick={v=>{onChange(v);close();}} />}
+  </Dropdown>;
+}
+function OpToken({ value, onChange }){
+  return <Dropdown trigger={<TokenBtn label={opLabel(value)} kind="op" />}>
+    {close => <PickList items={OPERATORS.map(o=>({value:o.id,label:o.label}))} onPick={v=>{onChange(v);close();}} />}
+  </Dropdown>;
+}
+function ValueToken({ field, value, onChange }){
+  const f = fieldOf(field);
+  if (f.type==="select")
+    return <Dropdown trigger={<TokenBtn label={value||"choose"} kind="value" placeholder={!value} />}>
+      {close => <PickList items={f.options.map(o=>({value:o,label:o}))} onPick={v=>{onChange(v);close();}} />}
+    </Dropdown>;
+  return <Dropdown trigger={<TokenBtn label={(value===""||value==null)?"a value":String(value)} kind="value" placeholder={value===""||value==null} />}>
+    {close => <div className="p-1">
+      <input autoFocus type={f.type==="number"?"number":"text"} defaultValue={value}
+        onKeyDown={e=>{ if(e.key==="Enter"){ onChange(e.target.value); close(); } }} onBlur={e=>onChange(e.target.value)}
+        className="w-40 rounded border border-slate-200 px-2 py-1 text-sm focus:border-indigo-400 focus:outline-none" />
+      <p className="mt-1 px-1 text-[11px] text-slate-400">Press Enter</p>
+    </div>}
+  </Dropdown>;
+}
+function VerbToken({ value, onChange }){
+  const label = (ACTION_TYPES.find(t=>t.id===value)||{}).label || value;
+  return <Dropdown trigger={<TokenBtn label={label} kind="verb" />}>
+    {close => <PickList items={ACTION_TYPES.map(t=>({value:t.id,label:t.label}))} onPick={v=>{onChange(v);close();}} />}
+  </Dropdown>;
+}
+// timing phrased to read after "runs when …"
+const RUNS_WHEN = { ON_LOAD:"the form loads", ON_FIELD_CHANGE:"the form is being filled", ON_SUBMIT:"the form is submitted" };
+function Pill({ labelPrefix, value, items, onChange }){
+  return <Dropdown trigger={
+    <button className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1 text-sm text-slate-600 hover:bg-slate-50">
+      <span className="text-slate-400">{labelPrefix}</span><span className="font-medium text-slate-700">{value}</span><span className="text-[9px] opacity-50">▼</span>
+    </button>}>
+    {close => <PickList items={items} onPick={v=>{onChange(v);close();}} />}
+  </Dropdown>;
+}
+
+/* ============================================================ RULE STUDIO */
+function RuleStudio({ initial, isNew, allRules, onCancel, onSave }){
+  const [draft, setDraft] = useState(() => JSON.parse(JSON.stringify(initial)));
+  const update = fn => setDraft(d => { const n = JSON.parse(JSON.stringify(d)); fn(n); return n; });
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showTest, setShowTest] = useState(false);
+  const [dismissed, setDismissed] = useState(() => new Set());
+
+  const conflicts = useMemo(
+    () => detectConflicts(draft, allRules).filter(c => !dismissed.has(c.with.id+c.field+c.type)),
+    [draft, allRules, dismissed]
+  );
+  const conflictFields = useMemo(() => new Set(conflicts.map(c=>c.field)), [conflicts]);
+
+  const setMatch = (bi,v) => update(d => d.blocks[bi].match=v);
+  const addCond  = bi => update(d => d.blocks[bi].conditions.push(newCondition()));
+  const setCond  = (bi,ci,k,v) => update(d => { d.blocks[bi].conditions[ci][k]=v; });
+  const rmCond   = (bi,ci) => update(d => d.blocks[bi].conditions.splice(ci,1));
+  const addAct   = bi => update(d => d.blocks[bi].actions.push(newAction()));
+  const setAct   = (bi,ai,k,v) => update(d => { d.blocks[bi].actions[ai][k]=v; });
+  const rmAct    = (bi,ai) => update(d => d.blocks[bi].actions.splice(ai,1));
+  const addBlock = () => update(d => d.blocks.push(newBlock()));
+  const removeBlock = bi => update(d => d.blocks.splice(bi,1));
+  const setAdv   = (k,v) => update(d => { d.advanced[k]=v; });
+  const dismiss  = c => setDismissed(s => { const n=new Set(s); n.add(c.with.id+c.field+c.type); return n; });
+
+  const allActionsReversible = draft.blocks.every(b => b.actions.every(a => REVERSIBLE.includes(a.type)));
+  const affectedFields = useMemo(() => { const s=new Set(); draft.blocks.forEach(b=>b.actions.forEach(a=>s.add(a.fieldId))); return [...s]; }, [draft]);
+  const valid = draft.blocks.length>0 && draft.blocks.every(b => b.actions.length>0);
+
+  return (
+    <div className="flex h-full min-h-0 flex-1 flex-col bg-slate-50">
+      {/* slim top bar */}
+      <div className="flex items-center justify-between border-b border-slate-200 bg-white px-5 py-3">
+        <button onClick={onCancel} className="flex items-center gap-2 text-sm text-slate-500 hover:text-slate-800">← Rules</button>
+        <div className="flex items-center gap-2">
+          <Btn variant="outline" onClick={onCancel}>Cancel</Btn>
+          <Btn onClick={()=>onSave(draft)} className={cx(!valid && "opacity-50 pointer-events-none")}>Save</Btn>
+        </div>
+      </div>
+
+      {/* single calm column */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-2xl px-6 py-8">
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-800">{isNew ? "Add a requirement" : "Edit requirement"}</h1>
+          <p className="mt-1 text-sm text-slate-500">Describe what should happen, in plain language.</p>
+
+          {/* requirement statement card(s) */}
+          <div className="mt-6 space-y-4">
+            {draft.blocks.map((b,bi)=>(
+              <div key={b.id} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                {draft.blocks.length>1 && (
+                  <div className="mb-3 flex items-center justify-between">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">{bi===0?"Requirement":"Also"}</span>
+                    <button onClick={()=>removeBlock(bi)} className="text-slate-300 hover:text-red-500">✕</button>
+                  </div>
+                )}
+
+                {/* WHEN (optional) */}
+                {b.conditions.length>0 ? (
+                  <div className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-2">
+                    <span className="text-sm font-semibold text-slate-400">WHEN</span>
+                    {b.conditions.length>1 && (
+                      <Dropdown trigger={<span className="cursor-pointer rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500 hover:bg-slate-200">{b.match==="ALL"?"all":"any"} of ▼</span>}>
+                        {close => <PickList items={[{value:"ALL",label:"all of these are true"},{value:"ANY",label:"any of these are true"}]} onPick={v=>{setMatch(bi,v);close();}} />}
+                      </Dropdown>
+                    )}
+                    {b.conditions.map((c,ci)=>(
+                      <React.Fragment key={c.id}>
+                        {ci>0 && <span className="text-sm text-slate-400">{b.match==="ALL"?"and":"or"}</span>}
+                        <FieldToken value={c.fieldId} onChange={v=>setCond(bi,ci,"fieldId",v)} />
+                        <OpToken value={c.op} onChange={v=>setCond(bi,ci,"op",v)} />
+                        {!VALUELESS.includes(c.op) && <ValueToken field={c.fieldId} value={c.value} onChange={v=>setCond(bi,ci,"value",v)} />}
+                        <button onClick={()=>rmCond(bi,ci)} className="px-1 text-slate-300 hover:text-red-500">✕</button>
+                      </React.Fragment>
+                    ))}
+                    <button onClick={()=>addCond(bi)} className="text-sm font-medium text-indigo-600 hover:text-indigo-800">+ and</button>
+                  </div>
+                ) : (
+                  <div className="mb-3">
+                    <button onClick={()=>addCond(bi)} className="text-sm text-slate-400 hover:text-indigo-600">+ Add a condition <span className="text-slate-300">(optional — otherwise this always runs)</span></button>
+                  </div>
+                )}
+
+                {/* THEN */}
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
+                  <span className="text-sm font-semibold text-slate-400">{b.conditions.length>0 ? "THEN" : "ALWAYS"}</span>
+                  {b.actions.map((a,ai)=>(
+                    <React.Fragment key={a.id}>
+                      {ai>0 && <span className="text-sm text-slate-400">and</span>}
+                      <VerbToken value={a.type} onChange={v=>setAct(bi,ai,"type",v)} />
+                      <FieldToken value={a.fieldId} onChange={v=>setAct(bi,ai,"fieldId",v)} warn={conflictFields.has(a.fieldId)} />
+                      {a.type==="SET_VALUE" && <span className="text-sm text-slate-400">to</span>}
+                      {a.type==="SET_VALUE" && <ValueToken field={a.fieldId} value={a.value} onChange={v=>setAct(bi,ai,"value",v)} />}
+                      <button onClick={()=>rmAct(bi,ai)} className="px-1 text-slate-300 hover:text-red-500">✕</button>
+                    </React.Fragment>
+                  ))}
+                  <button onClick={()=>addAct(bi)} className="text-sm font-medium text-indigo-600 hover:text-indigo-800">+ also</button>
+                </div>
+
+                {/* FOR (audience) — inline token, same feel as WHEN/THEN */}
+                <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-2">
+                  <span className="text-sm font-semibold text-slate-400">FOR</span>
+                  <Dropdown trigger={<TokenBtn label={audFriendly(draft.scope.audience)} kind="field" />}>
+                    {close => <PickList items={AUD_FRIENDLY.map(a=>({value:a.id,label:a.label}))} onPick={v=>{update(d=>d.scope.audience=v);close();}} />}
+                  </Dropdown>
+                </div>
+
+                {/* RUN IT WHEN (timing) — inline token */}
+                <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-2">
+                  <span className="text-sm font-semibold text-slate-400">RUN IT WHEN</span>
+                  <Dropdown trigger={<TokenBtn label={RUNS_WHEN[draft.trigger.moment]} kind="verb" />}>
+                    {close => <PickList items={MOMENTS.map(m=>({value:m.id,label:RUNS_WHEN[m.id]}))} onPick={v=>{update(d=>d.trigger.moment=v);close();}} />}
+                  </Dropdown>
+                </div>
+
+                {/* contextual conflict — under the offending block */}
+                {conflicts.filter(c => b.actions.some(a=>a.fieldId===c.field)).map((c,i)=>(
+                  <div key={i} className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm">
+                    <p className="text-amber-800"><span className="font-medium">Heads up:</span> {c.text}</p>
+                    <div className="mt-1.5 flex gap-3 text-xs font-medium">
+                      <button className="text-amber-700 hover:underline">View that rule</button>
+                      <button onClick={()=>dismiss(c)} className="text-amber-700 hover:underline">Let this one win</button>
+                      <button onClick={()=>dismiss(c)} className="text-slate-400 hover:underline">Dismiss</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+
+          <button onClick={addBlock} className="mt-3 text-sm font-medium text-slate-500 hover:text-indigo-600">+ Add another requirement</button>
+
+          {/* advanced toggle */}
+          <button onClick={()=>setShowAdvanced(s=>!s)} className="mt-4 inline-flex text-sm text-slate-400 hover:text-slate-600">{showAdvanced?"▾":"▸"} Advanced</button>
+
+          {showAdvanced && (
+            <div className="mt-3 space-y-3 rounded-lg border border-slate-200 bg-white p-4 text-sm">
+              <div className="flex items-center gap-2">
+                <span className="text-slate-500">Apply on</span>
+                <Select value={draft.trigger.lifecycle} onChange={v=>update(d=>d.trigger.lifecycle=v)} options={LIFECYCLES_FRIENDLY.map(l=>({value:l.id,label:l.label}))} className="h-8" />
+              </div>
+              <label className={cx("flex items-start gap-2", !allActionsReversible && "opacity-40")}>
+                <input type="checkbox" disabled={!allActionsReversible} checked={draft.advanced.reverseOnFalse} onChange={e=>setAdv("reverseOnFalse",e.target.checked)} className="mt-0.5" />
+                <span>Undo automatically when this is no longer true
+                  {!allActionsReversible && <em className="block text-xs text-slate-400">Not available with “Set value” (it has no opposite).</em>}
+                </span>
+              </label>
+              <label className="flex items-start gap-2">
+                <input type="checkbox" checked={draft.advanced.enforceSystemWide} onChange={e=>setAdv("enforceSystemWide",e.target.checked)} className="mt-0.5" />
+                <span>Apply across every form
+                  {draft.advanced.enforceSystemWide && <em className="block text-xs text-amber-600">Overrides “Applies to” everywhere — use with care.</em>}
+                </span>
+              </label>
+            </div>
+          )}
+
+          {/* inline impact + plain-English readout */}
+          <p className="mt-7 text-sm text-slate-600"><span className="font-medium">In plain English:</span> {summarize(draft) || `${draft.blocks.length} requirements set.`}</p>
+          <p className="mt-1 text-xs text-slate-400">ⓘ Affects {affectedFields.length} field{affectedFields.length!==1?"s":""}{affectedFields.length?` (${affectedFields.map(fLabel).join(", ")})`:""}.</p>
+        </div>
+      </div>
+
+      {/* sticky footer */}
+      <div className="flex items-center justify-between border-t border-slate-200 bg-white px-5 py-3">
+        <span className={cx("text-sm font-medium", conflicts.length ? "text-amber-600" : "text-emerald-600")}>
+          {conflicts.length ? `⚠ ${conflicts.length} thing${conflicts.length>1?"s":""} to review` : "✓ No conflicts"}
+        </span>
+        <div className="flex items-center gap-2">
+          <Btn variant="outline" onClick={()=>setShowTest(true)}>Try it</Btn>
+          <Btn variant="outline" onClick={onCancel}>Cancel</Btn>
+          <Btn onClick={()=>onSave(draft)} className={cx(!valid && "opacity-50 pointer-events-none")}>Save</Btn>
+        </div>
+      </div>
+
+      {/* Try-it drawer (on demand) */}
+      {showTest && (
+        <React.Fragment>
+          <div className="fixed inset-0 z-40 bg-black/20" onClick={()=>setShowTest(false)} />
+          <div className="fixed right-0 top-0 z-50 h-full w-[380px] overflow-y-auto bg-white p-4 shadow-2xl">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="font-semibold">Try it</h3>
+              <button onClick={()=>setShowTest(false)} className="text-slate-400 hover:text-slate-700">✕</button>
+            </div>
+            <PreviewPanel draft={draft} allRules={allRules} />
+          </div>
+        </React.Fragment>
+      )}
+    </div>
+  );
+}
+
+/* ============================================================ PREVIEW PANEL */
+function PreviewPanel({ draft, allRules }){
+  const [persona, setPersona] = useState(draft.scope.audience==="ALL"?"TECHNICIANS":draft.scope.audience);
+  const [moment, setMoment]   = useState(draft.trigger.moment);
+  const refFields = useMemo(() => {
+    const s = new Set();
+    if (draft.trigger.moment==="ON_FIELD_CHANGE") s.add(draft.trigger.fieldId);
+    draft.blocks.forEach(b => b.conditions.forEach(c => s.add(c.fieldId)));
+    return [...s];
+  }, [draft]);
+  const [values, setValues] = useState({});
+  const [result, setResult] = useState(null);
+
+  const setVal = (id,v) => setValues(o=>({...o,[id]:v}));
+  const run = () => setResult(simulate(draft, allRules, persona, values, moment));
+
+  return (
+    <div>
+      <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Preview &amp; Test</p>
+      <div className="rounded-md border border-slate-200 p-3 space-y-2 text-sm">
+        <div className="flex items-center gap-2">
+          <span className="w-16 text-slate-500">Run as</span>
+          <Select value={persona} onChange={setPersona} options={AUDIENCES.filter(a=>a.id!=="ALL").map(a=>({value:a.id,label:a.label}))} className="h-8 flex-1" />
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="w-16 text-slate-500">Moment</span>
+          <Select value={moment} onChange={setMoment} options={MOMENTS.map(m=>({value:m.id,label:m.label}))} className="h-8 flex-1" />
+        </div>
+        <div className="border-t border-slate-100 pt-2">
+          <p className="mb-1 text-xs font-medium text-slate-500">Test values</p>
+          {refFields.length===0 && <p className="text-xs italic text-slate-400">No condition fields — rule always matches.</p>}
+          {refFields.map(id=>(
+            <div key={id} className="mb-1 flex items-center gap-2">
+              <span className="w-24 text-xs text-slate-500">{fLabel(id)}</span>
+              {fieldOf(id).type==="select"
+                ? <Select value={values[id]||""} onChange={v=>setVal(id,v)} options={[{value:"",label:"—"},...fieldOf(id).options.map(o=>({value:o,label:o}))]} className="h-8 flex-1" />
+                : <TextInput value={values[id]||""} onChange={v=>setVal(id,v)} type={fieldOf(id).type==="number"?"number":"text"} className="h-8 flex-1" />}
+            </div>
+          ))}
+        </div>
+        <Btn onClick={run} className="w-full">▷ Run simulation</Btn>
+
+        {result && (
+          <div className="border-t border-slate-100 pt-2 space-y-2">
+            <p className="text-xs font-medium text-slate-500">Execution trace ({result.applicableCount} applicable rule{result.applicableCount!==1?"s":""})</p>
+            <div className="space-y-1">
+              {result.trace.filter(t=>t.matched).length===0 && <p className="text-xs italic text-slate-400">No blocks matched these values.</p>}
+              {result.trace.filter(t=>t.matched).map((t,i)=>(
+                <div key={i} className={cx("rounded px-2 py-1 text-xs", t.isDraft?"bg-indigo-50 text-indigo-800":"bg-slate-50 text-slate-600")}>
+                  <span className="font-semibold">{t.isDraft?"This rule":"Rule "+t.ruleId.replace("rule_","#")}</span> · block {t.blockIndex+1} matched
+                  <span className="block text-slate-500">→ {t.actions.map(actionPhrase).join("; ")}</span>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs font-medium text-slate-500">Resulting form state</p>
+            <div className="space-y-1">
+              {Object.keys(result.state).map(fid=>{
+                const s = result.state[fid];
+                return (
+                  <div key={fid} className="flex items-center gap-2 text-xs">
+                    <span className={cx("inline-block h-2 w-2 rounded-full", s.visible?"bg-emerald-500":"bg-slate-300")} />
+                    <span className="font-medium">{fLabel(fid)}</span>
+                    <span className="text-slate-500">
+                      {s.visible?"visible":"hidden"}{s.required?", required":""}{!s.enabled?", disabled":""}{s.value?`, = ${s.value}`:""}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================ VERSION SWITCHER */
+const VERSIONS = [
+  { id:"v1", label:"Version 1", note:"Sentence-first builder", href:"rule-studio-v1.html" },
+  { id:"v2", label:"Version 2", note:"Structured form",        href:"rule-studio-demo.html" },
+  { id:"v3", label:"Version 3", note:"Block workspace",        href:"rule-studio-v3.html" },
+  { id:"v4", label:"Version 4", note:"Starter cards",          href:"rule-studio-v4.html" },
+  { id:"v5", label:"Version 5", note:"Guided composer",        href:"rule-studio-v5.html" },
+  { id:"v6", label:"Version 6", note:"Refined classic form",   href:"rule-studio-v6.html" },
+];
+const currentVersionId = () => {
+  const p = (typeof window!=="undefined" && window.location.pathname) || "";
+  if (p.indexOf("v6") >= 0) return "v6";
+  if (p.indexOf("v5") >= 0) return "v5";
+  if (p.indexOf("v4") >= 0) return "v4";
+  if (p.indexOf("v3") >= 0) return "v3";
+  if (p.indexOf("v1") >= 0) return "v1";
+  return "v2";
+};
+function VersionBar(){
+  const [open,setOpen]=useState(false);
+  const cur = currentVersionId();
+  const curV = VERSIONS.find(v=>v.id===cur) || VERSIONS[1];
+  return (
+    <div className="flex shrink-0 items-center justify-between border-b border-slate-800 bg-slate-900 px-4 py-1.5 text-xs text-slate-300">
+      <span className="font-semibold tracking-wide text-slate-100">Request Form Rules · Rule Studio</span>
+      <div className="relative">
+        <button onClick={()=>setOpen(o=>!o)} className="inline-flex items-center gap-2 rounded-md bg-slate-800 px-3 py-1 font-medium text-white hover:bg-slate-700">
+          <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400" />
+          {curV.label} · {curV.note}
+          <span className="opacity-60">▾</span>
+        </button>
+        {open && (
+          <React.Fragment>
+            <div className="fixed inset-0 z-40" onClick={()=>setOpen(false)} />
+            <div className="absolute right-0 z-50 mt-1 w-60 overflow-hidden rounded-lg border border-slate-200 bg-white p-1 text-slate-700 shadow-xl">
+              <p className="px-2 py-1 text-[11px] uppercase tracking-wide text-slate-400">Switch version</p>
+              {VERSIONS.map(v=>(
+                <a key={v.id} href={v.href}
+                   className={cx("flex items-center justify-between rounded px-2 py-2 text-sm hover:bg-slate-100", v.id===cur && "bg-slate-50")}>
+                  <span><span className="font-medium">{v.label}</span><span className="block text-xs text-slate-400">{v.note}</span></span>
+                  {v.id===cur && <span className="text-xs font-medium text-emerald-600">current</span>}
+                </a>
+              ))}
+            </div>
+          </React.Fragment>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================ APP */
+function App(){
+  const [rules, setRules] = useState(SEED);
+  const [view, setView] = useState({ screen:"list" }); // {screen:'studio', id|null}
+
+  const startCreate = () => setView({ screen:"studio", rule:newRule(), isNew:true });
+  const startEdit = id => setView({ screen:"studio", rule:rules.find(r=>r.id===id), isNew:false });
+  const cancel = () => setView({ screen:"list" });
+  const save = draft => {
+    setRules(rs => rs.some(r=>r.id===draft.id) ? rs.map(r=>r.id===draft.id?draft:r) : [...rs, draft]);
+    setView({ screen:"list" });
+  };
+
+  return (
+    <div className="flex h-screen flex-col">
+      <VersionBar />
+      {view.screen==="studio"
+        ? <RuleStudio initial={view.rule} isNew={view.isNew} allRules={rules} onCancel={cancel} onSave={save} />
+        : <div className="flex-1 overflow-y-auto"><RulesList rules={rules} setRules={setRules} onCreate={startCreate} onEdit={startEdit} /></div>}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
