@@ -6,3 +6,12 @@ desktop.ini
 
 # Node (not used here, but just in case)
 node_modules/
+
+# Internal docs — kept local only, not published to the public repo
+CLAUDE.md
+HANDOFF.md
+SESSION_LOG.md
+V8-STRATEGY.md
+V8-SPEC.md
+V8-PLAN.md
+OPTION-A-DESIGN.md
