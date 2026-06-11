@@ -21,19 +21,106 @@
 const { useState, useMemo, useRef } = React;
 
 /* ============================================================ DOMAIN DATA */
-const FIELDS = [
-  { id:"priority",      label:"Priority",        type:"select", options:["Low","Medium","High"] },
-  { id:"category",      label:"Category",        type:"select", options:["Hardware","Network","Software"] },
-  { id:"group",         label:"Group",           type:"select", options:["IT Support","HR","Finance"] },
-  { id:"status",        label:"Status",          type:"select", options:["Open","In Progress","Closed"] },
-  { id:"assignee",      label:"Assignee",        type:"text" },
-  { id:"assetTag",      label:"Asset Tag",       type:"text" },
-  { id:"dueDate",       label:"Due Date",        type:"date" },
-  { id:"approverNotes", label:"Approver Notes",  type:"text" },
-  { id:"cost",          label:"Cost",            type:"number" },
+// Field groups shown as headers in the field dropdown (DD1)
+const FIELD_GROUPS = [
+  { id:"REQUESTER", label:"Requester Fields",      short:"Requester" },
+  { id:"LOGGED_IN", label:"Logged-in User Fields", short:"Logged-in User" },
+  { id:"REQUEST",   label:"Request Fields",        short:"Request" },
+  { id:"GLOBAL",    label:"Global Fields",         short:"Global" },
 ];
-const fieldOf  = id => FIELDS.find(f => f.id === id) || { id, label:id, type:"text" };
+const groupShort = id => (FIELD_GROUPS.find(g=>g.id===id)||{}).short || id;
+
+// Operator sets by field kind (DD2 depends on the field chosen in DD1)
+const OP_SETS = {
+  TEXT:       ["EQUALS","NOT_EQUALS","STARTS_WITH","ENDS_WITH","CONTAINS","IS_NOT_BLANK","IS_BLANK"],
+  CHOICE:     ["MATCH_ANY","MATCH_ALL","IS_EMPTY","IS_NOT_EMPTY"],
+  MEMBERSHIP: ["IN","NOT_IN"],
+};
+
+// Reusable option lists for choice/membership fields (DD3 values)
+const OPT = {
+  group:    ["IT Support","HR","Finance","Network","Facilities"],
+  tz:       ["UTC","IST (GMT+5:30)","EST","PST","CET"],
+  loc:      ["New York","London","Mumbai","Berlin","Remote"],
+  dept:     ["IT","HR","Finance","Sales","Operations"],
+  level:    ["Tier 0","Tier 1","Tier 2","Tier 3"],
+  roles:    ["Admin","Agent","Requester","Manager","Approver"],
+  impact:   ["Low","Medium","High"],
+  priority: ["Low","Medium","High","Urgent"],
+  tags:     ["VIP","Escalated","Onboarding","Hardware","Security"],
+  assignee: ["Unassigned","Priya","Marco","Sara","Alex"],
+  sentiment:["Positive","Neutral","Negative"],
+  status:   ["Open","In Progress","On Hold","Resolved","Closed"],
+  reqType:  ["Incident","Service Request","Problem","Change"],
+  category: ["Hardware","Software","Network","Access"],
+  urgency:  ["Low","Medium","High"],
+  company:  ["Acme","Globex","Initech","Umbrella"],
+  vendor:   ["Dell","Cisco","Microsoft","Apple"],
+  portal:   ["Employee Portal","Customer Portal","Partner Portal"],
+};
+
+const _slugName = n => n.replace(/[^a-zA-Z0-9]+/g,"_").replace(/^_+|_+$/g,"").toLowerCase();
+function mkField(group, name, type, options){
+  return { id: group.toLowerCase()+"__"+_slugName(name), group, name,
+           label: groupShort(group)+" - "+name, type,
+           options: options || null,
+           opset: type==="choice" ? "CHOICE" : type==="membership" ? "MEMBERSHIP" : "TEXT" };
+}
+const FIELDS = [
+  // ---- Requester Fields ----
+  mkField("REQUESTER","Requester Group","choice",OPT.group),
+  mkField("REQUESTER","Name","text"),
+  mkField("REQUESTER","Time Zone","choice",OPT.tz),
+  mkField("REQUESTER","Support Level","choice",OPT.level),
+  mkField("REQUESTER","Logon Name","text"),
+  mkField("REQUESTER","Location","choice",OPT.loc),
+  mkField("REQUESTER","Manager","text"),
+  mkField("REQUESTER","Department","choice",OPT.dept),
+  mkField("REQUESTER","Email","text"),
+  // ---- Logged-in User Fields ----
+  mkField("LOGGED_IN","Requester Group","choice",OPT.group),
+  mkField("LOGGED_IN","Name","text"),
+  mkField("LOGGED_IN","Time Zone","choice",OPT.tz),
+  mkField("LOGGED_IN","Support Level","choice",OPT.level),
+  mkField("LOGGED_IN","Logon Name","text"),
+  mkField("LOGGED_IN","Location","choice",OPT.loc),
+  mkField("LOGGED_IN","Manager","text"),
+  mkField("LOGGED_IN","Department","choice",OPT.dept),
+  mkField("LOGGED_IN","Roles","membership",OPT.roles),
+  mkField("LOGGED_IN","Email","text"),
+  // ---- Request Fields ----
+  mkField("REQUEST","Cc Emails","text"),
+  mkField("REQUEST","Technician Group","choice",OPT.group),
+  mkField("REQUEST","Impact","choice",OPT.impact),
+  mkField("REQUEST","Priority","choice",OPT.priority),
+  mkField("REQUEST","Tags","membership",OPT.tags),
+  mkField("REQUEST","Summary","text"),
+  mkField("REQUEST","Assignee","choice",OPT.assignee),
+  mkField("REQUEST","Sentiment","choice",OPT.sentiment),
+  mkField("REQUEST","Status","choice",OPT.status),
+  mkField("REQUEST","Request Type","choice",OPT.reqType),
+  mkField("REQUEST","Subject","text"),
+  mkField("REQUEST","Category","choice",OPT.category),
+  mkField("REQUEST","Urgency","choice",OPT.urgency),
+  mkField("REQUEST","Company","choice",OPT.company),
+  mkField("REQUEST","Vendor","choice",OPT.vendor),
+  mkField("REQUEST","Location","choice",OPT.loc),
+  mkField("REQUEST","Department","choice",OPT.dept),
+  mkField("REQUEST","New Datetime","date"),
+  mkField("REQUEST","New Text Input","text"),
+  mkField("REQUEST","Description","text"),
+  mkField("REQUEST","Attachment","text"),
+  mkField("REQUEST","Requester","choice",OPT.assignee),
+  // ---- Global Fields ----
+  mkField("GLOBAL","Support Portal","choice",OPT.portal),
+];
+const fieldOf  = id => FIELDS.find(f => f.id === id) || { id, label:id, name:id, type:"text", opset:"TEXT", options:null };
 const fLabel   = id => fieldOf(id).label;
+const fieldOps = id => OP_SETS[fieldOf(id).opset] || OP_SETS.TEXT;
+// Fields a rule action can target = actual form fields (Request + Global)
+const FORM_FIELDS = FIELDS.filter(f => f.group==="REQUEST" || f.group==="GLOBAL");
+// Action target fields (shown after an action is chosen) — short names, real-product order
+const ACTION_FIELDS = ["request__description","request__status","request__attachment","request__priority","request__cc_emails","request__requester","request__impact","request__department","request__location","request__vendor","request__urgency","request__tags","request__technician_group","request__assignee","request__subject"].map(id => fieldOf(id));
 
 const AUDIENCES = [
   { id:"ALL",        label:"All Users",        actor:"any user" },
@@ -76,49 +163,67 @@ const AUD_FRIENDLY = [
 const audFriendly = id => (AUD_FRIENDLY.find(a=>a.id===id)||{}).label || id;
 const audPlural = id => ({ ALL:"everyone", REQUESTERS:"requesters", TECHNICIANS:"technicians", LOGGED_IN:"signed-in users" }[id] || "everyone");
 
+// val: how DD3 behaves — "single" (one value), "multi" (multi-select chips), "none" (no value)
 const OPERATORS = [
-  { id:"BECOMES",       label:"becomes" },
-  { id:"EQUALS",        label:"is" },
-  { id:"NOT_EQUALS",    label:"is not" },
-  { id:"GREATER_THAN",  label:"is greater than" },
-  { id:"LESS_THAN",     label:"is less than" },
-  { id:"CONTAINS",      label:"contains" },
-  { id:"IS_EMPTY",      label:"is empty" },
-  { id:"IS_NOT_EMPTY",  label:"is not empty" },
+  { id:"EQUALS",       label:"Equals",          val:"single" },
+  { id:"NOT_EQUALS",   label:"Not Equals",      val:"single" },
+  { id:"STARTS_WITH",  label:"Start With",      val:"single" },
+  { id:"ENDS_WITH",    label:"End With",        val:"single" },
+  { id:"CONTAINS",     label:"Contains",        val:"single" },
+  { id:"IS_NOT_BLANK", label:"Is Not Blank",    val:"none" },
+  { id:"IS_BLANK",     label:"Is Blank",        val:"none" },
+  { id:"MATCH_ANY",    label:"Match Any",       val:"multi" },
+  { id:"MATCH_ALL",    label:"Match All",       val:"multi" },
+  { id:"IS_EMPTY",     label:"Is Empty",        val:"none" },
+  { id:"IS_NOT_EMPTY", label:"Is Not Empty",    val:"none" },
+  { id:"IN",           label:"in",              val:"multi" },
+  { id:"NOT_IN",       label:"not in",          val:"multi" },
+  // legacy ids kept so older summaries/eval paths never throw
+  { id:"BECOMES",      label:"becomes",         val:"single" },
+  { id:"GREATER_THAN", label:"is greater than", val:"single" },
+  { id:"LESS_THAN",    label:"is less than",    val:"single" },
 ];
 const opLabel = id => (OPERATORS.find(o=>o.id===id)||{}).label || id;
-const VALUELESS = ["IS_EMPTY","IS_NOT_EMPTY"];
+const opVal   = id => (OPERATORS.find(o=>o.id===id)||{}).val || "single";
 
 const ACTION_TYPES = [
-  { id:"MANDATE",  label:"Make required",  phrase:(f)=>`make ${f} required` },
-  { id:"OPTIONAL", label:"Make optional",  phrase:(f)=>`make ${f} optional` },
-  { id:"SHOW",     label:"Show",           phrase:(f)=>`show ${f}` },
-  { id:"HIDE",     label:"Hide",           phrase:(f)=>`hide ${f}` },
-  { id:"ENABLE",   label:"Make editable",  phrase:(f)=>`make ${f} editable` },
-  { id:"DISABLE",  label:"Make read-only", phrase:(f)=>`make ${f} read-only` },
-  { id:"SET_VALUE",label:"Set value",      phrase:(f,v)=>`set ${f} to ${v||"…"}` },
+  { id:"SHOW",         label:"Show",              phrase:(f)=>`show ${f}` },
+  { id:"HIDE",         label:"Hide",              phrase:(f)=>`hide ${f}` },
+  { id:"MANDATE",      label:"Mandate",           phrase:(f)=>`make ${f} mandatory` },
+  { id:"OPTIONAL",     label:"Non-Mandate",       phrase:(f)=>`make ${f} non-mandatory` },
+  { id:"ENABLE",       label:"Enable",            phrase:(f)=>`enable ${f}` },
+  { id:"DISABLE",      label:"Disable",           phrase:(f)=>`disable ${f}` },
+  { id:"SET_VALUE",    label:"Set Value",         phrase:(f,v)=>`set ${f} to ${v||"…"}` },
+  { id:"CLEAR_VALUE",  label:"Clear Value",       phrase:(f)=>`clear ${f}` },
+  { id:"SHOW_OPTIONS", label:"Show Options",      phrase:(f)=>`show options for ${f}` },
+  { id:"HIDE_OPTIONS", label:"Hide Options",      phrase:(f)=>`hide options for ${f}` },
+  { id:"RUN_SCRIPT",   label:"Run Custom Script", phrase:(f)=>`run a custom script` },
+  { id:"FILTER_DATA",  label:"Filter Data",       phrase:(f)=>`filter the data in ${f}` },
 ];
-const REVERSIBLE = ["SHOW","HIDE","MANDATE","OPTIONAL","ENABLE","DISABLE"];
-const OPPOSITE = { SHOW:"HIDE", HIDE:"SHOW", MANDATE:"OPTIONAL", OPTIONAL:"MANDATE", ENABLE:"DISABLE", DISABLE:"ENABLE" };
+const REVERSIBLE = ["SHOW","HIDE","MANDATE","OPTIONAL","ENABLE","DISABLE","SHOW_OPTIONS","HIDE_OPTIONS"];
+const OPPOSITE = { SHOW:"HIDE", HIDE:"SHOW", MANDATE:"OPTIONAL", OPTIONAL:"MANDATE", ENABLE:"DISABLE", DISABLE:"ENABLE", SHOW_OPTIONS:"HIDE_OPTIONS", HIDE_OPTIONS:"SHOW_OPTIONS" };
 const actionPhrase = a => {
   const t = ACTION_TYPES.find(x=>x.id===a.type);
-  return t ? t.phrase(fLabel(a.fieldId), a.value) : a.type;
+  const fName = fieldOf(a.fieldId).name || fLabel(a.fieldId);
+  return t ? t.phrase(fName, a.value) : a.type;
 };
 
 let _uid = 100;
 const uid = p => `${p}_${++_uid}`;
 
 /* ============================================================ FACTORIES */
-const newCondition = () => ({ id:uid("c"), fieldId:"priority", op:"BECOMES", value:"High" });
-const newAction    = () => ({ id:uid("a"), type:"MANDATE", fieldId:"assignee", value:"" });
-const newBlock     = () => ({ id:uid("b"), match:"ALL", mode:"ACTION", conditions:[newCondition()], actions:[newAction()] });
+const defaultVal  = op => { const k=opVal(op); return k==="multi" ? [] : k==="none" ? undefined : ""; };
+const newCondition = () => { const fieldId="request__priority"; const op=fieldOps(fieldId)[0]; return { id:uid("c"), fieldId, op, value:defaultVal(op) }; };
+const newGroup     = () => ({ id:uid("g"), kind:"GROUP", match:"ANY", conditions:[ newCondition() ] });
+const newAction    = () => ({ id:uid("a"), type:"MANDATE", fieldId:"request__assignee", value:"" });
+const newBlock     = () => ({ id:uid("b"), match:"ALL", mode:"ACTION", conditions:[ newCondition() ], actions:[ newAction() ] });
 const newRule = () => ({
   id: uid("rule"),
   name: "",
   description: "",
-  trigger: { lifecycle:"CREATE", moment:"ON_FIELD_CHANGE", fieldId:"priority" },
+  trigger: { lifecycle:"CREATE", moment:"ON_FIELD_CHANGE", fieldId:"request__priority" },
   scope:   { audience:"TECHNICIANS" },
-  blocks:  [ newBlock() ],
+  blocks:  [ { id: uid("b"), match:"ALL", mode:"ACTION", conditions:[], actions:[] } ],  // guided: start empty (no prefilled condition/action)
   advanced:{ reverseOnFalse:false, enforceSystemWide:false },
   status:  "ENABLED",
   audit:   { createdBy:"You", createdAt:"just now", modifiedBy:"You", modifiedAt:"just now", version:1 },
@@ -127,11 +232,11 @@ const newRule = () => ({
 /* ============================================================ SEED RULES */
 const SEED = [
   { id:"rule_1",
-    trigger:{ lifecycle:"CREATE", moment:"ON_FIELD_CHANGE", fieldId:"priority" },
+    trigger:{ lifecycle:"CREATE", moment:"ON_FIELD_CHANGE", fieldId:"request__priority" },
     scope:{ audience:"TECHNICIANS" },
     blocks:[{ id:"b1", match:"ALL",
-      conditions:[{id:"c1", fieldId:"priority", op:"BECOMES", value:"High"}],
-      actions:[{id:"a1", type:"MANDATE", fieldId:"assignee", value:""}] }],
+      conditions:[{id:"c1", fieldId:"request__priority", op:"MATCH_ANY", value:["High","Urgent"]}],
+      actions:[{id:"a1", type:"MANDATE", fieldId:"request__assignee", value:""}] }],
     advanced:{ reverseOnFalse:false, enforceSystemWide:false }, status:"ENABLED",
     audit:{ createdBy:"Priya", createdAt:"21 Apr 2026 05:24 PM", modifiedBy:"Marco", modifiedAt:"2h ago", version:3 } },
 
@@ -139,7 +244,7 @@ const SEED = [
     trigger:{ lifecycle:"CREATE_EDIT", moment:"ON_LOAD" },
     scope:{ audience:"ALL" },
     blocks:[{ id:"b1", match:"ALL", conditions:[],
-      actions:[{id:"a1", type:"HIDE", fieldId:"approverNotes", value:""}] }],
+      actions:[{id:"a1", type:"HIDE", fieldId:"request__cc_emails", value:""}] }],
     advanced:{ reverseOnFalse:false, enforceSystemWide:false }, status:"ENABLED",
     audit:{ createdBy:"Marco", createdAt:"21 Apr 2026 05:14 PM", modifiedBy:"Marco", modifiedAt:"3d ago", version:1 } },
 
@@ -147,26 +252,26 @@ const SEED = [
     trigger:{ lifecycle:"EDIT", moment:"ON_SUBMIT" },
     scope:{ audience:"REQUESTERS" },
     blocks:[{ id:"b1", match:"ALL",
-      conditions:[{id:"c1", fieldId:"cost", op:"GREATER_THAN", value:"5000"}],
-      actions:[{id:"a1", type:"MANDATE", fieldId:"dueDate", value:""}] }],
+      conditions:[{id:"c1", fieldId:"request__impact", op:"MATCH_ANY", value:["High"]}],
+      actions:[{id:"a1", type:"MANDATE", fieldId:"request__subject", value:""}] }],
     advanced:{ reverseOnFalse:false, enforceSystemWide:false }, status:"DISABLED",
     audit:{ createdBy:"Priya", createdAt:"20 Apr 2026 12:12 PM", modifiedBy:"Priya", modifiedAt:"1w ago", version:2 } },
 
   { id:"rule_4",
-    trigger:{ lifecycle:"CREATE", moment:"ON_FIELD_CHANGE", fieldId:"priority" },
+    trigger:{ lifecycle:"CREATE", moment:"ON_FIELD_CHANGE", fieldId:"request__priority" },
     scope:{ audience:"ALL" },
     blocks:[{ id:"b1", match:"ALL",
-      conditions:[{id:"c1", fieldId:"priority", op:"BECOMES", value:"High"}],
-      actions:[{id:"a1", type:"OPTIONAL", fieldId:"assignee", value:""}] }],
+      conditions:[{id:"c1", fieldId:"request__priority", op:"MATCH_ANY", value:["High","Urgent"]}],
+      actions:[{id:"a1", type:"OPTIONAL", fieldId:"request__assignee", value:""}] }],
     advanced:{ reverseOnFalse:false, enforceSystemWide:false }, status:"ENABLED",
     audit:{ createdBy:"Marco", createdAt:"20 Apr 2026 10:24 AM", modifiedBy:"Marco", modifiedAt:"1d ago", version:1 } },
 
   { id:"rule_5",
-    trigger:{ lifecycle:"EDIT", moment:"ON_FIELD_CHANGE", fieldId:"category" },
+    trigger:{ lifecycle:"EDIT", moment:"ON_FIELD_CHANGE", fieldId:"request__category" },
     scope:{ audience:"TECHNICIANS" },
     blocks:[{ id:"b1", match:"ALL",
-      conditions:[{id:"c1", fieldId:"category", op:"BECOMES", value:"Hardware"}],
-      actions:[{id:"a1", type:"SET_VALUE", fieldId:"status", value:"In Progress"}] }],
+      conditions:[{id:"c1", fieldId:"request__category", op:"MATCH_ANY", value:["Hardware"]}],
+      actions:[{id:"a1", type:"SET_VALUE", fieldId:"request__status", value:"In Progress"}] }],
     advanced:{ reverseOnFalse:false, enforceSystemWide:false }, status:"ENABLED",
     audit:{ createdBy:"Priya", createdAt:"18 Apr 2026 08:36 AM", modifiedBy:"Priya", modifiedAt:"5d ago", version:2 } },
 
@@ -174,30 +279,30 @@ const SEED = [
     trigger:{ lifecycle:"CREATE_EDIT", moment:"ON_LOAD" },
     scope:{ audience:"ALL" },
     blocks:[{ id:"b1", match:"ALL",
-      conditions:[{id:"c1", fieldId:"category", op:"BECOMES", value:"Software"}],
-      actions:[{id:"a1", type:"HIDE", fieldId:"assetTag", value:""}] }],
+      conditions:[{id:"c1", fieldId:"request__category", op:"MATCH_ANY", value:["Software"]}],
+      actions:[{id:"a1", type:"HIDE", fieldId:"request__vendor", value:""}] }],
     advanced:{ reverseOnFalse:false, enforceSystemWide:false }, status:"ENABLED",
     audit:{ createdBy:"Marco", createdAt:"18 Apr 2026 12:37 PM", modifiedBy:"Marco", modifiedAt:"6d ago", version:1 } },
 
   { id:"rule_7",
-    trigger:{ lifecycle:"EDIT", moment:"ON_FIELD_CHANGE", fieldId:"cost" },
+    trigger:{ lifecycle:"EDIT", moment:"ON_FIELD_CHANGE", fieldId:"request__priority" },
     scope:{ audience:"LOGGED_IN" },
     blocks:[{ id:"b1", match:"ALL",
-      conditions:[{id:"c1", fieldId:"cost", op:"GREATER_THAN", value:"1000"}],
-      actions:[{id:"a1", type:"SHOW", fieldId:"approverNotes", value:""}] }],
+      conditions:[{id:"c1", fieldId:"request__priority", op:"MATCH_ANY", value:["High"]}],
+      actions:[{id:"a1", type:"SHOW", fieldId:"request__subject", value:""}] }],
     advanced:{ reverseOnFalse:true, enforceSystemWide:false }, status:"ENABLED",
     audit:{ createdBy:"Priya", createdAt:"20 Apr 2026 01:24 AM", modifiedBy:"Priya", modifiedAt:"1w ago", version:1 } },
 
   { id:"rule_8",
-    trigger:{ lifecycle:"CREATE_EDIT", moment:"ON_FIELD_CHANGE", fieldId:"priority" },
+    trigger:{ lifecycle:"CREATE_EDIT", moment:"ON_FIELD_CHANGE", fieldId:"request__priority" },
     scope:{ audience:"ALL" },
     blocks:[
       { id:"b1", match:"ALL",
-        conditions:[{id:"c1", fieldId:"priority", op:"BECOMES", value:"Low"}],
-        actions:[{id:"a1", type:"OPTIONAL", fieldId:"dueDate", value:""}] },
+        conditions:[{id:"c1", fieldId:"request__priority", op:"MATCH_ANY", value:["Low"]}],
+        actions:[{id:"a1", type:"OPTIONAL", fieldId:"request__sentiment", value:""}] },
       { id:"b2", match:"ALL",
-        conditions:[{id:"c2", fieldId:"category", op:"BECOMES", value:"Network"}],
-        actions:[{id:"a2", type:"SHOW", fieldId:"assetTag", value:""}] },
+        conditions:[{id:"c2", fieldId:"request__category", op:"MATCH_ANY", value:["Network"]}],
+        actions:[{id:"a2", type:"SHOW", fieldId:"request__company", value:""}] },
     ],
     advanced:{ reverseOnFalse:false, enforceSystemWide:false }, status:"DISABLED",
     audit:{ createdBy:"Marco", createdAt:"18 Apr 2026 08:28 AM", modifiedBy:"Marco", modifiedAt:"1w ago", version:1 } },
@@ -210,11 +315,30 @@ function triggerClause(rule){
   else if (rule.trigger.moment === "ON_SUBMIT")  s += ` and submits the request`;
   return s;
 }
+// A block's conditions can contain leaf conditions and one-level GROUP items.
+function flatConds(block){
+  const out=[];
+  (block.conditions||[]).forEach(it=>{ if(it && it.kind==="GROUP") out.push(...(it.conditions||[])); else if(it) out.push(it); });
+  return out;
+}
+function firstLeaf(block){ return flatConds(block)[0] || null; }
+function condValText(c){ return Array.isArray(c.value) ? c.value.join("/") : (c.value==null ? "" : String(c.value)); }
+function condText(c){
+  const f=fLabel(c.fieldId), o=opLabel(c.op).toLowerCase(), k=opVal(c.op);
+  if(k==="none") return `${f} ${o}`;
+  if(k==="multi"){ const a=Array.isArray(c.value)?c.value:[]; return `${f} ${o} ${a.join(", ")||"…"}`; }
+  return `${f} ${o} ${c.value||"…"}`;
+}
 function condClause(block){
-  const parts = block.conditions.map(c =>
-    VALUELESS.includes(c.op) ? `${fLabel(c.fieldId)} ${opLabel(c.op)}`
-                             : `${fLabel(c.fieldId)} ${opLabel(c.op)} ${c.value}`);
-  return parts.join(block.match === "ALL" ? " and " : " or ");
+  const sep = block.match === "ALL" ? " and " : " or ";
+  const parts = (block.conditions||[]).map(it=>{
+    if(it && it.kind==="GROUP"){
+      const inner=(it.conditions||[]).map(condText).join(it.match==="ALL"?" and ":" or ");
+      return inner ? `(${inner})` : "";
+    }
+    return condText(it);
+  }).filter(Boolean);
+  return parts.join(sep);
 }
 function listJoin(arr){
   if (arr.length <= 1) return arr[0] || "";
@@ -255,51 +379,286 @@ function detectConflicts(rule, all){
   const out = [];
   const others = all.filter(r => r.id !== rule.id && r.status === "ENABLED");
   const mine = allActions(rule);
+  const myCond = new Set(); rule.blocks.forEach(b=>flatConds(b).forEach(c=>myCond.add(c.fieldId)));
   for (const o of others){
     if (!triggerOverlap(rule, o)) continue;
     for (const da of mine) for (const oa of allActions(o)){
       if (da.fieldId !== oa.fieldId) continue;
       if (OPPOSITE[da.type] === oa.type){
-        out.push({ type:"CONTRADICTORY", severity:"HIGH", with:o, field:da.fieldId,
-          text:`This rule does “${actionPhrase(da)}” while ${ruleName(o)} does “${actionPhrase(oa)}” on the same trigger.` });
+        out.push({ type:"CONTRADICTORY", category:"CONTRADICTORY", severity:"HIGH", with:o, field:da.fieldId,
+          text:`This rule does "${actionPhrase(da)}" while ${ruleName(o)} does "${actionPhrase(oa)}" on the same trigger.` });
       } else if (da.type === oa.type){
-        out.push({ type:"REDUNDANT", severity:"MEDIUM", with:o, field:da.fieldId,
-          text:`This rule duplicates “${actionPhrase(da)}” already done by ${ruleName(o)}.` });
-      } else if (da.type==="SET_VALUE" && oa.type==="SET_VALUE" && da.value!==oa.value){
-        out.push({ type:"CONTRADICTORY", severity:"HIGH", with:o, field:da.fieldId,
-          text:`This rule sets ${fLabel(da.fieldId)} to “${da.value}” but ${ruleName(o)} sets it to “${oa.value}”.` });
+        if (da.type==="SET_VALUE" && da.value!==oa.value)
+          out.push({ type:"CONTRADICTORY", category:"CONTRADICTORY", severity:"HIGH", with:o, field:da.fieldId,
+            text:`This rule sets ${fLabel(da.fieldId)} to "${da.value}" but ${ruleName(o)} sets it to "${oa.value}".` });
+        else
+          out.push({ type:"REDUNDANT", category:"DUPLICATE", severity:"MEDIUM", with:o, field:da.fieldId,
+            text:`This rule duplicates "${actionPhrase(da)}" already done by ${ruleName(o)}.` });
+      } else {
+        out.push({ type:"SAME_TIME", category:"SAME_TIME", severity:"LOW", with:o, field:da.fieldId,
+          text:`This rule and ${ruleName(o)} both change ${fLabel(da.fieldId)} at the same moment.` });
       }
     }
+    const oCond = new Set(); o.blocks.forEach(b=>flatConds(b).forEach(c=>oCond.add(c.fieldId)));
+    const shared = [...myCond].find(f=>oCond.has(f));
+    if (shared) out.push({ type:"OVERLAP", category:"OVERLAP", severity:"LOW", with:o, field:shared,
+      text:`This rule and ${ruleName(o)} can both run — they each check ${fLabel(shared)}.` });
   }
-  // dedupe by with+field+type
   const seen = new Set();
-  return out.filter(c => { const k=c.with.id+c.field+c.type; if(seen.has(k)) return false; seen.add(k); return true; });
+  return out.filter(c => { const k=c.with.id+c.category+c.field; if(seen.has(k)) return false; seen.add(k); return true; });
 }
 function ruleName(r){
   const s = summarize(r);
   if (s) return `“${s.replace(/\.$/,"")}”`;
   return `a ${r.blocks.length}-block rule`;
 }
+/* ============================================================ CONFLICT REVIEW (V6 — actionable)
+   V6 diverges from the shared ConflictReview: keeps the grouped categories + summary, but each
+   conflict item now carries resolution actions, an inline "View" peek, and a post-action state.
+   Behaviour is wired up the tree (RuleStudio -> App): disable/edit the other rule, accept, ignore. */
+const CONFLICT_CATS = [
+  { id:"CONTRADICTORY", label:"Contradictory Rules",            short:"Contradictory", blurb:"Two rules try to do opposite things to the same field.",      tone:"red" },
+  { id:"DUPLICATE",     label:"Duplicate Rules",                short:"Duplicate",     blurb:"Two rules do the same thing under similar conditions.",        tone:"amber" },
+  { id:"OVERLAP",       label:"Overlapping Conditions",         short:"Overlapping",   blurb:"Two rules may run together because their conditions overlap.", tone:"violet" },
+  { id:"SAME_TIME",     label:"Rules Running at the Same Time", short:"Same time",     blurb:"Two rules affect the same field at the same moment.",          tone:"slate" },
+];
+const CONFLICT_TONE = {
+  red:"border-red-200 bg-red-50 text-red-700", amber:"border-amber-200 bg-amber-50 text-amber-700",
+  violet:"border-violet-200 bg-violet-50 text-violet-700", slate:"border-slate-200 bg-slate-100 text-slate-600",
+};
+function groupConflicts(list){
+  return CONFLICT_CATS.map(cat => ({ cat, items:(list||[]).filter(c => (c.category||"CONTRADICTORY")===cat.id) })).filter(g => g.items.length);
+}
+
+/* stable id for a single conflict (other rule × field × kind) — used to track its resolution */
+const conflictKey = c => c.with.id + "|" + c.field + "|" + c.type;
+
+/* the seven allowed resolution actions, in display order */
+const RES_LABEL = {
+  VIEW:    "View conflicting rule",
+  EDIT:    "Edit the other rule",
+  DISABLE: "Disable conflicting rule",
+  WIN:     "Let this rule win",
+  NARROW:  "Keep both by narrowing conditions",
+  MERGE:   "Merge with existing rule",
+  LATER:   "Resolve later",
+};
+const RES_ORDER = ["VIEW","EDIT","DISABLE","WIN","NARROW","MERGE","LATER"];
+
+/* per-category human guidance + which actions to surface first + whether a one-click fix exists */
+const CAT_RESOLUTION = {
+  CONTRADICTORY: { explain:"These two rules are trying to do opposite things to the same field — only one can win.",            primary:["WIN","VIEW"],    recommend:"WIN",     auto:true  },
+  DUPLICATE:     { explain:"The same action already exists in another rule, so this one is repeating it.",                      primary:["DISABLE","VIEW"],recommend:"DISABLE", auto:true  },
+  OVERLAP:       { explain:"Both rules can run together because their conditions overlap — that may not be what you intended.", primary:["NARROW","VIEW"],  recommend:"NARROW",  auto:false },
+  SAME_TIME:     { explain:"Both rules change the same field at the same moment, so the result depends on which runs last.",     primary:["WIN","VIEW"],    recommend:"WIN",     auto:true  },
+};
+
+/* resolution states shown after an action */
+const RES_STATE = {
+  REVIEW:   { label:"Needs review", cls:"border-amber-200 bg-amber-50 text-amber-700" },
+  RESOLVED: { label:"Resolved",     cls:"border-emerald-200 bg-emerald-50 text-emerald-700" },
+  ACCEPTED: { label:"Accepted",     cls:"border-sky-200 bg-sky-50 text-sky-700" },
+  IGNORED:  { label:"Ignored",      cls:"border-slate-200 bg-slate-100 text-slate-500" },
+};
+const TERMINAL_STATE = new Set(["RESOLVED","ACCEPTED","IGNORED"]);
+
+/* extra guidance shown inline when the user picks a "guide me" action */
+const RES_GUIDE = {
+  NARROW: "Make this rule's conditions more specific (in the Conditions section below) so the two rules no longer apply to the same requests. Then both can safely stay on.",
+  MERGE:  "Bring the other rule's conditions and actions into this rule, then turn the other rule off — so everything lives in one place.",
+};
+
+/* read-only peek at the conflicting rule, shown inline under an item */
+function ConflictPeek({ rule }){
+  return (
+    <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 p-2.5 text-xs">
+      <div className="flex items-center gap-2">
+        <span className="font-medium text-slate-700">{rule.name || "Untitled rule"}</span>
+        <span className={cx("rounded-full px-1.5 py-0.5 text-[10px] font-medium", rule.status==="ENABLED"?"bg-emerald-100 text-emerald-700":"bg-slate-200 text-slate-500")}>{rule.status==="ENABLED"?"On":"Off"}</span>
+      </div>
+      <p className="mt-1 text-slate-600"><span className="text-slate-400">In plain English: </span>{summarize(rule) || "Multiple requirements."}</p>
+      <ul className="mt-1.5 space-y-0.5 text-slate-500">
+        {rule.blocks.map(b=>(<li key={b.id}>• {b.conditions.length?`When ${condClause(b)}, `:""}{actClause(b)}.</li>))}
+      </ul>
+    </div>
+  );
+}
+
+/* one conflict row: the plain-English problem, a state pill, and calm inline actions + overflow */
+function ConflictItem({ c, state, note, onAction }){
+  const [peek, setPeek] = useState(false);
+  const [guide, setGuide] = useState(null);
+  const cfg = CAT_RESOLUTION[c.category || "CONTRADICTORY"] || CAT_RESOLUTION.CONTRADICTORY;
+  const done = TERMINAL_STATE.has(state);
+  const st = RES_STATE[state] || RES_STATE.REVIEW;
+
+  const fire = id => {
+    if (id==="VIEW"){ setPeek(p=>!p); return; }
+    if (id==="NARROW" || id==="MERGE") setGuide(g => g===id ? g : id);
+    onAction(id, c);
+  };
+  const ActBtn = ({ id, primary }) => (
+    <button onClick={()=>fire(id)}
+      className={cx("rounded-md border px-2 py-1 text-[11px] font-medium transition-colors",
+        primary ? "border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50")}>
+      {RES_LABEL[id]}
+    </button>
+  );
+  const overflow = RES_ORDER.filter(id => id!=="VIEW" && !cfg.primary.includes(id));
+
+  return (
+    <li className="rounded-md border border-slate-100 bg-white px-3 py-2">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-start gap-1.5 text-xs text-slate-600">
+          <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-slate-300" />
+          <span>{c.text}</span>
+        </div>
+        <span className={cx("shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium", st.cls)}>{st.label}</span>
+      </div>
+
+      {note && <p className="mt-1 pl-3 text-[11px] italic text-slate-400">{note}</p>}
+      {guide && <p className="mt-1.5 rounded bg-sky-50 px-2 py-1.5 text-[11px] leading-snug text-sky-800">{RES_GUIDE[guide]}</p>}
+
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        {done ? (
+          <React.Fragment>
+            <button onClick={()=>fire("VIEW")} className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50">{RES_LABEL.VIEW}</button>
+            <button onClick={()=>onAction("UNDO", c)} className="px-1 text-[11px] font-medium text-slate-400 hover:text-slate-600 hover:underline">Undo</button>
+          </React.Fragment>
+        ) : (
+          <React.Fragment>
+            {cfg.primary.map((id,i)=><ActBtn key={id} id={id} primary={i===0 && id===cfg.recommend} />)}
+            <Dropdown align="right" trigger={
+              <button className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-500 hover:bg-slate-50">More actions ▾</button>}>
+              {close => (
+                <div className="w-56">
+                  {overflow.map(id=>(
+                    <button key={id} onClick={()=>{ fire(id); close(); }} className="block w-full rounded px-2 py-1.5 text-left text-xs text-slate-600 hover:bg-slate-100">{RES_LABEL[id]}</button>
+                  ))}
+                </div>
+              )}
+            </Dropdown>
+          </React.Fragment>
+        )}
+      </div>
+
+      {peek && <ConflictPeek rule={c.with} />}
+    </li>
+  );
+}
+
+function ConflictReview({ conflicts, resolutions, onAction }){
+  const res = resolutions || {};
+  const active = conflicts || [];
+  const activeKeys = new Set(active.map(conflictKey));
+  // keep showing items that dropped out of detection because they were just resolved (e.g. other rule disabled)
+  const resolvedExtra = Object.values(res).map(r => r.c).filter(c => c && !activeKeys.has(conflictKey(c)));
+  const all = [...active, ...resolvedExtra];
+  const stateOf = c => (res[conflictKey(c)] || {}).status || "REVIEW";
+  const noteOf  = c => (res[conflictKey(c)] || {}).label;
+  const groups = groupConflicts(all);
+  const [openCat, setOpenCat] = useState(null);
+  const firstPending = groups.find(g => g.items.some(c => stateOf(c)==="REVIEW")) || groups[0];
+  const open = openCat || (firstPending ? firstPending.cat.id : null);
+
+  if (!all.length) return (
+    <div className="flex items-center gap-2 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+      <span className="text-emerald-500">✓</span><span>No conflicts with your other rules — good to save.</span>
+    </div>
+  );
+
+  const pending  = all.filter(c => stateOf(c)==="REVIEW");
+  const autoCnt  = pending.filter(c => (CAT_RESOLUTION[c.category||"CONTRADICTORY"]||{}).auto).length;
+  const reviewCnt= pending.length - autoCnt;
+  const handled  = all.length - pending.length;
+  const allDone  = pending.length===0;
+
+  return (
+    <div className={cx("rounded-lg border p-3", allDone ? "border-emerald-200 bg-emerald-50/50" : "border-amber-200 bg-amber-50/50")}>
+      {/* resolution summary */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className={cx("text-sm font-semibold", allDone ? "text-emerald-800" : "text-amber-800")}>
+          {allDone ? `All ${all.length} conflict${all.length>1?"s":""} handled — good to save` : `${all.length} conflict${all.length>1?"s":""} found`}
+        </span>
+        {!allDone && autoCnt>0 && <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">{autoCnt} can be resolved in one step</span>}
+        {!allDone && reviewCnt>0 && <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">{reviewCnt} need a closer look</span>}
+        {handled>0 && <span className="rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500">{handled} handled</span>}
+      </div>
+      {/* category chips */}
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+        {groups.map(g => <span key={g.cat.id} className={cx("rounded-full border px-2 py-0.5 text-[11px] font-medium", CONFLICT_TONE[g.cat.tone])}>{g.items.length} {g.cat.short}</span>)}
+      </div>
+
+      <div className="mt-2 space-y-1.5">
+        {groups.map(g => {
+          const ex = open===g.cat.id;
+          const cfg = CAT_RESOLUTION[g.cat.id] || {};
+          const pend = g.items.filter(c => stateOf(c)==="REVIEW").length;
+          return (
+            <div key={g.cat.id} className="overflow-hidden rounded-md border border-slate-200 bg-white">
+              <button onClick={()=>setOpenCat(ex ? "_none" : g.cat.id)} className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left hover:bg-slate-50">
+                <span className="flex items-center gap-2">
+                  <span className={cx("inline-flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[11px] font-bold", CONFLICT_TONE[g.cat.tone])}>{g.items.length}</span>
+                  <span className="text-sm font-medium text-slate-700">{g.cat.label}</span>
+                  {pend===0 && <span className="text-[11px] font-medium text-emerald-600">✓ handled</span>}
+                </span>
+                <span className="text-[10px] text-slate-400">{ex?"▾":"▸"}</span>
+              </button>
+              {ex && (
+                <div className="border-t border-slate-100 px-3 py-2">
+                  <p className="mb-2 text-[11px] text-slate-500">{cfg.explain || g.cat.blurb}</p>
+                  <ul className="space-y-1.5">
+                    {g.items.map((c)=>(
+                      <ConflictItem key={conflictKey(c)} c={c} state={stateOf(c)} note={noteOf(c)} onAction={onAction} />
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 /* ============================================================ SIMULATION */
 function evalCondition(c, values){
+  if(!c) return true;
   const raw = values[c.fieldId];
   const v = raw === undefined ? "" : raw;
+  const arr = Array.isArray(c.value) ? c.value : (c.value==null || c.value==="" ? [] : [c.value]);
+  const s = String(v).toLowerCase();
+  const isBlank = (v==="" || v==null || (Array.isArray(v) && v.length===0));
   switch(c.op){
-    case "BECOMES":      return String(v) === String(c.value);
+    case "BECOMES":
     case "EQUALS":       return String(v) === String(c.value);
     case "NOT_EQUALS":   return String(v) !== String(c.value);
+    case "STARTS_WITH":  return s.startsWith(String(c.value).toLowerCase());
+    case "ENDS_WITH":    return s.endsWith(String(c.value).toLowerCase());
+    case "CONTAINS":     return s.includes(String(c.value).toLowerCase());
+    case "IS_BLANK":
+    case "IS_EMPTY":     return isBlank;
+    case "IS_NOT_BLANK":
+    case "IS_NOT_EMPTY": return !isBlank;
+    case "MATCH_ANY":
+    case "IN":           return arr.map(String).includes(String(v));
+    case "NOT_IN":       return !arr.map(String).includes(String(v));
+    case "MATCH_ALL":    return arr.length>0 && arr.every(x => String(x) === String(v));
     case "GREATER_THAN": return parseFloat(v) >  parseFloat(c.value);
     case "LESS_THAN":    return parseFloat(v) <  parseFloat(c.value);
-    case "CONTAINS":     return String(v).toLowerCase().includes(String(c.value).toLowerCase());
-    case "IS_EMPTY":     return !v;
-    case "IS_NOT_EMPTY": return !!v;
     default: return false;
   }
 }
+function evalGroup(g, values){
+  if(!g.conditions || !g.conditions.length) return true;
+  const r = g.conditions.map(c => evalCondition(c, values));
+  return g.match === "ALL" ? r.every(Boolean) : r.some(Boolean);
+}
 function evalBlock(block, values){
-  if (!block.conditions.length) return true;
-  const res = block.conditions.map(c => evalCondition(c, values));
+  const items = block.conditions || [];
+  if (!items.length) return true;
+  const res = items.map(it => (it && it.kind==="GROUP") ? evalGroup(it, values) : evalCondition(it, values));
   return block.match === "ALL" ? res.every(Boolean) : res.some(Boolean);
 }
 function scopeMatchPersona(aud, persona){
@@ -317,6 +676,7 @@ function applyAction(state, a){
     case "ENABLE": s.enabled=true; break;
     case "DISABLE": s.enabled=false; break;
     case "SET_VALUE": s.value=a.value; break;
+    case "CLEAR_VALUE": s.value=""; break;
   }
 }
 function simulate(draft, all, persona, values, moment){
@@ -348,6 +708,55 @@ function Select({ value, onChange, options, className }){
       className={cx("h-9 rounded-md border border-slate-300 bg-white px-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500", className)}>
       {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
     </select>
+  );
+}
+/* V6 — guided dropdown: options on the left, a contextual info card (When to use / How it works /
+   Output) on the right that follows the hovered or selected option. options = [{value,label,when,how,output}] */
+function GuidedSelect({ value, onChange, options, className }){
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const [hover, setHover] = useState(null);
+  const cur = options.find(o=>o.value===value) || options[0];
+  const ql = q.trim().toLowerCase();
+  const filtered = options.filter(o => !ql || o.label.toLowerCase().includes(ql));
+  const info = options.find(o=>o.value===(hover||value)) || cur;
+  return (
+    <div className={cx("relative", className)}>
+      <button type="button" onClick={()=>{ setOpen(o=>!o); setQ(""); setHover(null); }}
+        className="flex h-10 w-full items-center justify-between rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 hover:border-slate-400 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500">
+        <span>{cur ? cur.label : "Choose…"}</span><span className="ml-2 text-[9px] opacity-50">▾</span>
+      </button>
+      {open && (
+        <React.Fragment>
+          <div className="fixed inset-0 z-40" onClick={()=>setOpen(false)} />
+          <div className="absolute left-0 top-full z-50 mt-1 flex w-[440px] max-w-[88vw] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl">
+            <div className="w-44 shrink-0 border-r border-slate-100 p-1.5">
+              <input autoFocus value={q} onChange={e=>setQ(e.target.value)} placeholder="Search…"
+                className="mb-1 w-full rounded border border-slate-200 px-2 py-1 text-xs focus:border-sky-400 focus:outline-none" />
+              <div className="max-h-60 overflow-y-auto">
+                {filtered.map(o=>{
+                  const sel = o.value===value;
+                  return (
+                    <button key={o.value} type="button" onMouseEnter={()=>setHover(o.value)} onFocus={()=>setHover(o.value)}
+                      onClick={()=>{ onChange(o.value); setOpen(false); }}
+                      className={cx("flex w-full items-center justify-between gap-1 rounded px-2 py-1.5 text-left text-sm hover:bg-sky-50", sel && "bg-sky-50 font-medium text-sky-700")}>
+                      <span>{o.label}</span>{sel && <span className="shrink-0 text-sky-500">✓</span>}
+                    </button>
+                  );
+                })}
+                {filtered.length===0 && <p className="px-2 py-1 text-xs text-slate-400">No matches</p>}
+              </div>
+            </div>
+            <div className="flex-1 bg-slate-50/60 p-3 text-xs leading-relaxed">
+              <p className="mb-2 text-sm font-semibold text-slate-800">{info.label}</p>
+              <p className="mb-2"><span className="block text-[10px] font-semibold uppercase tracking-wide text-slate-400">When to use</span><span className="text-slate-600">{info.when}</span></p>
+              <p className="mb-2"><span className="block text-[10px] font-semibold uppercase tracking-wide text-slate-400">How it works</span><span className="text-slate-600">{info.how}</span></p>
+              <p><span className="block text-[10px] font-semibold uppercase tracking-wide text-slate-400">Output</span><span className="text-slate-600">{info.output}</span></p>
+            </div>
+          </div>
+        </React.Fragment>
+      )}
+    </div>
   );
 }
 function TextInput({ value, onChange, type="text", placeholder, className }){
@@ -388,7 +797,7 @@ const applicableLabel = a => ({ ALL:"All Users", REQUESTERS:"All Requesters", TE
 function genSlug(rule){
   const b = rule.blocks[0]; if (!b) return "rule";
   const parts = [];
-  const c = b.conditions[0]; if (c) parts.push(`${c.fieldId}_${String(c.value||opLabel(c.op)).toLowerCase().replace(/\s+/g,"")}`);
+  const c = firstLeaf(b); if (c) parts.push(`${c.fieldId}_${String(condValText(c)||opLabel(c.op)).toLowerCase().replace(/\s+/g,"")}`);
   const a = b.actions[0]; if (a) parts.push(`${a.type.toLowerCase()}_${a.fieldId}`);
   if (rule.blocks.length>1) parts.push(`plus${rule.blocks.length-1}`);
   return parts.join("_") || "rule";
@@ -402,7 +811,7 @@ const IconSearch = () => (<svg {...svgProps}><circle cx="11" cy="11" r="8"/><lin
 const IconFilter = () => (<svg {...svgProps} width="14" height="14"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>);
 
 /* ============================================================ RULES LIST */
-function RulesList({ rules, setRules, onCreate, onEdit }){
+function RulesList({ rules, setRules, onCreate, onEdit, mode }){
   const [expanded, setExpanded] = useState(null);
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
@@ -462,7 +871,8 @@ function RulesList({ rules, setRules, onCreate, onEdit }){
           <button onClick={onCreate} className="h-11 shrink-0 rounded-full bg-sky-500 px-6 text-sm font-semibold text-white shadow-sm hover:bg-sky-600">Create Request Form Rule</button>
         </div>
 
-        {/* table */}
+        {/* table (or guided empty-state when there are no rules) */}
+        {rules.length===0 ? <GuidedEmptyState mode={mode} onCreate={onCreate} /> : (
         <div className="mt-5">
           <table className="w-full text-left text-sm">
             <thead>
@@ -546,6 +956,7 @@ function RulesList({ rules, setRules, onCreate, onEdit }){
           </table>
           {visible.length===0 && <div className="py-16 text-center text-sm text-slate-400">No rules match your search.</div>}
         </div>
+        )}
       </div>
     </div>
   );
@@ -554,17 +965,39 @@ function RulesList({ rules, setRules, onCreate, onEdit }){
 /* ============================================================ TOKEN BUILDER UI */
 function Dropdown({ trigger, children, align }){
   const [open,setOpen]=useState(false);
+  const ref = React.useRef(null);
+  const [pos,setPos]=useState(null);
+  const measure = () => {
+    const el = ref.current; if(!el) return null;
+    const r = el.getBoundingClientRect();
+    const vw = (typeof window!=="undefined"?window.innerWidth:1280), vh = (typeof window!=="undefined"?window.innerHeight:800);
+    let left = align==="right" ? r.right - 224 : r.left;
+    left = Math.max(8, Math.min(left, vw - 232));
+    return { top: Math.max(8, Math.min(r.bottom + 4, vh - 16)), left };
+  };
+  const menuRef = React.useRef(null);
+  const toggle = () => { if(!open){ setPos(measure()); setOpen(true); } else setOpen(false); };
+  React.useEffect(()=>{
+    if(!open) return;
+    const onScroll = (e)=>{ if(menuRef.current && menuRef.current.contains(e.target)) return; setOpen(false); }; // ignore scrolling inside the menu
+    const onResize = ()=>setOpen(false);
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onResize);
+    return ()=>{ window.removeEventListener("scroll", onScroll, true); window.removeEventListener("resize", onResize); };
+  }, [open]);
+  // rendered in a body portal so the menu escapes every ancestor's clipping / stacking / transform context
+  const menu = (open && pos && typeof document!=="undefined") ? ReactDOM.createPortal(
+    <React.Fragment>
+      <div className="fixed inset-0" style={{zIndex:9998}} onClick={()=>setOpen(false)} />
+      <div ref={menuRef} className="min-w-[190px] rounded-lg border border-slate-200 bg-white p-1 shadow-xl"
+        style={{ position:"fixed", top:pos.top, left:pos.left, zIndex:9999, maxHeight:"60vh", overflowY:"auto" }}>
+        {typeof children==="function" ? children(()=>setOpen(false)) : children}
+      </div>
+    </React.Fragment>, document.body) : null;
   return (
-    <span className="relative inline-block align-middle">
-      <span onClick={()=>setOpen(o=>!o)}>{trigger}</span>
-      {open && (
-        <React.Fragment>
-          <div className="fixed inset-0 z-40" onClick={()=>setOpen(false)} />
-          <div className={cx("absolute z-50 mt-1 min-w-[190px] rounded-lg border border-slate-200 bg-white p-1 shadow-xl", align==="right"&&"right-0")}>
-            {typeof children==="function" ? children(()=>setOpen(false)) : children}
-          </div>
-        </React.Fragment>
-      )}
+    <span ref={ref} className="relative inline-block align-middle">
+      <span onClick={toggle}>{trigger}</span>
+      {menu}
     </span>
   );
 }
@@ -592,7 +1025,9 @@ function PickList({ items, onPick, search }){
         className="mb-1 w-full rounded border border-slate-200 px-2 py-1 text-sm focus:border-sky-400 focus:outline-none" />}
       <div className="max-h-56 overflow-y-auto">
         {filtered.map(i=>(
-          <button key={i.value} onClick={()=>onPick(i.value)} className="block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-sky-50">{i.label}</button>
+          <button key={i.value} onClick={()=>onPick(i.value)} className="block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-sky-50">
+            {i.label}{i.desc && <span className="mt-0.5 block text-[11px] font-normal leading-snug text-slate-400">{i.desc}</span>}
+          </button>
         ))}
         {filtered.length===0 && <p className="px-2 py-1 text-sm text-slate-400">No matches</p>}
       </div>
@@ -611,7 +1046,7 @@ function OpToken({ value, onChange }){
 }
 function ValueToken({ field, value, onChange }){
   const f = fieldOf(field);
-  if (f.type==="select")
+  if (f.options)
     return <Dropdown trigger={<TokenBtn label={value||"choose"} kind="value" placeholder={!value} />}>
       {close => <PickList items={f.options.map(o=>({value:o,label:o}))} onPick={v=>{onChange(v);close();}} />}
     </Dropdown>;
@@ -627,7 +1062,7 @@ function ValueToken({ field, value, onChange }){
 function VerbToken({ value, onChange }){
   const label = (ACTION_TYPES.find(t=>t.id===value)||{}).label || value;
   return <Dropdown trigger={<TokenBtn label={label} kind="verb" />}>
-    {close => <PickList items={ACTION_TYPES.map(t=>({value:t.id,label:t.label}))} onPick={v=>{onChange(v);close();}} />}
+    {close => <PickList items={ACTION_TYPES.map(t=>({value:t.id,label:t.label,desc:ACTION_GUIDE[t.id]}))} onPick={v=>{onChange(v);close();}} />}
   </Dropdown>;
 }
 function Pill({ labelPrefix, value, items, onChange }){
@@ -649,13 +1084,253 @@ function InfoHint({ text }){
   );
 }
 const V6_MODES = [
-  { id:"A", label:"Option A", tagline:"Classic + inline guidance",
-    blurb:"The familiar single-column form, enriched with helper text under each control, hover info hints, and calm inline conflict notes. Closest to today's screen, the lowest learning curve." },
+  // A & C hidden for now — still implemented as OptionA / OptionC below; re-add an entry here to show it in the Design-variant selector.
+  // { id:"A", label:"Option A", tagline:"Classic + inline guidance", blurb:"The familiar single-column form, enriched with helper text under each control, hover info hints, and calm inline conflict notes. Closest to today's screen, the lowest learning curve." },
   { id:"B", label:"Option B", tagline:"Organised sections",
     blurb:"The same familiar fields grouped into clear, numbered sections in an intent-first order — what happens, when, who, conditions — ending in a Review-impact card with a prominent preview." },
-  { id:"C", label:"Option C", tagline:"Refined & premium",
-    blurb:"The most polished take: a calm layout led by a live 'what this rule will do' summary, emphasis on who it affects, subtle conflict awareness, a compact preview, and a clear save-confidence state." },
+  // { id:"C", label:"Option C", tagline:"Refined & premium", blurb:"The most polished take: a calm layout led by a live 'what this rule will do' summary, emphasis on who it affects, subtle conflict awareness, a compact preview, and a clear save-confidence state." },
 ];
+
+/* ============================================================ CONDITIONS EDITOR (shared)
+   DD1 = grouped + searchable field picker · DD2 = operators for that field ·
+   DD3 = value control that depends on the operator (single / multi-chips / none) ·
+   plus one level of nested condition groups. */
+function GroupedFieldPicker({ value, onPick, fields }){
+  const [q,setQ] = useState("");
+  const ql = q.trim().toLowerCase();
+  const pool = fields || FIELDS;
+  return (
+    <div className="w-72">
+      <input autoFocus value={q} onChange={e=>setQ(e.target.value)} placeholder="Search…"
+        className="mb-1 w-full rounded border border-slate-200 px-2 py-1 text-sm focus:border-sky-400 focus:outline-none" />
+      <div className="max-h-64 overflow-y-auto">
+        {FIELD_GROUPS.map(g=>{
+          const fs = pool.filter(f => f.group===g.id && (!ql || f.name.toLowerCase().includes(ql) || g.label.toLowerCase().includes(ql)));
+          if(!fs.length) return null;
+          return (
+            <div key={g.id}>
+              <p className="sticky top-0 bg-sky-50 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">{g.label}</p>
+              {fs.map(f=>(
+                <button key={f.id} onClick={()=>onPick(f.id)}
+                  className={cx("block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-sky-50", f.id===value && "bg-sky-50 font-medium text-sky-700")}>{f.name}</button>
+              ))}
+            </div>
+          );
+        })}
+        {pool.every(f => ql && !f.name.toLowerCase().includes(ql)) && <p className="px-2 py-1 text-sm text-slate-400">No matches</p>}
+      </div>
+    </div>
+  );
+}
+function MultiSelect({ field, value, onChange }){
+  const opts = fieldOf(field).options || [];
+  const sel = Array.isArray(value) ? value : [];
+  const toggle = o => onChange(sel.includes(o) ? sel.filter(x=>x!==o) : [...sel, o]);
+  return (
+    <Dropdown trigger={
+      <span className={cx("inline-flex min-w-[150px] max-w-full cursor-pointer flex-wrap items-center gap-1 rounded-md border px-2 py-1 text-sm",
+        sel.length ? "border-slate-200 bg-white" : "border-dashed border-slate-300 text-slate-400")}>
+        {sel.length===0 && <span>Select values…</span>}
+        {sel.slice(0,2).map(o=>(
+          <span key={o} className="inline-flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-700">
+            {o}<span onClick={e=>{e.stopPropagation();toggle(o);}} className="cursor-pointer text-slate-400 hover:text-slate-600">×</span>
+          </span>
+        ))}
+        {sel.length>2 && <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500">+{sel.length-2}</span>}
+        <span className="ml-auto text-[9px] opacity-50">▾</span>
+      </span>}>
+      {close => (
+        <div className="w-56">
+          {sel.length>0 && (
+            <div className="mb-1 border-b border-slate-100 pb-1">
+              <p className="px-2 py-0.5 text-[11px] font-semibold text-sky-600">Selected Items</p>
+              <div className="flex flex-wrap gap-1 px-2 py-1">
+                {sel.map(o=>(
+                  <span key={o} className="inline-flex items-center gap-1 rounded bg-sky-50 px-1.5 py-0.5 text-xs text-sky-700">
+                    {o}<span onClick={()=>toggle(o)} className="cursor-pointer">×</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="max-h-48 overflow-y-auto">
+            {opts.map(o=>(
+              <button key={o} onClick={()=>toggle(o)}
+                className={cx("flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-sm hover:bg-sky-50", sel.includes(o) && "text-sky-700")}>
+                <span>{o}</span>{sel.includes(o) && <span className="text-sky-500">✓</span>}
+              </button>
+            ))}
+            {opts.length===0 && <p className="px-2 py-1 text-sm text-slate-400">No options</p>}
+          </div>
+        </div>
+      )}
+    </Dropdown>
+  );
+}
+function ValueControl({ cond, onChange }){
+  const f = fieldOf(cond.fieldId);
+  const kind = opVal(cond.op);
+  if(kind==="none") return <span className="px-1 text-xs italic text-slate-400">no value needed</span>;
+  if(kind==="multi") return <MultiSelect field={cond.fieldId} value={cond.value} onChange={onChange} />;
+  if(f.options) return (
+    <Dropdown trigger={<span className={cx("cursor-pointer rounded-md border px-3 py-1.5 text-sm", cond.value ? "border-slate-200 bg-slate-50 text-slate-700" : "border-dashed border-slate-300 text-slate-400")}>{cond.value || "choose value"} ▾</span>}>
+      {close => <PickList search items={f.options.map(o=>({value:o,label:o}))} onPick={v=>{onChange(v);close();}} />}
+    </Dropdown>
+  );
+  return <input value={cond.value||""} onChange={e=>onChange(e.target.value)} type={f.type==="number"?"number":f.type==="date"?"date":"text"} placeholder="Enter value"
+    className="min-w-[140px] flex-1 rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-sky-400 focus:outline-none" />;
+}
+function ConditionRow({ cond, onField, onOp, onValue, onRemove }){
+  return (
+    <div className="flex items-center gap-2">
+      <div className="flex flex-1 flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-white p-1.5">
+        <Dropdown trigger={<span className="cursor-pointer rounded-md bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-200">{fLabel(cond.fieldId)} ▾</span>}>
+          {close => <GroupedFieldPicker value={cond.fieldId} onPick={v=>{onField(v);close();}} />}
+        </Dropdown>
+        <Dropdown trigger={<span className="cursor-pointer rounded-md border border-slate-200 px-2.5 py-1.5 text-sm text-slate-600 hover:bg-slate-50">{opLabel(cond.op)} ▾</span>}>
+          {close => <PickList items={fieldOps(cond.fieldId).map(id=>({value:id,label:opLabel(id),desc:OP_GUIDE[id]}))} onPick={v=>{onOp(v);close();}} />}
+        </Dropdown>
+        <ValueControl cond={cond} onChange={onValue} />
+      </div>
+      <button onClick={onRemove} title="Remove condition" className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-red-500 text-base leading-none text-white hover:bg-red-600">×</button>
+    </div>
+  );
+}
+function MatchToggle({ match, onChange }){
+  return (
+    <div className="inline-flex items-center gap-0.5 rounded-md border border-slate-200 bg-slate-50 p-0.5 text-xs">
+      {["ALL","ANY"].map(m=>(
+        <button key={m} onClick={()=>onChange(m)}
+          className={cx("rounded px-2 py-1 font-medium", match===m ? "bg-white text-sky-700 shadow-sm" : "text-slate-500 hover:text-slate-700")}>Match {m==="ALL"?"All":"Any"}</button>
+      ))}
+    </div>
+  );
+}
+// V6 — live plain-English summary of how the top-level groups/conditions combine
+function groupStructureSummary(block){
+  const items = block.conditions || [];
+  if(!items.length) return "No conditions yet — this rule runs every time.";
+  let g=0;
+  const labels = items.map(it => (it && it.kind==="GROUP") ? `Group ${++g}` : "a single condition");
+  if(labels.length===1) return `This rule runs when ${labels[0]} matches.`;
+  if(block.match==="ALL"){
+    const joined = labels.length===2 ? `${labels[0]} and ${labels[1]}` : labels.slice(0,-1).join(", ")+" and "+labels[labels.length-1];
+    return `This rule runs when ${joined} ${labels.length===2 ? "both" : "all"} match.`;
+  }
+  const joined = labels.length===2 ? `either ${labels[0]} or ${labels[1]}` : "any one of "+labels.join(", ");
+  return `This rule runs when ${joined} matches.`;
+}
+// V6 — the visible, clickable AND/OR connector shown between two top-level groups/conditions
+function GroupConnector({ match, withHint, onToggle }){
+  const isAll = match==="ALL";
+  return (
+    <div className="flex items-center gap-2 py-0.5">
+      <span className="h-px flex-1 bg-slate-200" />
+      <button type="button" onClick={onToggle} title="Click to switch how the groups are combined (And also / Or else)"
+        className={cx("inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide transition-colors",
+        isAll ? "border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100" : "border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100")}>
+        {isAll ? "And also" : "Or else"}<span className="text-[8px] opacity-60">⇅</span>
+      </button>
+      {withHint && <InfoHint text={`This decides how one condition group relates to the next. AND ("And also") means both groups must match. OR ("Or else") means either group can match. Each group is evaluated on its own first (using its inner Match all/any), then groups are combined here. Tip: click the connector to switch it.`} />}
+      <span className="h-px flex-1 bg-slate-200" />
+    </div>
+  );
+}
+function ConditionsEditor({ block, mutate }){
+  const items = block.conditions || [];
+  const setField = idx => v => mutate(b=>{ const c=b.conditions[idx]; c.fieldId=v; c.op=fieldOps(v)[0]; c.value=defaultVal(c.op); });
+  const setOp    = idx => v => mutate(b=>{ const c=b.conditions[idx]; c.op=v; c.value=defaultVal(v); });
+  const setVal   = idx => v => mutate(b=>{ b.conditions[idx].value=v; });
+  const rmItem   = idx => mutate(b=>{ b.conditions.splice(idx,1); });
+  const addCond  = () => mutate(b=>{ b.conditions.push(newCondition()); });
+  const addGroup = () => mutate(b=>{ b.conditions.push(newGroup()); });
+  const clearAll = () => mutate(b=>{ b.conditions=[]; });
+  const gSetMatch= gi => v => mutate(b=>{ b.conditions[gi].match=v; });
+  const gSetField= (gi,ci) => v => mutate(b=>{ const c=b.conditions[gi].conditions[ci]; c.fieldId=v; c.op=fieldOps(v)[0]; c.value=defaultVal(c.op); });
+  const gSetOp   = (gi,ci) => v => mutate(b=>{ const c=b.conditions[gi].conditions[ci]; c.op=v; c.value=defaultVal(v); });
+  const gSetVal  = (gi,ci) => v => mutate(b=>{ b.conditions[gi].conditions[ci].value=v; });
+  const gRm      = (gi,ci) => mutate(b=>{ b.conditions[gi].conditions.splice(ci,1); });
+  const gAdd     = gi => mutate(b=>{ b.conditions[gi].conditions.push(newCondition()); });
+
+  const groupCount = items.filter(it => it && it.kind==="GROUP").length;
+  let _gn = 0;
+  const groupNo = items.map(it => (it && it.kind==="GROUP") ? (++_gn) : 0);
+
+  return (
+    <div>
+      {/* top-level: how the groups/conditions combine (shown only when there's more than one) */}
+      {items.length>1 && (
+        <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2">
+          <span className="text-xs font-semibold text-slate-600">How should the {groupCount>1?"groups":"conditions"} combine?</span>
+          <div className="inline-flex rounded-md border border-slate-200 bg-slate-50 p-0.5 text-xs">
+            <button onClick={()=>mutate(b=>{ b.match="ALL"; })}
+              className={cx("rounded px-3 py-1 font-medium", block.match==="ALL" ? "bg-sky-500 text-white shadow-sm" : "text-slate-600 hover:bg-white")}>{groupCount>1 ? "All groups must match" : "All must match"}</button>
+            <button onClick={()=>mutate(b=>{ b.match="ANY"; })}
+              className={cx("rounded px-3 py-1 font-medium", block.match==="ANY" ? "bg-violet-500 text-white shadow-sm" : "text-slate-600 hover:bg-white")}>{groupCount>1 ? "Any one group can match" : "Any one can match"}</button>
+          </div>
+          <span className="text-[11px] text-slate-500">{block.match==="ALL" ? "groups are joined by “And also”" : "groups are joined by “Or else”"}</span>
+          <InfoHint text={`This decides how one condition group relates to the next. AND ("And also") means both groups must match. OR ("Or else") means either group can match. Inside a group, its own Match all/any decides how that group's lines combine.`} />
+        </div>
+      )}
+
+      {/* live plain-English summary of the condition structure */}
+      {items.length>0 && (
+        <p className="mb-3 flex items-start gap-1.5 text-xs text-slate-600">
+          <span className="mt-px text-sky-500">✦</span>
+          <span><span className="font-medium text-slate-700">How it runs: </span>{groupStructureSummary(block)}</span>
+        </p>
+      )}
+
+      <div className="space-y-2">
+        {items.length===0 && <p className="text-sm italic text-slate-400">No conditions — this rule always runs.</p>}
+        {items.map((it,idx)=>(
+          <React.Fragment key={it.id}>
+            {idx>0 && <GroupConnector match={block.match} withHint={idx===1} onToggle={()=>mutate(b=>{ b.match = b.match==="ALL" ? "ANY" : "ALL"; })} />}
+            {(it && it.kind==="GROUP") ? (
+              <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <span className="flex items-center text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    Group {groupNo[idx]}
+                    <InfoHint text={`A group is evaluated on its own first — its "Match all/any" below decides how the lines inside it combine. Then this group is combined with the other groups using the connector above (And also / Or else).`} />
+                  </span>
+                  <div className="flex items-center gap-2">
+                    {it.conditions.length>1
+                      ? <span className="flex items-center gap-1.5 text-[11px] text-slate-400">lines:<MatchToggle match={it.match} onChange={gSetMatch(idx)} /></span>
+                      : <span className="text-[11px] italic text-slate-300">one line</span>}
+                    <button onClick={()=>rmItem(idx)} className="text-xs font-medium text-red-500 hover:underline">Remove group</button>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  {it.conditions.map((c,ci)=>(
+                    <ConditionRow key={c.id} cond={c} onField={gSetField(idx,ci)} onOp={gSetOp(idx,ci)} onValue={gSetVal(idx,ci)} onRemove={()=>gRm(idx,ci)} />
+                  ))}
+                </div>
+                <button onClick={()=>gAdd(idx)} className="mt-2 flex items-center gap-1.5 text-xs font-medium text-sky-600 hover:underline">
+                  <span className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 text-[11px] leading-none text-white">+</span> Add condition to group
+                </button>
+              </div>
+            ) : (
+              <ConditionRow cond={it} onField={setField(idx)} onOp={setOp(idx)} onValue={setVal(idx)} onRemove={()=>rmItem(idx)} />
+            )}
+          </React.Fragment>
+        ))}
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <button onClick={addCond} className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-sky-600 hover:bg-sky-50">
+          <span className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 text-[11px] leading-none text-white">+</span> Add Condition
+        </button>
+        <button onClick={addGroup} className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50">
+          <span className="text-sky-500">⊕</span> Add Condition Group
+        </button>
+        {items.length>0 && (
+          <button onClick={clearAll} className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-red-500 hover:bg-red-50">
+            <span>⊘</span> Remove All Condition
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
 
 /* ============================================================ V6 — OPTION A (familiar, refined: "Classic + inline guidance") */
 const A_LIFECYCLE = [
@@ -668,6 +1343,39 @@ const A_MOMENT = [
   { value:"ON_FIELD_CHANGE", label:"While the form is being filled" },
   { value:"ON_SUBMIT",       label:"When the form is submitted" },
 ];
+// Timing options with contextual guidance for the GuidedSelect popover
+const MOMENT_GUIDE = [
+  { value:"ON_LOAD", label:"When the form opens",
+    when:"Use this when the rule should prepare the form before the user starts filling it.",
+    how:"The rule checks once when the form first loads.",
+    output:"Fields can be shown, hidden, or preset immediately." },
+  { value:"ON_FIELD_CHANGE", label:"While the form is being filled",
+    when:"Use this when the rule should react as the user changes fields.",
+    how:"The rule checks again whenever a watched field changes.",
+    output:"The action happens immediately after the condition becomes true." },
+  { value:"ON_SUBMIT", label:"When the form is submitted",
+    when:"Use this for final checks before the request is saved.",
+    how:"The rule runs only at the point of submission.",
+    output:"The form can be validated or blocked if conditions are not met." },
+];
+// One-line hints shown under each option in the action + operator dropdowns (lightweight guidance)
+const ACTION_GUIDE = {
+  SHOW:"Reveal a field on the form.", HIDE:"Keep a field off the form.",
+  MANDATE:"Make the field required.", OPTIONAL:"Make the field no longer required.",
+  ENABLE:"Allow the field to be edited.", DISABLE:"Lock the field as read-only.",
+  SET_VALUE:"Fill the field with a value automatically.", CLEAR_VALUE:"Empty the field's value.",
+  SHOW_OPTIONS:"Reveal specific choices within a field.", HIDE_OPTIONS:"Remove specific choices from a field.",
+  RUN_SCRIPT:"Run a custom script for advanced logic.", FILTER_DATA:"Limit the data shown in a field.",
+};
+const OP_GUIDE = {
+  EQUALS:"Matches one exact value.", NOT_EQUALS:"Matches anything except this value.",
+  STARTS_WITH:"Text begins with what you type.", ENDS_WITH:"Text ends with what you type.",
+  CONTAINS:"Text includes what you type.",
+  IS_NOT_BLANK:"The field has any value.", IS_BLANK:"The field is empty.",
+  MATCH_ANY:"Matches if it equals any of the chosen values.", MATCH_ALL:"Matches only if it equals every chosen value.",
+  IS_EMPTY:"Nothing is selected.", IS_NOT_EMPTY:"At least one value is selected.",
+  IN:"The value is one of the chosen items.", NOT_IN:"The value is none of the chosen items.",
+};
 
 // labelled field: plain-language label (+ optional required * and InfoHint) · one helper line · control
 function FieldA({ label, required, help, info, children }){
@@ -735,14 +1443,9 @@ function OptionA({ draft, update, conflicts, dismiss }){
       <FieldA label="At what point?"
         help={`Pick the moment this rule should act.`}
         info={`"When the form opens" runs once before anyone types. "While the form is being filled" re-checks every time a field changes. "When the form is submitted" runs a final check as someone submits — use this for validation.`}>
-        <Select value={draft.trigger.moment} onChange={v=>update(d=>d.trigger.moment=v)} options={A_MOMENT} className="h-10 w-full" />
+        <GuidedSelect value={draft.trigger.moment} onChange={v=>update(d=>d.trigger.moment=v)} options={MOMENT_GUIDE} className="w-full" />
       </FieldA>
 
-      {draft.trigger.moment==="ON_FIELD_CHANGE" && (
-        <FieldA label="Which field should it watch?" help={`The rule re-checks each time this field changes.`}>
-          <Select value={draft.trigger.fieldId||"priority"} onChange={v=>update(d=>d.trigger.fieldId=v)} options={FIELDS.map(f=>({value:f.id,label:f.label}))} className="h-10 w-full" />
-        </FieldA>
-      )}
 
       <FieldA label="Who should this apply to?"
         help={`Choose which people see this behaviour on the form. Everyone is the safe default.`}
@@ -770,46 +1473,7 @@ function OptionA({ draft, update, conflicts, dismiss }){
             </h3>
             <p className="mt-0.5 text-xs text-slate-400">Limit when this rule acts. Leave empty to run every time.</p>
 
-            {b.conditions.length>1 && (
-              <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-slate-600">
-                <label className="flex cursor-pointer items-center gap-2">
-                  <input type="radio" checked={b.match==="ALL"} onChange={()=>setMatch(bi,"ALL")} className="accent-sky-500" />
-                  Match all of the conditions below
-                </label>
-                <label className="flex cursor-pointer items-center gap-2">
-                  <input type="radio" checked={b.match==="ANY"} onChange={()=>setMatch(bi,"ANY")} className="accent-sky-500" />
-                  Match any of the conditions below
-                </label>
-              </div>
-            )}
-
-            <div className="mt-3 space-y-2.5">
-              {b.conditions.length===0 && <p className="rounded-md border border-dashed border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-400">No conditions yet — this rule runs every time. Add a condition to make it act only in specific cases.</p>}
-              {b.conditions.map((c,ci)=>(
-                <div key={c.id} className="flex items-center gap-2.5">
-                  <button onClick={()=>rmCond(bi,ci)} title="Remove condition" className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-200 text-sm leading-none text-slate-500 hover:bg-red-500 hover:text-white">−</button>
-                  <div className="flex flex-1 flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-white p-1.5">
-                    <Dropdown trigger={<span className="cursor-pointer rounded-md bg-slate-100 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-200">{fLabel(c.fieldId)} ▾</span>}>
-                      {close => <PickList search items={FIELDS.map(f=>({value:f.id,label:f.label}))} onPick={v=>{setCond(bi,ci,"fieldId",v);close();}} />}
-                    </Dropdown>
-                    <Dropdown trigger={<span className="cursor-pointer px-1 text-sm text-slate-500 hover:text-slate-700">{opLabel(c.op)} ▾</span>}>
-                      {close => <PickList items={OPERATORS.map(o=>({value:o.id,label:o.label}))} onPick={v=>{setCond(bi,ci,"op",v);close();}} />}
-                    </Dropdown>
-                    {!VALUELESS.includes(c.op) && (
-                      fieldOf(c.fieldId).type==="select"
-                        ? <Dropdown trigger={<span className={cx("cursor-pointer rounded-md border px-3 py-1.5 text-sm", c.value?"border-slate-200 bg-slate-50 text-slate-700":"border-dashed border-slate-300 text-slate-400")}>{c.value||"choose value"} ▾</span>}>
-                            {close => <PickList items={fieldOf(c.fieldId).options.map(o=>({value:o,label:o}))} onPick={v=>{setCond(bi,ci,"value",v);close();}} />}
-                          </Dropdown>
-                        : <input value={c.value} onChange={e=>setCond(bi,ci,"value",e.target.value)} type={fieldOf(c.fieldId).type==="number"?"number":"text"} placeholder="value"
-                            className="flex-1 rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-sky-400 focus:outline-none" />
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-            <button onClick={()=>addCond(bi)} className="mt-2.5 flex items-center gap-2 text-sm font-medium text-sky-600 hover:underline">
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-sky-100 text-sm leading-none text-sky-600">+</span> Add a condition
-            </button>
+            <div className="mt-3"><ConditionsEditor block={b} mutate={fn=>update(d=>fn(d.blocks[bi]))} /></div>
           </div>
 
           {/* ACTIONS */}
@@ -828,15 +1492,15 @@ function OptionA({ draft, update, conflicts, dismiss }){
                     <button onClick={()=>rmAct(bi,ai)} title="Remove action" className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-200 text-sm leading-none text-slate-500 hover:bg-red-500 hover:text-white">−</button>
                     <div className={cx("flex flex-1 flex-wrap items-center gap-2 rounded-md border p-1.5", conflictFields.has(a.fieldId) ? "border-amber-300 bg-amber-50/40 ring-1 ring-amber-200" : "border-slate-200 bg-white")}>
                       <Dropdown trigger={<span className="cursor-pointer rounded-md bg-slate-100 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-200">{(ACTION_TYPES.find(t=>t.id===a.type)||{}).label} ▾</span>}>
-                        {close => <PickList items={ACTION_TYPES.map(t=>({value:t.id,label:t.label}))} onPick={v=>{setAct(bi,ai,"type",v);close();}} />}
+                        {close => <PickList items={ACTION_TYPES.map(t=>({value:t.id,label:t.label,desc:ACTION_GUIDE[t.id]}))} onPick={v=>{setAct(bi,ai,"type",v);close();}} />}
                       </Dropdown>
                       <span className="text-sm text-slate-400">→</span>
-                      <Dropdown trigger={<span className="cursor-pointer px-2 text-sm text-slate-700 hover:text-slate-900">{fLabel(a.fieldId)} ▾</span>}>
-                        {close => <PickList search items={FIELDS.map(f=>({value:f.id,label:f.label}))} onPick={v=>{setAct(bi,ai,"fieldId",v);close();}} />}
+                      <Dropdown trigger={<span className="cursor-pointer px-2 text-sm text-slate-700 hover:text-slate-900">{fieldOf(a.fieldId).name} ▾</span>}>
+                        {close => <PickList search items={ACTION_FIELDS.map(f=>({value:f.id,label:f.name}))} onPick={v=>{setAct(bi,ai,"fieldId",v);close();}} />}
                       </Dropdown>
                       {a.type==="SET_VALUE" && <span className="text-sm text-slate-400">to</span>}
                       {a.type==="SET_VALUE" && (
-                        fieldOf(a.fieldId).type==="select"
+                        fieldOf(a.fieldId).options
                           ? <Dropdown trigger={<span className="cursor-pointer rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700">{a.value||"choose"} ▾</span>}>
                               {close => <PickList items={fieldOf(a.fieldId).options.map(o=>({value:o,label:o}))} onPick={v=>{setAct(bi,ai,"value",v);close();}} />}
                             </Dropdown>
@@ -978,15 +1642,15 @@ function OptionB({ draft, update, conflicts, dismiss, affectedFields, onPreview 
                 <button onClick={()=>rmAct(ai)} title="Remove action" className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-200 text-sm leading-none text-slate-500 hover:bg-red-500 hover:text-white">−</button>
                 <div className={cx("flex flex-1 flex-wrap items-center gap-2 rounded-md border p-1.5", conflictFields.has(a.fieldId) ? "border-amber-300 bg-amber-50/40 ring-1 ring-amber-200" : "border-slate-200 bg-white")}>
                   <Dropdown trigger={<span className="cursor-pointer rounded-md bg-slate-100 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-200">{(ACTION_TYPES.find(t=>t.id===a.type)||{}).label} ▾</span>}>
-                    {close => <PickList items={ACTION_TYPES.map(t=>({value:t.id,label:t.label}))} onPick={v=>{setAct(ai,"type",v);close();}} />}
+                    {close => <PickList items={ACTION_TYPES.map(t=>({value:t.id,label:t.label,desc:ACTION_GUIDE[t.id]}))} onPick={v=>{setAct(ai,"type",v);close();}} />}
                   </Dropdown>
                   <span className="text-sm text-slate-400">→</span>
-                  <Dropdown trigger={<span className="cursor-pointer px-2 text-sm text-slate-700 hover:text-slate-900">{fLabel(a.fieldId)} ▾</span>}>
-                    {close => <PickList search items={FIELDS.map(f=>({value:f.id,label:f.label}))} onPick={v=>{setAct(ai,"fieldId",v);close();}} />}
+                  <Dropdown trigger={<span className="cursor-pointer px-2 text-sm text-slate-700 hover:text-slate-900">{fieldOf(a.fieldId).name} ▾</span>}>
+                    {close => <PickList search items={ACTION_FIELDS.map(f=>({value:f.id,label:f.name}))} onPick={v=>{setAct(ai,"fieldId",v);close();}} />}
                   </Dropdown>
                   {a.type==="SET_VALUE" && <span className="text-sm text-slate-400">to</span>}
                   {a.type==="SET_VALUE" && (
-                    fieldOf(a.fieldId).type==="select"
+                    fieldOf(a.fieldId).options
                       ? <Dropdown trigger={<span className="cursor-pointer rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700">{a.value||"choose"} ▾</span>}>
                           {close => <PickList items={fieldOf(a.fieldId).options.map(o=>({value:o,label:o}))} onPick={v=>{setAct(ai,"value",v);close();}} />}
                         </Dropdown>
@@ -1021,16 +1685,9 @@ function OptionB({ draft, update, conflicts, dismiss, affectedFields, onPreview 
           </FieldA>
           <FieldA label="At what point?" help={`The moment this rule acts.`}
             info={`"When the form opens" runs once before anyone types. "While the form is being filled" re-checks every time a field changes. "When the form is submitted" runs a final check as someone submits — use this for validation.`}>
-            <Select value={draft.trigger.moment} onChange={v=>update(d=>d.trigger.moment=v)} options={A_MOMENT} className="h-10 w-full" />
+            <GuidedSelect value={draft.trigger.moment} onChange={v=>update(d=>d.trigger.moment=v)} options={MOMENT_GUIDE} className="w-full" />
           </FieldA>
         </div>
-        {draft.trigger.moment==="ON_FIELD_CHANGE" && (
-          <div className="mt-4">
-            <FieldA label="Which field should it watch?" help={`The rule re-checks each time this field changes.`}>
-              <Select value={draft.trigger.fieldId||"priority"} onChange={v=>update(d=>d.trigger.fieldId=v)} options={FIELDS.map(f=>({value:f.id,label:f.label}))} className="h-10 w-full sm:w-1/2" />
-            </FieldA>
-          </div>
-        )}
       </SectionB>
 
       {/* 3 — Who should this affect? */}
@@ -1042,39 +1699,7 @@ function OptionB({ draft, update, conflicts, dismiss, affectedFields, onPreview 
       {/* 4 — What conditions must match? */}
       <SectionB n={4} title="What conditions must match?" help={`Limit when this rule acts. Leave empty to run every time.`}
         info={`"Match all" acts only when every line below is true at the same time. "Match any" acts as soon as a single line is true. With one condition this makes no difference.`}>
-        {b.conditions.length>1 && (
-          <div className="mb-3 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-slate-600">
-            <label className="flex cursor-pointer items-center gap-2"><input type="radio" checked={b.match==="ALL"} onChange={()=>setMatch("ALL")} className="accent-sky-500" /> Match all of the conditions below</label>
-            <label className="flex cursor-pointer items-center gap-2"><input type="radio" checked={b.match==="ANY"} onChange={()=>setMatch("ANY")} className="accent-sky-500" /> Match any of the conditions below</label>
-          </div>
-        )}
-        <div className="space-y-2.5">
-          {b.conditions.length===0 && <p className="rounded-md border border-dashed border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-400">No conditions yet — this rule runs every time. Add a condition to make it act only in specific cases.</p>}
-          {b.conditions.map((c,ci)=>(
-            <div key={c.id} className="flex items-center gap-2.5">
-              <button onClick={()=>rmCond(ci)} title="Remove condition" className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-200 text-sm leading-none text-slate-500 hover:bg-red-500 hover:text-white">−</button>
-              <div className="flex flex-1 flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-white p-1.5">
-                <Dropdown trigger={<span className="cursor-pointer rounded-md bg-slate-100 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-200">{fLabel(c.fieldId)} ▾</span>}>
-                  {close => <PickList search items={FIELDS.map(f=>({value:f.id,label:f.label}))} onPick={v=>{setCond(ci,"fieldId",v);close();}} />}
-                </Dropdown>
-                <Dropdown trigger={<span className="cursor-pointer px-1 text-sm text-slate-500 hover:text-slate-700">{opLabel(c.op)} ▾</span>}>
-                  {close => <PickList items={OPERATORS.map(o=>({value:o.id,label:o.label}))} onPick={v=>{setCond(ci,"op",v);close();}} />}
-                </Dropdown>
-                {!VALUELESS.includes(c.op) && (
-                  fieldOf(c.fieldId).type==="select"
-                    ? <Dropdown trigger={<span className={cx("cursor-pointer rounded-md border px-3 py-1.5 text-sm", c.value?"border-slate-200 bg-slate-50 text-slate-700":"border-dashed border-slate-300 text-slate-400")}>{c.value||"choose value"} ▾</span>}>
-                        {close => <PickList items={fieldOf(c.fieldId).options.map(o=>({value:o,label:o}))} onPick={v=>{setCond(ci,"value",v);close();}} />}
-                      </Dropdown>
-                    : <input value={c.value} onChange={e=>setCond(ci,"value",e.target.value)} type={fieldOf(c.fieldId).type==="number"?"number":"text"} placeholder="value"
-                        className="flex-1 rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-sky-400 focus:outline-none" />
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-        <button onClick={addCond} className="mt-2.5 flex items-center gap-2 text-sm font-medium text-sky-600 hover:underline">
-          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-sky-100 text-sm leading-none text-sky-600">+</span> Add a condition
-        </button>
+        <ConditionsEditor block={b} mutate={fn=>update(d=>fn(d.blocks[0]))} />
         {draft.blocks.length>1 && <p className="mt-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">This rule has {draft.blocks.length-1} more condition–action set{draft.blocks.length-1>1?"s":""}. This view edits the first; the rest are saved unchanged.</p>}
       </SectionB>
 
@@ -1211,15 +1836,15 @@ function OptionC({ draft, update, conflicts, dismiss, affectedFields, onPreview 
               <button onClick={()=>rmAct(ai)} title="Remove action" className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-200 text-sm leading-none text-slate-500 hover:bg-red-500 hover:text-white">−</button>
               <div className={cx("flex flex-1 flex-wrap items-center gap-2 rounded-md border p-1.5", conflictFields.has(a.fieldId) ? "border-amber-300 ring-1 ring-amber-200" : "border-slate-200 bg-white")}>
                 <Dropdown trigger={<span className="cursor-pointer rounded-md bg-slate-100 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-200">{(ACTION_TYPES.find(t=>t.id===a.type)||{}).label} ▾</span>}>
-                  {close => <PickList items={ACTION_TYPES.map(t=>({value:t.id,label:t.label}))} onPick={v=>{setAct(ai,"type",v);close();}} />}
+                  {close => <PickList items={ACTION_TYPES.map(t=>({value:t.id,label:t.label,desc:ACTION_GUIDE[t.id]}))} onPick={v=>{setAct(ai,"type",v);close();}} />}
                 </Dropdown>
                 <span className="text-sm text-slate-400">→</span>
-                <Dropdown trigger={<span className="cursor-pointer px-2 text-sm text-slate-700 hover:text-slate-900">{fLabel(a.fieldId)} ▾</span>}>
-                  {close => <PickList search items={FIELDS.map(f=>({value:f.id,label:f.label}))} onPick={v=>{setAct(ai,"fieldId",v);close();}} />}
+                <Dropdown trigger={<span className="cursor-pointer px-2 text-sm text-slate-700 hover:text-slate-900">{fieldOf(a.fieldId).name} ▾</span>}>
+                  {close => <PickList search items={ACTION_FIELDS.map(f=>({value:f.id,label:f.name}))} onPick={v=>{setAct(ai,"fieldId",v);close();}} />}
                 </Dropdown>
                 {a.type==="SET_VALUE" && <span className="text-sm text-slate-400">to</span>}
                 {a.type==="SET_VALUE" && (
-                  fieldOf(a.fieldId).type==="select"
+                  fieldOf(a.fieldId).options
                     ? <Dropdown trigger={<span className="cursor-pointer rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700">{a.value||"choose"} ▾</span>}>
                         {close => <PickList items={fieldOf(a.fieldId).options.map(o=>({value:o,label:o}))} onPick={v=>{setAct(ai,"value",v);close();}} />}
                       </Dropdown>
@@ -1249,54 +1874,15 @@ function OptionC({ draft, update, conflicts, dismiss, affectedFields, onPreview 
           </FieldA>
           <FieldA label="At what point?" help={`The moment this rule acts.`}
             info={`"When the form opens" runs once before anyone types. "While the form is being filled" re-checks every time a field changes. "When the form is submitted" runs a final check as someone submits — use this for validation.`}>
-            <Select value={draft.trigger.moment} onChange={v=>update(d=>d.trigger.moment=v)} options={A_MOMENT} className="h-10 w-full" />
+            <GuidedSelect value={draft.trigger.moment} onChange={v=>update(d=>d.trigger.moment=v)} options={MOMENT_GUIDE} className="w-full" />
           </FieldA>
         </div>
-        {draft.trigger.moment==="ON_FIELD_CHANGE" && (
-          <div className="mt-4">
-            <FieldA label="Which field should it watch?" help={`The rule re-checks each time this field changes.`}>
-              <Select value={draft.trigger.fieldId||"priority"} onChange={v=>update(d=>d.trigger.fieldId=v)} options={FIELDS.map(f=>({value:f.id,label:f.label}))} className="h-10 w-full sm:w-1/2" />
-            </FieldA>
-          </div>
-        )}
       </GroupC>
 
       {/* ONLY WHEN (conditions) */}
       <GroupC label="Only when…" help={`Limit when this rule acts. Leave empty to run every time.`}
         info={`"Match all" acts only when every line below is true at the same time. "Match any" acts as soon as a single line is true. With one condition this makes no difference.`}>
-        {b.conditions.length>1 && (
-          <div className="mb-3 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-slate-600">
-            <label className="flex cursor-pointer items-center gap-2"><input type="radio" checked={b.match==="ALL"} onChange={()=>setMatch("ALL")} className="accent-sky-500" /> Match all of the conditions below</label>
-            <label className="flex cursor-pointer items-center gap-2"><input type="radio" checked={b.match==="ANY"} onChange={()=>setMatch("ANY")} className="accent-sky-500" /> Match any of the conditions below</label>
-          </div>
-        )}
-        <div className="space-y-2.5">
-          {b.conditions.length===0 && <p className="rounded-md border border-dashed border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-400">No conditions yet — this rule runs every time. Add a condition to make it act only in specific cases.</p>}
-          {b.conditions.map((c,ci)=>(
-            <div key={c.id} className="flex items-center gap-2.5">
-              <button onClick={()=>rmCond(ci)} title="Remove condition" className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-200 text-sm leading-none text-slate-500 hover:bg-red-500 hover:text-white">−</button>
-              <div className="flex flex-1 flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-white p-1.5">
-                <Dropdown trigger={<span className="cursor-pointer rounded-md bg-slate-100 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-200">{fLabel(c.fieldId)} ▾</span>}>
-                  {close => <PickList search items={FIELDS.map(f=>({value:f.id,label:f.label}))} onPick={v=>{setCond(ci,"fieldId",v);close();}} />}
-                </Dropdown>
-                <Dropdown trigger={<span className="cursor-pointer px-1 text-sm text-slate-500 hover:text-slate-700">{opLabel(c.op)} ▾</span>}>
-                  {close => <PickList items={OPERATORS.map(o=>({value:o.id,label:o.label}))} onPick={v=>{setCond(ci,"op",v);close();}} />}
-                </Dropdown>
-                {!VALUELESS.includes(c.op) && (
-                  fieldOf(c.fieldId).type==="select"
-                    ? <Dropdown trigger={<span className={cx("cursor-pointer rounded-md border px-3 py-1.5 text-sm", c.value?"border-slate-200 bg-slate-50 text-slate-700":"border-dashed border-slate-300 text-slate-400")}>{c.value||"choose value"} ▾</span>}>
-                        {close => <PickList items={fieldOf(c.fieldId).options.map(o=>({value:o,label:o}))} onPick={v=>{setCond(ci,"value",v);close();}} />}
-                      </Dropdown>
-                    : <input value={c.value} onChange={e=>setCond(ci,"value",e.target.value)} type={fieldOf(c.fieldId).type==="number"?"number":"text"} placeholder="value"
-                        className="flex-1 rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-sky-400 focus:outline-none" />
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-        <button onClick={addCond} className="mt-2.5 flex items-center gap-2 text-sm font-medium text-sky-600 hover:underline">
-          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-sky-100 text-sm leading-none text-sky-600">+</span> Add a condition
-        </button>
+        <ConditionsEditor block={b} mutate={fn=>update(d=>fn(d.blocks[0]))} />
         {draft.blocks.length>1 && <p className="mt-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">This rule has {draft.blocks.length-1} more condition–action set{draft.blocks.length-1>1?"s":""}. This view edits the first; the rest are saved unchanged.</p>}
       </GroupC>
 
@@ -1353,16 +1939,32 @@ function OptionC({ draft, update, conflicts, dismiss, affectedFields, onPreview 
 }
 
 /* ============================================================ RULE STUDIO (V6 — familiar drawer, refined) */
-function RuleStudio({ initial, isNew, allRules, onCancel, onSave }){
+function RuleStudio({ initial, isNew, allRules, onCancel, onSave, onEditRule, onDisableRule }){
   const [draft, setDraft] = useState(() => JSON.parse(JSON.stringify(initial)));
   const update = fn => setDraft(d => { const n = JSON.parse(JSON.stringify(d)); fn(n); return n; });
-  const [mode, setMode]       = useState("A");        // A | B | C — UX comparison variant (V6 only)
+  const [mode, setMode]       = useState("B");        // only Option B shown; A & C hidden in V6_MODES (still implemented below)
   const [showTest, setShowTest] = useState(false);    // "Try it" preview drawer (Options A & B & C)
-  const [dismissed, setDismissed] = useState(() => new Set());
+  const [resolutions, setResolutions] = useState({});  // conflictKey -> { status, label, c }
 
   const rawConflicts = useMemo(() => detectConflicts(draft, allRules), [draft, allRules]);
-  const conflicts = useMemo(() => rawConflicts.filter(c => !dismissed.has(c.with.id+c.field+c.type)), [rawConflicts, dismissed]);
-  const dismiss = c => setDismissed(s => { const n=new Set(s); n.add(c.with.id+c.field+c.type); return n; });
+  const setRes = (c, status, label) => setResolutions(m => ({ ...m, [conflictKey(c)]: { status, label, c } }));
+  const isDone = c => TERMINAL_STATE.has((resolutions[conflictKey(c)] || {}).status);
+  // conflicts the rest of the screen reacts to (inline field markers + footer): hide the ones marked done
+  const conflicts = useMemo(() => rawConflicts.filter(c => !isDone(c)), [rawConflicts, resolutions]);
+  const dismiss = c => setRes(c, "IGNORED", "Snoozed for now");
+  // single dispatcher for every conflict action; "View" is handled inline by ConflictReview itself
+  const onConflictAction = (id, c) => {
+    switch (id) {
+      case "DISABLE": onDisableRule(c.with.id); setRes(c, "RESOLVED", "Other rule turned off"); break;
+      case "WIN":     setRes(c, "ACCEPTED", "This rule wins"); break;
+      case "NARROW":  setRes(c, "REVIEW", "Narrowing conditions to keep both"); break;
+      case "MERGE":   setRes(c, "REVIEW", "Merging into one rule"); break;
+      case "LATER":   setRes(c, "IGNORED", "Snoozed for now"); break;
+      case "EDIT":    onEditRule(c.with.id); break;
+      case "UNDO":    setResolutions(m => { const n={...m}; delete n[conflictKey(c)]; return n; }); break;
+      default: break;
+    }
+  };
   const affectedFields = useMemo(() => { const s=new Set(); draft.blocks.forEach(b=>b.actions.forEach(a=>s.add(a.fieldId))); return [...s]; }, [draft]);
   const valid = (draft.name||"").trim().length>0 && draft.blocks.every(b => b.actions.length>0);
   const curMode = V6_MODES.find(m=>m.id===mode) || V6_MODES[0];
@@ -1392,6 +1994,7 @@ function RuleStudio({ initial, isNew, allRules, onCancel, onSave }){
       </div>
 
       {/* ── design-variant selector — subtle strip just below the version tabs, top of the create/edit area ── */}
+      {V6_MODES.length > 1 && (
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-slate-200 bg-slate-50/70 px-8 py-2">
         <span className="text-[11px] font-medium uppercase tracking-wide text-slate-400">Design variant</span>
         <Dropdown trigger={
@@ -1418,6 +2021,7 @@ function RuleStudio({ initial, isNew, allRules, onCancel, onSave }){
         </Dropdown>
         <span className="text-[11px] text-slate-400">Prototype comparison only — pick one, then build your rule as usual.</span>
       </div>
+      )}
 
       {/* form body */}
       <div className="flex-1 overflow-y-auto">
@@ -1434,6 +2038,9 @@ function RuleStudio({ initial, isNew, allRules, onCancel, onSave }){
             </span>
           </div>
           )}
+
+          {/* grouped conflict review (light, inline) */}
+          <div className="mb-6"><ConflictReview conflicts={rawConflicts} resolutions={resolutions} onAction={onConflictAction} /></div>
 
           {mode==="A" ? (
             <OptionA draft={draft} update={update} conflicts={conflicts} dismiss={dismiss} />
@@ -1483,7 +2090,7 @@ function PreviewPanel({ draft, allRules }){
   const refFields = useMemo(() => {
     const s = new Set();
     if (draft.trigger.moment==="ON_FIELD_CHANGE") s.add(draft.trigger.fieldId);
-    draft.blocks.forEach(b => b.conditions.forEach(c => s.add(c.fieldId)));
+    draft.blocks.forEach(b => flatConds(b).forEach(c => s.add(c.fieldId)));
     return [...s];
   }, [draft]);
   const [values, setValues] = useState({});
@@ -1510,7 +2117,7 @@ function PreviewPanel({ draft, allRules }){
           {refFields.map(id=>(
             <div key={id} className="mb-1 flex items-center gap-2">
               <span className="w-24 text-xs text-slate-500">{fLabel(id)}</span>
-              {fieldOf(id).type==="select"
+              {fieldOf(id).options
                 ? <Select value={values[id]||""} onChange={v=>setVal(id,v)} options={[{value:"",label:"—"},...fieldOf(id).options.map(o=>({value:o,label:o}))]} className="h-8 flex-1" />
                 : <TextInput value={values[id]||""} onChange={v=>setVal(id,v)} type={fieldOf(id).type==="number"?"number":"text"} className="h-8 flex-1" />}
             </div>
@@ -1558,11 +2165,18 @@ const VERSIONS = [
   { id:"v2", label:"Version 2", note:"Structured form",        href:"rule-studio-demo.html" },
   { id:"v3", label:"Version 3", note:"Block workspace",        href:"rule-studio-v3.html" },
   { id:"v4", label:"Version 4", note:"Starter cards",          href:"rule-studio-v4.html" },
-  { id:"v5", label:"Version 5", note:"Guided composer",        href:"rule-studio-v5.html" },
   { id:"v6", label:"Version 6", note:"Refined classic form",   href:"rule-studio-v6.html" },
+  { id:"v7", label:"Version 7", note:"Progressive workspace",  href:"rule-studio-v7.html" },
+  { id:"v8", label:"Version 8", note:"Guided form canvas",     href:"rule-studio-v8.html" },
+  { id:"v9", label:"Version 9", note:"Rule sequence workspace", href:"rule-studio-v9.html" },
+  { id:"v92", label:"Version 9.2", note:"Guided sequence editor", href:"rule-studio-v9-2.html" },
 ];
 const currentVersionId = () => {
   const p = (typeof window!=="undefined" && window.location.pathname) || "";
+  if (p.indexOf("v9-2") >= 0) return "v92";
+  if (p.indexOf("v9") >= 0) return "v9";
+  if (p.indexOf("v8") >= 0) return "v8";
+  if (p.indexOf("v7") >= 0) return "v7";
   if (p.indexOf("v6") >= 0) return "v6";
   if (p.indexOf("v5") >= 0) return "v5";
   if (p.indexOf("v4") >= 0) return "v4";
@@ -1603,13 +2217,55 @@ function VersionBar(){
   );
 }
 
+/* ============================================================ MODE (Guided / Example) */
+function ModeBar({ mode, onChange }){
+  const guided = mode!=="example";
+  return (
+    <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-slate-200 bg-white px-8 py-2.5">
+      <div className="inline-flex rounded-full border border-slate-200 bg-slate-100 p-0.5 text-sm">
+        {[["example","Example"],["guided","Guided"]].map(([id,label])=>(
+          <button key={id} onClick={()=>onChange(id)}
+            className={cx("rounded-full px-4 py-1.5 font-medium transition-colors",
+              (id==="guided")===guided ? "bg-white text-sky-700 shadow-sm" : "text-slate-500 hover:text-slate-700")}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <span className="text-xs text-slate-500">
+        {guided
+          ? <React.Fragment><span className="font-semibold text-slate-700">Guided</span> · Start empty and build your own rule step by step.</React.Fragment>
+          : <React.Fragment><span className="font-semibold text-amber-700">Example</span> · Loaded sample rule for demonstration.</React.Fragment>}
+      </span>
+    </div>
+  );
+}
+function GuidedEmptyState({ mode, onCreate }){
+  return (
+    <div className="mt-8 flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50/60 px-6 py-16 text-center">
+      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-sky-100 text-2xl text-sky-600">✎</div>
+      <h2 className="mt-4 text-lg font-bold text-slate-800">Start building a rule</h2>
+      <p className="mt-1 max-w-md text-sm text-slate-500">Start empty and build your own rule step by step. Nothing is pre-filled — you choose what to control.</p>
+      <ol className="mt-5 grid max-w-xl gap-2 text-left text-sm text-slate-600 sm:grid-cols-3">
+        <li className="rounded-lg border border-slate-200 bg-white px-3 py-2"><span className="font-semibold text-slate-700">1.</span> Choose what you want to control</li>
+        <li className="rounded-lg border border-slate-200 bg-white px-3 py-2"><span className="font-semibold text-slate-700">2.</span> Add your first behavior</li>
+        <li className="rounded-lg border border-slate-200 bg-white px-3 py-2"><span className="font-semibold text-slate-700">3.</span> Use the helper text to learn what's next</li>
+      </ol>
+      <button onClick={onCreate} className="mt-6 h-11 rounded-full bg-sky-500 px-6 text-sm font-semibold text-white shadow-sm hover:bg-sky-600">Start building a rule</button>
+      <p className="mt-3 text-xs text-slate-400">Want to see a finished example instead? Switch to <span className="font-semibold text-slate-500">Example</span> mode above.</p>
+    </div>
+  );
+}
+
 /* ============================================================ APP */
 function App(){
-  const [rules, setRules] = useState(() => SEED.map(r => ({ ...r, name: r.name || genSlug(r) })));
+  const [mode, setMode] = useState("example");                // "example" = sample loaded (default) · "guided" = empty start
+  const [rules, setRules] = useState(() => SEED.map(r => ({ ...r, name: r.name || genSlug(r) })));  // example default: sample rules loaded
   const [view, setView] = useState({ screen:"list" }); // {screen:'studio', id|null}
+  const switchMode = m => { setMode(m); setRules(m==="example" ? SEED.map(r => ({ ...r, name: r.name || genSlug(r) })) : []); setView({ screen:"list" }); };
 
   const startCreate = () => setView({ screen:"studio", rule:newRule(), isNew:true });
-  const startEdit = id => setView({ screen:"studio", rule:rules.find(r=>r.id===id), isNew:false });
+  const startEdit = id => { const r = rules.find(x=>x.id===id); if (r) setView({ screen:"studio", rule:r, isNew:false }); };
+  const disableRule = id => setRules(rs => rs.map(r => r.id===id ? { ...r, status:"DISABLED" } : r));
   const cancel = () => setView({ screen:"list" });
   const save = draft => {
     setRules(rs => rs.some(r=>r.id===draft.id) ? rs.map(r=>r.id===draft.id?draft:r) : [...rs, draft]);
@@ -1619,9 +2275,10 @@ function App(){
   return (
     <div className="flex h-screen flex-col">
       <VersionBar />
+      {view.screen!=="studio" && <ModeBar mode={mode} onChange={switchMode} />}
       {view.screen==="studio"
-        ? <RuleStudio initial={view.rule} isNew={view.isNew} allRules={rules} onCancel={cancel} onSave={save} />
-        : <div className="flex-1 overflow-y-auto"><RulesList rules={rules} setRules={setRules} onCreate={startCreate} onEdit={startEdit} /></div>}
+        ? <RuleStudio initial={view.rule} isNew={view.isNew} allRules={rules} onCancel={cancel} onSave={save} onEditRule={startEdit} onDisableRule={disableRule} />
+        : <div className="flex-1 overflow-y-auto"><RulesList rules={rules} setRules={setRules} onCreate={startCreate} onEdit={startEdit} mode={mode} /></div>}
     </div>
   );
 }

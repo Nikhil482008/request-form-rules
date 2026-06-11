@@ -124,10 +124,11 @@ Rule {
   status:  ENABLED|DISABLED,
   audit:   { createdBy, createdAt, modifiedBy, modifiedAt, version }
 }
-Condition { id, fieldId, op, value }        // op: BECOMES|EQUALS|NOT_EQUALS|GREATER_THAN|LESS_THAN|CONTAINS|IS_EMPTY|IS_NOT_EMPTY
+Condition { id, fieldId, op, value }        // value: string | string[] | undefined; op sets TEXT/CHOICE/MEMBERSHIP (see OP_SETS)
+Group     { id, kind:"GROUP", match, conditions:[…] }  // blocks[].conditions may also hold one-level groups
 Action    { id, type, fieldId, value? }     // type: SHOW|HIDE|MANDATE|OPTIONAL|ENABLE|DISABLE|SET_VALUE
 ```
-Lookups: `FIELDS` (Priority, Category, Group, Status, Assignee, Asset Tag, Due Date, Approver Notes, Cost), `AUDIENCES`, `MOMENTS`, `OPERATORS`, `ACTION_TYPES`.
+Lookups: `FIELD_GROUPS`+`FIELDS` (grouped — Requester / Logged-in User / Request / Global; ~40 fields, ids like `request__priority`), `FORM_FIELDS`, `OP_SETS`, `OPERATORS`, `OPT`, `AUDIENCES`, `MOMENTS`, `ACTION_TYPES`. Shared **`ConditionsEditor`** = DD1 grouped fields → DD2 field-dependent ops → DD3 op-dependent value (single / multi-chips / none) + nested groups.
 
 ### Engine functions (pure, reused everywhere)
 - `summarize(rule)` / `v4Summary` / `v5Summary` — Rule → human-readable sentence (the comprehension layer; never hand-edited).
@@ -161,9 +162,9 @@ Full design deliverables (IA, screen structure, copy tables, tooltip copy, confl
 
 - **CDN dependency** — prototypes need internet; for an offline demo, vendor React/Tailwind/Babel locally.
 - **No persistence / no backend** — all state is in-memory; refresh resets. Conflict/preview run client-side on mock data.
-- **V5 nested condition groups** are not wired (conditions are flat with Match all/any). One level of grouping is architecturally feasible; not built.
-- **Preview** uses the shared rule-level `simulate`; it does not evaluate per-block `when/who` overrides (V3) or nested groups (V5).
-- **Safety-net scripts** — V3, V4, V5 include a small self-compile `<script>` at the end of the file that surfaces a precise Babel error on screen if the file ever fails to compile (silent on success). Harmless; remove before any production use.
+- **Nested condition groups** (one level) are now wired in every builder via the shared `ConditionsEditor` + engine (`evalGroup`, group-aware `condClause`). Deeper nesting not modeled. **(This HANDOFF predates V6 + the grouped-field condition overhaul — see SESSION_LOG.md / CLAUDE.md for current detail.)**
+- **Preview** uses the shared rule-level `simulate`; it does not evaluate per-block `when/who` overrides (V3) and **flattens** nested groups (no per-group eval).
+- **Safety-net scripts** — ALL 6 versions include a small self-compile `<script>` at the end of the file that surfaces a precise Babel error on screen if the file ever fails to compile (silent on success). Harmless; remove before any production use.
 - **`src/` scaffold** is types/contracts/skeletons only — no logic, not connected to a Next.js project or the prototypes.
 - **Babel-in-browser** transpiles on load (fine for a prototype, not for production performance).
 

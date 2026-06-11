@@ -12,6 +12,19 @@
   body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
   ::-webkit-scrollbar { width: 10px; height: 10px; }
   ::-webkit-scrollbar-thumb { background:#cbd5e1; border-radius: 6px; }
+  /* ---- V9 scoped styles (light, calm sequence workspace) ---- */
+  .v9root { background:#f7f8fa; }
+  .v9lib-item { transition: background .12s, border-color .12s, transform .12s; }
+  .v9lib-item:hover { background:#fff; border-color:#cbd5e1; transform: translateX(2px); }
+  .v9card { transition: box-shadow .18s, border-color .18s; }
+  .v9card:hover { box-shadow: 0 10px 24px -14px rgba(15,23,42,.25); }
+  @keyframes v9in { from { opacity:0; transform: translateY(6px); } to { opacity:1; transform:none; } }
+  .v9in { animation: v9in .32s ease both; }
+  @keyframes v9pulse { 0%,100%{opacity:.45;} 50%{opacity:1;} }
+  .v9beckon { animation: v9pulse 1.8s ease-in-out infinite; }
+  /* brief highlight when navigating to a canvas section from the Rule Overview */
+  @keyframes v9flash { 0%{ box-shadow:0 0 0 0 rgba(56,189,248,0);} 25%{ box-shadow:0 0 0 4px rgba(56,189,248,.35);} 100%{ box-shadow:0 0 0 0 rgba(56,189,248,0);} }
+  .v9flash { animation: v9flash 1.2s ease-out; }
 </style>
 </head>
 <body class="bg-slate-100 text-slate-800">
@@ -1050,6 +1063,469 @@ function ConditionsEditor({ block, mutate }){
 }
 
 /* ============================================================ RULE STUDIO */
+/* ============================================================ V9 — RULE SEQUENCE WORKSPACE */
+const v9cap = s => s ? s.charAt(0).toUpperCase()+s.slice(1) : s;
+const V9_WHEN = [
+  { id:"ON_LOAD",         label:"When the form opens",               hint:"As soon as the form is opened." },
+  { id:"ON_FIELD_CHANGE", label:"While someone is filling the form", hint:"As someone fills in the form." },
+  { id:"ON_SUBMIT",       label:"When the form is submitted",        hint:"Just before the form is submitted." },
+];
+const V9_LIFE = [
+  { id:"CREATE",      label:"New requests only" },
+  { id:"EDIT",        label:"Existing requests only" },
+  { id:"CREATE_EDIT", label:"New and existing requests" },
+];
+const V9_THEN = [
+  { id:"SHOW",        label:"Show a field" },
+  { id:"HIDE",        label:"Hide a field" },
+  { id:"MANDATE",     label:"Make mandatory" },
+  { id:"OPTIONAL",    label:"Make optional" },
+  { id:"ENABLE",      label:"Enable a field" },
+  { id:"DISABLE",     label:"Disable a field" },
+  { id:"SET_VALUE",   label:"Set a value" },
+  { id:"CLEAR_VALUE", label:"Clear a value" },
+];
+const V9_TEMPLATES = [
+  { id:"mandate-assignee", label:"Require Assignee for urgent tickets", hint:"Priority is High/Urgent → Assignee mandatory.",
+    build:()=>({ moment:"ON_FIELD_CHANGE", audience:"TECHNICIANS",
+      conditions:[{ id:uid("c"), fieldId:"request__priority", op:"MATCH_ANY", value:["High","Urgent"] }],
+      actions:[{ id:uid("a"), type:"MANDATE", fieldId:"request__assignee", value:"" }] }) },
+  { id:"hide-cc", label:"Hide Cc emails from requesters", hint:"When the form opens → hide Cc emails.",
+    build:()=>({ moment:"ON_LOAD", audience:"REQUESTERS",
+      conditions:[], actions:[{ id:uid("a"), type:"HIDE", fieldId:"request__cc_emails", value:"" }] }) },
+  { id:"set-status", label:"Set Status for Hardware requests", hint:"Category is Hardware → Status = In Progress.",
+    build:()=>({ moment:"ON_FIELD_CHANGE", audience:"TECHNICIANS",
+      conditions:[{ id:uid("c"), fieldId:"request__category", op:"MATCH_ANY", value:["Hardware"] }],
+      actions:[{ id:uid("a"), type:"SET_VALUE", fieldId:"request__status", value:"In Progress" }] }) },
+];
+function v9BlockLine(b){
+  const acts = b.actions.filter(a=>a.type && a.fieldId);
+  if (!acts.length) return { title:"New rule block", sub:"Add an action to define what happens" };
+  return { title: v9cap(acts.map(actionPhrase).join(", ")),
+           sub: b.conditions.length ? "When "+condClause(b) : "Always (no conditions)" };
+}
+
+/* ============================================================ V9 RULE OVERVIEW (read-only outline + navigation) */
+const v9WhenPhrase = m => ({ ON_LOAD:"When the form opens", ON_FIELD_CHANGE:"While someone is filling the form", ON_SUBMIT:"When the form is submitted" }[m]) || "";
+function v9condLine(c){
+  const f = fieldOf(c.fieldId).name || fLabel(c.fieldId);
+  if(opVal(c.op)==="none") return f+" "+opLabel(c.op).toLowerCase();
+  const v = Array.isArray(c.value) ? (c.value.join(", ")||"…") : (c.value || "…");
+  return f+" = "+v;
+}
+function v9condHasValue(c){
+  const k = opVal(c.op);
+  if(k==="none") return true;
+  if(k==="multi") return Array.isArray(c.value) && c.value.length>0;
+  return c.value!=null && String(c.value).trim()!=="";
+}
+function v9condLines(blocks){
+  const lines=[]; let gN=0;
+  blocks.forEach(b=>{
+    (b.conditions||[]).forEach(it=>{
+      if(it && it.kind==="GROUP"){
+        gN++; lines.push("Group "+gN+":");
+        (it.conditions||[]).forEach(c=> lines.push(v9condLine(c)));
+      } else if(it){
+        lines.push(v9condLine(it));
+      }
+    });
+  });
+  return lines;
+}
+function v9advLines(adv){
+  const l=[]; if(adv.reverseOnFalse) l.push("Reverse when false enabled"); if(adv.enforceSystemWide) l.push("Applies to every form"); return l;
+}
+const V9_STATUS_ICON = { todo:"○", partial:"◐", done:"✓", warn:"⚠" };
+const V9_STATUS_COLOR = { todo:"text-slate-300", partial:"text-amber-500", done:"text-emerald-500", warn:"text-amber-500" };
+
+/* one read-only outline row — shows status + summary, navigates on click (never edits) */
+function V9OutlineRow({ status, label, count, lines, onClick }){
+  return (
+    <button onClick={onClick} title={"Go to "+label}
+      className="group flex w-full items-start gap-2.5 rounded-lg px-2 py-2 text-left transition-colors hover:bg-slate-100/70">
+      <span className={cx("mt-px shrink-0 text-sm font-bold leading-none", V9_STATUS_COLOR[status])}>{V9_STATUS_ICON[status]}</span>
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center justify-between gap-2">
+          <span className="text-sm font-semibold text-slate-800">{label}</span>
+          <span className="shrink-0 text-xs text-slate-300 opacity-0 transition-opacity group-hover:opacity-100">→</span>
+        </span>
+        <span className={cx("mt-0.5 block text-xs", status==="todo" ? "text-slate-400" : "text-slate-500")}>{count}</span>
+        {(lines||[]).slice(0,4).map((ln,i)=>(
+          <span key={i} className={cx("mt-0.5 block truncate text-[11px] leading-snug", ln.indexOf("Group ")===0 ? "font-semibold text-slate-500" : "text-slate-400")}>{ln}</span>
+        ))}
+        {(lines||[]).length>4 && <span className="mt-0.5 block text-[11px] text-slate-300">+{(lines||[]).length-4} more</span>}
+      </span>
+    </button>
+  );
+}
+
+/* LEFT PANEL — read-only Rule Overview: progress · summaries · conflicts · navigation (never creates/edits) */
+function V9Overview({ draft, conflicts, onNavigate }){
+  const blocks = draft.blocks || [];
+  const allConds = blocks.flatMap(b=>flatConds(b));
+  const allActs  = blocks.flatMap(b=>(b.actions||[]).filter(a=>a.type&&a.fieldId));
+  const cf = new Set((conflicts||[]).map(c=>c.field));
+
+  const condCount = allConds.length, actCount = allActs.length;
+  const advOn = !!(draft.advanced.reverseOnFalse || draft.advanced.enforceSystemWide);
+
+  let condStatus = condCount===0 ? "todo" : (allConds.every(v9condHasValue) ? "done" : "partial");
+  let actStatus  = actCount===0 ? "todo" : "done";
+  if(allConds.some(c=>cf.has(c.fieldId))) condStatus = "warn";
+  if(allActs.some(a=>cf.has(a.fieldId)))  actStatus  = "warn";
+
+  const sections = [
+    { key:"trigger", status: draft.trigger.moment ? "done":"todo", label:"Trigger",
+      count: draft.trigger.moment ? "Configured" : "Not configured",
+      lines: draft.trigger.moment ? [v9WhenPhrase(draft.trigger.moment)] : [] },
+    { key:"conditions", status: condStatus, label:"Conditions",
+      count: condCount===0 ? "Not configured" : (condCount+" condition"+(condCount>1?"s":"")+" configured"),
+      lines: v9condLines(blocks) },
+    { key:"actions", status: actStatus, label:"Actions",
+      count: actCount===0 ? "Not configured" : (actCount+" action"+(actCount>1?"s":"")+" configured"),
+      lines: allActs.map(a=>v9cap(actionPhrase(a))) },
+    { key:"advanced", status: advOn ? "done":"todo", label:"Advanced",
+      count: advOn ? "Configured" : "Not configured",
+      lines: v9advLines(draft.advanced) },
+  ];
+  const configured = sections.filter(s=>s.status==="done"||s.status==="warn").length;
+
+  return (
+    <div className="flex h-full flex-col overflow-y-auto">
+      <div className="px-4 pt-4">
+        <h2 className="text-sm font-bold text-slate-800">Rule Overview</h2>
+        <p className="mt-0.5 text-[11px] leading-relaxed text-slate-400">Track your progress and quickly navigate through the rule.</p>
+        <div className="mt-2.5 flex items-center gap-2">
+          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
+            <div className="h-full rounded-full bg-emerald-400 transition-all duration-300" style={{ width: (configured/sections.length*100)+"%" }} />
+          </div>
+          <span className="shrink-0 text-[11px] font-medium text-slate-400">{configured}/{sections.length}</span>
+        </div>
+      </div>
+      <div className="mt-2 space-y-0.5 px-2">
+        {sections.map(s=>(
+          <V9OutlineRow key={s.key} status={s.status} label={s.label} count={s.count} lines={s.lines} onClick={()=>onNavigate(s.key)} />
+        ))}
+      </div>
+      {conflicts && conflicts.length>0 && (
+        <div className="px-3 pt-2">
+          <button onClick={()=>onNavigate("conflicts")}
+            className="flex w-full items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-left transition-colors hover:bg-amber-100/70">
+            <span className="mt-px shrink-0 text-amber-500">⚠</span>
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold text-amber-800">{conflicts.length} conflict{conflicts.length>1?"s":""} detected</span>
+              <span className="mt-0.5 block text-[11px] leading-snug text-amber-700/80">{fieldOf(conflicts[0].field).name||fLabel(conflicts[0].field)} is also modified by another rule.</span>
+              <span className="mt-1 block text-[11px] font-semibold text-amber-700">Review in workspace →</span>
+            </span>
+          </button>
+        </div>
+      )}
+      <div className="mt-auto px-4 py-3">
+        <p className="text-[11px] leading-relaxed text-slate-300">This panel tracks progress only. Build and edit the rule in the canvas.</p>
+      </div>
+    </div>
+  );
+}
+
+/* a simple on/off toggle row for the canvas Advanced section */
+function V9Toggle({ on, onClick, label, sub }){
+  return (
+    <button onClick={onClick}
+      className={cx("flex w-full items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors", on?"border-sky-200 bg-sky-50/60":"border-slate-200 bg-white hover:bg-slate-50")}>
+      <span className={cx("mt-0.5 flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors", on?"bg-sky-500":"bg-slate-300")}>
+        <span className={cx("h-4 w-4 rounded-full bg-white shadow-sm transition-transform", on&&"translate-x-4")} />
+      </span>
+      <span className="min-w-0">
+        <span className={cx("block text-sm font-medium", on?"text-sky-900":"text-slate-700")}>{label}</span>
+        {sub && <span className="mt-0.5 block text-[11px] leading-tight text-slate-400">{sub}</span>}
+      </span>
+    </button>
+  );
+}
+
+function V9Actions({ block, conflictFields, update }){
+  const setAct = (ai,k,v) => update(b=>{ b.actions[ai][k]=v; });
+  const rmAct  = (ai)     => update(b=>{ b.actions.splice(ai,1); });
+  const addAct = ()       => update(b=>{ b.actions.push(newAction()); });
+  return (
+    <div className="space-y-2">
+      {block.actions.length===0 && (
+        <p className="text-sm text-slate-400">No actions yet —
+          <button onClick={addAct} className="ml-1 font-medium text-sky-600 hover:underline">add one</button> to define what happens.</p>
+      )}
+      {block.actions.map((a,ai)=>(
+        <div key={a.id} className="flex items-center gap-2">
+          <button onClick={()=>rmAct(ai)} title="Remove" className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-200 text-slate-500 hover:bg-red-500 hover:text-white">−</button>
+          <div className={cx("flex flex-1 flex-wrap items-center gap-2 rounded-lg border p-1.5", conflictFields.has(a.fieldId)?"border-amber-300 bg-amber-50/50":"border-slate-200 bg-white")}>
+            <Dropdown trigger={<span className="cursor-pointer rounded-md bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-200">{(ACTION_TYPES.find(t=>t.id===a.type)||{}).label||"Choose action"} ▾</span>}>
+              {close => <PickList items={ACTION_TYPES.map(t=>({value:t.id,label:t.label}))} onPick={v=>{setAct(ai,"type",v);close();}} />}
+            </Dropdown>
+            <Dropdown trigger={<span className="cursor-pointer px-2 text-sm text-slate-700 hover:text-slate-900">{fieldOf(a.fieldId).name||"choose field"} ▾</span>}>
+              {close => <PickList search items={ACTION_FIELDS.map(f=>({value:f.id,label:f.name}))} onPick={v=>{setAct(ai,"fieldId",v);close();}} />}
+            </Dropdown>
+            {a.type==="SET_VALUE" && <span className="text-sm text-slate-400">to</span>}
+            {a.type==="SET_VALUE" && (
+              fieldOf(a.fieldId).options
+                ? <Dropdown trigger={<span className="cursor-pointer rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700">{a.value||"choose"} ▾</span>}>
+                    {close => <PickList items={fieldOf(a.fieldId).options.map(o=>({value:o,label:o}))} onPick={v=>{setAct(ai,"value",v);close();}} />}
+                  </Dropdown>
+                : <input value={a.value} onChange={e=>setAct(ai,"value",e.target.value)} placeholder="value" className="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-sky-400 focus:outline-none" />
+            )}
+          </div>
+        </div>
+      ))}
+      {block.actions.length>0 && (
+        <button onClick={addAct} className="flex items-center gap-2 text-sm font-medium text-sky-600 hover:underline">
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white">+</span> Add action
+        </button>
+      )}
+    </div>
+  );
+}
+
+function V9Block({ b, bi, active, onActivate, mutateBlock, onDuplicate, onRemove, canRemove, collapsed, onToggleCollapse, conflicts, conflictFields, ifRef, thenRef, flashIf, flashThen }){
+  const blockConflicts = conflicts.filter(c => b.actions.some(a=>a.fieldId===c.field) || flatConds(b).some(cd=>cd.fieldId===c.field));
+  const line = v9BlockLine(b);
+  return (
+    <div onClick={onActivate}
+      className={cx("v9card v9in rounded-xl border bg-white p-4 shadow-sm", active?"border-sky-300 ring-1 ring-sky-200":"border-slate-200")}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sm font-bold text-sky-600">{bi+1}</span>
+          <div className="min-w-0">
+            <div className="truncate text-sm font-semibold text-slate-800">{line.title}</div>
+            <div className="truncate text-xs text-slate-400">{line.sub}</div>
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          {blockConflicts.length>0 && <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">⚠ {blockConflicts.length}</span>}
+          <button onClick={e=>{e.stopPropagation();onToggleCollapse();}} title={collapsed?"Expand":"Collapse"} className="flex h-6 w-6 items-center justify-center rounded text-slate-400 hover:bg-slate-100">{collapsed?"▸":"▾"}</button>
+          <button onClick={e=>{e.stopPropagation();onDuplicate();}} title="Duplicate" className="flex h-6 w-6 items-center justify-center rounded text-slate-400 hover:bg-slate-100">⎘</button>
+          {canRemove && <button onClick={e=>{e.stopPropagation();onRemove();}} title="Remove" className="flex h-6 w-6 items-center justify-center rounded text-slate-400 hover:bg-red-50 hover:text-red-500">✕</button>}
+        </div>
+      </div>
+
+      {!collapsed && (
+        <div className="mt-4 space-y-3">
+          <div ref={ifRef} className={cx("rounded-lg p-3 transition-shadow", flashIf ? "bg-sky-50 v9flash" : "bg-slate-50/70")}>
+            <div className="mb-2 flex items-center gap-2">
+              <span className="rounded bg-violet-100 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-violet-700">If</span>
+              <span className="text-xs text-slate-400">{b.conditions.length? "these conditions are met" : "always — add a condition to narrow it"}</span>
+            </div>
+            <ConditionsEditor block={b} mutate={mutateBlock} />
+          </div>
+          <div ref={thenRef} className={cx("rounded-lg p-3 transition-shadow", flashThen ? "bg-sky-50 v9flash" : "bg-slate-50/70")}>
+            <div className="mb-2 flex items-center gap-2">
+              <span className="rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-emerald-700">Then</span>
+              <span className="text-xs text-slate-400">do this to the form</span>
+            </div>
+            <V9Actions block={b} conflictFields={conflictFields} update={mutateBlock} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function V9Assistant({ draft, conflicts, affectedFields, hasBehavior, conflictRef, flash }){
+  const summary = hasBehavior ? summarize(draft) : "";
+  return (
+    <div className="h-full overflow-y-auto p-4 space-y-4">
+      <div className="v9in rounded-xl border border-sky-100 bg-sky-50/60 p-4">
+        <p className="text-[11px] font-bold uppercase tracking-wide text-sky-500">In plain English</p>
+        <p className="mt-1 text-sm leading-relaxed text-slate-700">
+          {summary || "As you build, a plain-English description of your rule appears here."}
+        </p>
+      </div>
+      <div className="v9in rounded-xl border border-slate-200 bg-white p-4">
+        <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">What this affects</p>
+        {affectedFields.length===0
+          ? <p className="mt-1 text-sm text-slate-400">No fields yet.</p>
+          : <div className="mt-1">
+              <p className="text-sm text-slate-700">Affects {affectedFields.length} field{affectedFields.length!==1?"s":""}.</p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {affectedFields.map(f=><span key={f} className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">{fieldOf(f).name||fLabel(f)}</span>)}
+              </div>
+            </div>}
+      </div>
+      <div ref={conflictRef} className={cx("v9in rounded-xl transition-shadow", flash && "v9flash")}>
+        <ConflictReview conflicts={conflicts} />
+      </div>
+      <div className="v9in rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-500">
+        <span className="font-semibold text-slate-600">Tip:</span> switch to <span className="font-medium text-sky-600">Try</span> in the top bar to simulate this rule with sample values — without leaving this screen.
+      </div>
+    </div>
+  );
+}
+
+function RuleStudioV9({ initial, isNew, allRules, onCancel, onSave }){
+  const [draft, setDraft] = useState(()=>{
+    const d = JSON.parse(JSON.stringify(initial));
+    if(isNew){ d.trigger.moment=""; d.trigger.lifecycle=""; d.scope.audience=""; } // start unconfigured so the overview is honest
+    return d;
+  });
+  const update = fn => setDraft(d=>{ const n=JSON.parse(JSON.stringify(d)); fn(n); return n; });
+  const [tab, setTab] = useState("build");          // build | try
+  const [active, setActive] = useState(0);
+  const [collapsed, setCollapsed] = useState(()=>new Set());
+
+  const mutateBlock = bi => (fn => update(d => fn(d.blocks[bi])));
+  const conflicts = useMemo(()=>detectConflicts(draft, allRules), [draft, allRules]);
+  const conflictFields = useMemo(()=>new Set(conflicts.map(c=>c.field)), [conflicts]);
+  const affectedFields = useMemo(()=>{ const s=new Set(); draft.blocks.forEach(b=>b.actions.forEach(a=>{ if(a.type && a.fieldId) s.add(a.fieldId); })); return [...s]; }, [draft]);
+  const hasBehavior = draft.blocks.some(b=>b.actions.some(a=>a.type && a.fieldId));
+  const valid = (draft.name||"").trim().length>0 && hasBehavior;
+
+  const blk = () => draft.blocks[active] || draft.blocks[0];
+  const setWhen   = m => update(d=>{ d.trigger.moment=m; if(m==="ON_SUBMIT" && !d.trigger.lifecycle) d.trigger.lifecycle="CREATE_EDIT"; });
+  const addCond   = () => update(d=>{ (d.blocks[active]||d.blocks[0]).conditions.push(newCondition()); });
+  const addGroup  = () => update(d=>{ (d.blocks[active]||d.blocks[0]).conditions.push(newGroup()); });
+  const toggleMatch = () => update(d=>{ const b=d.blocks[active]||d.blocks[0]; b.match = b.match==="ALL"?"ANY":"ALL"; });
+  const setMatch = v => update(d=>{ const b=d.blocks[active]||d.blocks[0]; b.match = v; });
+  const addAction = type => update(d=>{ (d.blocks[active]||d.blocks[0]).actions.push({ id:uid("a"), type, fieldId:"request__assignee", value:"" }); });
+  const onAdvanced = k => update(d=>{ if(k==="reverse") d.advanced.reverseOnFalse=!d.advanced.reverseOnFalse; else if(k==="system") d.advanced.enforceSystemWide=!d.advanced.enforceSystemWide; });
+  const onTemplate = t => update(d=>{ const cfg=t.build(); d.trigger.moment=cfg.moment; d.scope.audience=cfg.audience; const b=d.blocks[active]||d.blocks[0]; b.conditions=cfg.conditions; b.actions=cfg.actions; });
+
+  const addBlock = () => { const at=draft.blocks.length; update(d=>d.blocks.push({ id:uid("b"), match:"ALL", mode:"ACTION", conditions:[], actions:[] })); setActive(at); };
+  const dupBlock = bi => update(d=>{ const copy=JSON.parse(JSON.stringify(d.blocks[bi])); copy.id=uid("b"); flatConds(copy).forEach(c=>c.id=uid("c")); copy.actions.forEach(a=>a.id=uid("a")); d.blocks.splice(bi+1,0,copy); });
+  const rmBlock  = bi => update(d=>{ d.blocks.splice(bi,1); });
+  const toggleCollapse = bi => setCollapsed(s=>{ const n=new Set(s); const id=draft.blocks[bi].id; n.has(id)?n.delete(id):n.add(id); return n; });
+
+  // ----- save finalizes any still-empty trigger defaults so the saved rule is valid -----
+  const saveRule = () => {
+    const d = JSON.parse(JSON.stringify(draft));
+    if(!d.trigger.moment)    d.trigger.moment    = "ON_FIELD_CHANGE";
+    if(!d.trigger.lifecycle) d.trigger.lifecycle = "CREATE_EDIT";
+    if(!d.scope.audience)    d.scope.audience     = "ALL";
+    onSave(d);
+  };
+
+  // ----- read-only overview navigation: scroll to + briefly highlight a canvas section -----
+  const triggerRef=React.useRef(null), condRef=React.useRef(null), actRef=React.useRef(null), advRef=React.useRef(null), conflictRef=React.useRef(null);
+  const secRefs = { trigger:triggerRef, conditions:condRef, actions:actRef, advanced:advRef, conflicts:conflictRef };
+  const [flash, setFlash] = useState(null);
+  React.useEffect(()=>{ if(!flash) return; const t=window.setTimeout(()=>setFlash(null), 1400); return ()=>window.clearTimeout(t); }, [flash]);
+  const focusSection = key => {
+    const doScroll = () => { const r=secRefs[key]; if(r && r.current) r.current.scrollIntoView({ behavior:"smooth", block:"center" }); };
+    if(key!=="conflicts" && tab!=="build"){ setTab("build"); window.setTimeout(doScroll, 80); } else doScroll();
+    setFlash(key);
+  };
+
+  return (
+    <div className="v9root flex h-full min-h-0 flex-1 flex-col">
+      {/* header */}
+      <div className="flex shrink-0 items-center justify-between gap-4 border-b border-slate-200 bg-white px-6 py-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <button onClick={onCancel} className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50">‹ Back</button>
+          <div className="min-w-0">
+            <input value={draft.name} onChange={e=>update(d=>d.name=e.target.value)} placeholder="Untitled rule"
+              className="w-72 max-w-full rounded-md border border-transparent px-1 py-0.5 text-base font-semibold text-slate-800 placeholder:text-slate-300 hover:border-slate-200 focus:border-sky-300 focus:outline-none" />
+            <p className="px-1 text-xs text-slate-400">On the <span className="font-medium text-slate-500">New Incident</span> form · {isNew?"new rule":"editing rule"}</p>
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <div className="inline-flex rounded-full border border-slate-200 bg-slate-100 p-0.5 text-sm">
+            {[["build","Build"],["try","Try"]].map(([id,label])=>(
+              <button key={id} onClick={()=>setTab(id)} className={cx("rounded-full px-4 py-1 font-medium transition-colors", tab===id?"bg-white text-sky-700 shadow-sm":"text-slate-500 hover:text-slate-700")}>{label}</button>
+            ))}
+          </div>
+          <span className={cx("hidden text-xs font-medium sm:inline", conflicts.length?"text-amber-600":"text-emerald-600")}>{conflicts.length?`⚠ ${conflicts.length} to review`:"✓ No conflicts"}</span>
+          <button onClick={onCancel} className="rounded-full border border-slate-200 bg-white px-4 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50">Cancel</button>
+          <button onClick={saveRule} className={cx("rounded-full bg-sky-500 px-5 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-sky-600", !valid && "opacity-50 pointer-events-none")}>Save rule</button>
+        </div>
+      </div>
+
+      {/* three panels */}
+      <div className="flex min-h-0 flex-1">
+        {/* LEFT — read-only Rule Overview (progress · summaries · conflicts · navigation) */}
+        <aside className="hidden w-64 shrink-0 border-r border-slate-200 bg-white lg:block">
+          <V9Overview draft={draft} conflicts={conflicts} onNavigate={focusSection} />
+        </aside>
+
+        {/* CENTER — sequence builder / try */}
+        <main className="min-w-0 flex-1 overflow-y-auto bg-slate-50 px-6 py-5">
+          {tab==="build" ? (
+            <div className="mx-auto max-w-2xl space-y-4">
+              {isNew && !hasBehavior && (
+                <div className="v9in rounded-xl border border-dashed border-slate-300 bg-white px-4 py-3 text-sm text-slate-500">
+                  <span className="font-semibold text-slate-700">Build your rule step by step.</span> Choose <em>when</em> it runs, add a condition if you need one, then pick what should happen. The panel on the right explains it as you go.
+                </div>
+              )}
+
+              {/* When + Who — plain language (the Trigger section) */}
+              <div ref={triggerRef} className={cx("v9in rounded-xl border bg-white p-4 shadow-sm transition-shadow", flash==="trigger" ? "border-sky-300 v9flash" : "border-slate-200")}>
+                <h3 className="text-sm font-semibold text-slate-800">When should this happen?</h3>
+                <p className="mt-0.5 text-xs text-slate-500">Choose when this behavior should take effect.</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Dropdown trigger={<span className={cx("inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100", isNew && !hasBehavior && "v9beckon")}>{(V9_WHEN.find(w=>w.id===draft.trigger.moment)||{label:"Choose a time"}).label}<span className="text-slate-400">▾</span></span>}>
+                    {close=><PickList items={V9_WHEN.map(w=>({value:w.id,label:w.label}))} onPick={v=>{setWhen(v);close();}} />}
+                  </Dropdown>
+                  <Dropdown trigger={<span className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">{(V9_LIFE.find(l=>l.id===draft.trigger.lifecycle)||{label:"Which requests"}).label}<span className="text-slate-400">▾</span></span>}>
+                    {close=><PickList items={V9_LIFE.map(l=>({value:l.id,label:l.label}))} onPick={v=>{update(d=>d.trigger.lifecycle=v);close();}} />}
+                  </Dropdown>
+                </div>
+
+                <div className="my-3 border-t border-slate-100" />
+
+                <h3 className="text-sm font-semibold text-slate-800">Who should this affect?</h3>
+                <p className="mt-0.5 text-xs text-slate-500">Pick who this rule applies to.</p>
+                <div className="mt-3">
+                  <Dropdown trigger={<span className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">{(AUD_FRIENDLY.find(a=>a.id===draft.scope.audience)||{label:"Choose people"}).label}<span className="text-slate-400">▾</span></span>}>
+                    {close=><PickList items={AUD_FRIENDLY.map(a=>({value:a.id,label:a.label}))} onPick={v=>{update(d=>d.scope.audience=v);close();}} />}
+                  </Dropdown>
+                </div>
+              </div>
+
+              {/* IF→THEN blocks (Conditions + Actions sections) */}
+              {draft.blocks.map((b,bi)=>(
+                <V9Block key={b.id} b={b} bi={bi}
+                  active={bi===active} onActivate={()=>setActive(bi)}
+                  mutateBlock={mutateBlock(bi)}
+                  onDuplicate={()=>dupBlock(bi)} onRemove={()=>rmBlock(bi)} canRemove={draft.blocks.length>1}
+                  collapsed={collapsed.has(b.id)} onToggleCollapse={()=>toggleCollapse(bi)}
+                  conflicts={conflicts} conflictFields={conflictFields}
+                  ifRef={bi===0?condRef:null} thenRef={bi===0?actRef:null}
+                  flashIf={bi===0 && flash==="conditions"} flashThen={bi===0 && flash==="actions"} />
+              ))}
+
+              <button onClick={addBlock} className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 bg-white py-3 text-sm font-medium text-slate-500 transition-colors hover:border-slate-400 hover:text-sky-600">
+                + Add another rule block
+              </button>
+
+              {/* Advanced section (lives in the canvas now that the sidebar is read-only) */}
+              <div ref={advRef} className={cx("v9in rounded-xl border bg-white p-4 shadow-sm transition-shadow", flash==="advanced" ? "border-sky-300 v9flash" : "border-slate-200")}>
+                <h3 className="text-sm font-semibold text-slate-800">Advanced options</h3>
+                <p className="mt-0.5 text-xs text-slate-500">Optional fine-tuning for how this rule behaves.</p>
+                <div className="mt-3 space-y-2">
+                  <V9Toggle on={draft.advanced.reverseOnFalse} onClick={()=>onAdvanced("reverse")}
+                    label="Reverse when the condition is no longer true" sub="Undo the action automatically when the rule stops matching" />
+                  <V9Toggle on={draft.advanced.enforceSystemWide} onClick={()=>onAdvanced("system")}
+                    label="Apply this rule to every form" sub="Enforce system-wide, overriding “Who should this affect”" />
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="mx-auto max-w-2xl">
+              <div className="mb-3 rounded-lg border border-sky-100 bg-sky-50 px-4 py-2.5 text-sm text-slate-600">
+                <span className="font-semibold text-sky-700">Try mode.</span> Simulate this rule with sample values — it stays right here in your workspace.
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <PreviewPanel draft={draft} allRules={allRules} />
+              </div>
+            </div>
+          )}
+        </main>
+
+        {/* RIGHT — assistant (summary · impact · conflicts · test) */}
+        <aside className="hidden w-80 shrink-0 border-l border-slate-200 bg-slate-50 xl:block">
+          <V9Assistant draft={draft} conflicts={conflicts} affectedFields={affectedFields} hasBehavior={hasBehavior} conflictRef={conflictRef} flash={flash==="conflicts"} />
+        </aside>
+      </div>
+    </div>
+  );
+}
+
 function RuleStudio({ initial, isNew, allRules, onCancel, onSave }){
   const [draft, setDraft] = useState(() => JSON.parse(JSON.stringify(initial)));
   const update = fn => setDraft(d => { const n = JSON.parse(JSON.stringify(d)); fn(n); return n; });
@@ -1432,6 +1908,363 @@ function GuidedEmptyState({ mode, onCreate }){
 }
 
 /* ============================================================ APP */
+/* ============================================================ V9.2 — GUIDED SEQUENCE EDITOR (refined V9) */
+function V92Seg({ value, onChange, options }){
+  return (
+    <div className="inline-flex rounded-md border border-slate-200 bg-white p-0.5 text-xs">
+      {options.map(([v,l])=>(
+        <button key={v} onClick={()=>onChange(v)}
+          className={cx("rounded px-2.5 py-1 font-medium transition-colors", value===v ? "bg-sky-500 text-white shadow-sm" : "text-slate-500 hover:text-slate-700")}>{l}</button>
+      ))}
+    </div>
+  );
+}
+/* between-group logic connector (ANY Group / ALL Groups) — distinct from a group's inner Match ALL/ANY */
+function V92GroupLogic({ value, onChange }){
+  return (
+    <div className="flex items-center gap-3 py-0.5">
+      <span className="h-px flex-1 bg-slate-200" />
+      <div className="rounded-xl border border-sky-200 bg-sky-50/70 px-3 py-2 text-center">
+        <div className="flex items-center justify-center gap-2">
+          <span className="text-[10px] font-bold uppercase tracking-wide text-sky-700">Group Logic</span>
+          <V92Seg value={value} onChange={onChange} options={[["ANY","ANY Group"],["ALL","ALL Groups"]]} />
+        </div>
+        <p className="mt-1 text-[11px] text-slate-500">{value==="ALL" ? "Rule runs only if all groups match." : "Rule runs if any condition group matches."}</p>
+      </div>
+      <span className="h-px flex-1 bg-slate-200" />
+    </div>
+  );
+}
+/* conditions editor with two clear logic layers: Match ALL/ANY inside a group · Group Logic between groups */
+function V92Conditions({ block, mutate }){
+  const items = block.conditions || [];
+  const groupCount = items.filter(it=>it && it.kind==="GROUP").length;
+  const setField = idx => v => mutate(b=>{ const c=b.conditions[idx]; c.fieldId=v; c.op=fieldOps(v)[0]; c.value=defaultVal(c.op); });
+  const setOp    = idx => v => mutate(b=>{ const c=b.conditions[idx]; c.op=v; c.value=defaultVal(v); });
+  const setVal   = idx => v => mutate(b=>{ b.conditions[idx].value=v; });
+  const rmItem   = idx => mutate(b=>{ b.conditions.splice(idx,1); });
+  const addCond  = () => mutate(b=>{ b.conditions.push(newCondition()); });
+  const addGroup = () => mutate(b=>{ b.conditions.push(newGroup()); });
+  const setGL    = v  => mutate(b=>{ b.match=v; });
+  const gSetMatch= gi => v => mutate(b=>{ b.conditions[gi].match=v; });
+  const gSetField= (gi,ci) => v => mutate(b=>{ const c=b.conditions[gi].conditions[ci]; c.fieldId=v; c.op=fieldOps(v)[0]; c.value=defaultVal(c.op); });
+  const gSetOp   = (gi,ci) => v => mutate(b=>{ const c=b.conditions[gi].conditions[ci]; c.op=v; c.value=defaultVal(v); });
+  const gSetVal  = (gi,ci) => v => mutate(b=>{ b.conditions[gi].conditions[ci].value=v; });
+  const gRm      = (gi,ci) => mutate(b=>{ b.conditions[gi].conditions.splice(ci,1); });
+  const gAdd     = gi => mutate(b=>{ b.conditions[gi].conditions.push(newCondition()); });
+  let gSeen = 0;
+  return (
+    <div className="space-y-3">
+      {items.length===0 && <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-400">No conditions yet — this rule runs every time. Add a condition to narrow when it applies.</p>}
+      {items.map((it,idx)=>{
+        if(it && it.kind==="GROUP"){
+          gSeen++; const gn = gSeen;
+          return (
+            <React.Fragment key={it.id}>
+              {(groupCount>=2 && gn>=2) && <V92GroupLogic value={block.match} onChange={setGL} />}
+              <div className="rounded-xl border border-violet-100 bg-violet-50/40 p-3">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wide text-violet-700">Condition group {gn}</span>
+                  <button onClick={()=>rmItem(idx)} className="text-xs font-medium text-red-500 hover:underline">Remove group</button>
+                </div>
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <V92Seg value={it.match} onChange={gSetMatch(idx)} options={[["ALL","Match ALL"],["ANY","Match ANY"]]} />
+                  <span className="text-[11px] text-slate-500">{it.match==="ALL" ? "All conditions in this group must match" : "Any condition in this group can match"}</span>
+                </div>
+                <div className="space-y-2">
+                  {it.conditions.map((c,ci)=>(
+                    <ConditionRow key={c.id} cond={c} onField={gSetField(idx,ci)} onOp={gSetOp(idx,ci)} onValue={gSetVal(idx,ci)} onRemove={()=>gRm(idx,ci)} />
+                  ))}
+                </div>
+                <button onClick={()=>gAdd(idx)} className="mt-2 flex items-center gap-1.5 text-xs font-medium text-sky-600 hover:underline">
+                  <span className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 text-[11px] leading-none text-white">+</span> Add condition to group
+                </button>
+              </div>
+            </React.Fragment>
+          );
+        }
+        return <ConditionRow key={it.id} cond={it} onField={setField(idx)} onOp={setOp(idx)} onValue={setVal(idx)} onRemove={()=>rmItem(idx)} />;
+      })}
+      <div className="flex flex-wrap items-center gap-2">
+        <button onClick={addCond} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-sky-600 hover:bg-sky-50">
+          <span className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 text-[11px] leading-none text-white">+</span> Add condition
+        </button>
+        <button onClick={addGroup} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50">
+          <span className="text-sky-500">⊕</span> Add condition group
+        </button>
+      </div>
+      {groupCount>=2 && (
+        <p className="rounded-lg bg-slate-50 px-3 py-2 text-[11px] leading-relaxed text-slate-500">
+          <span className="font-semibold text-slate-600">Two logic levels:</span> <span className="font-medium text-violet-700">Match ALL / ANY</span> sets how conditions combine <em>inside</em> a group · <span className="font-medium text-sky-700">Group Logic</span> sets how groups combine <em>with each other</em>.
+        </p>
+      )}
+    </div>
+  );
+}
+/* a collapsible sequence card — expands when active, collapses to a summary when done */
+/* a self-contained, always-open rule card in the stacked sequence — compact header + inline body */
+function V92Block({ refEl, flash, icon, iconTone, title, desc, status, conflict, onClear, children }){
+  const chip = conflict ? { t:"Needs attention", c:"bg-amber-50 text-amber-600" }
+    : status==="completed" ? { t:"Done", c:"bg-emerald-50 text-emerald-600" }
+    : status==="partial" ? { t:"In progress", c:"bg-sky-50 text-sky-600" }
+    : { t:"Not set", c:"bg-slate-100 text-slate-400" };
+  return (
+    <div ref={refEl} className={cx("rounded-xl border bg-white transition-colors", conflict ? "border-amber-300" : "border-slate-200", flash && "v9flash")}>
+      <div className="flex items-start gap-3 border-b border-slate-100 px-4 py-2.5">
+        <span className={cx("mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-[11px]", iconTone || "bg-slate-100 text-slate-500")}>{icon}</span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-slate-800">{title}</span>
+            <span className={cx("rounded-full px-2 py-0.5 text-[10px] font-semibold", chip.c)}>{chip.t}</span>
+          </div>
+          <p className="mt-0.5 text-xs text-slate-400">{desc}</p>
+        </div>
+        {onClear && <button onClick={onClear} className="mt-0.5 shrink-0 rounded px-2 py-1 text-[11px] font-medium text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500">Clear</button>}
+      </div>
+      <div className="px-4 py-3">{children}</div>
+    </div>
+  );
+}
+/* low-prominence advanced card — collapsed by default, sits at the bottom of the stack */
+function V92Advanced({ refEl, flash, adv, open, setOpen, onToggle }){
+  const on = !!(adv.reverseOnFalse || adv.enforceSystemWide);
+  return (
+    <div ref={refEl} className={cx("rounded-xl border border-slate-200 bg-white", flash && "v9flash")}>
+      <button onClick={()=>setOpen(o=>!o)} className="flex w-full items-center gap-2 px-4 py-2.5 text-left transition-colors hover:bg-slate-50/60">
+        <span className="text-slate-400">⚙</span>
+        <span className="text-sm font-medium text-slate-600">Advanced options</span>
+        <span className={cx("rounded-full px-2 py-0.5 text-[10px] font-medium", on ? "bg-sky-50 text-sky-600" : "bg-slate-100 text-slate-400")}>{on ? "On" : "Optional"}</span>
+        <span className="ml-auto text-xs text-slate-300">{open ? "▾" : "▸"}</span>
+      </button>
+      {open && (
+        <div className="space-y-2 border-t border-slate-100 px-4 py-3">
+          <V9Toggle on={adv.reverseOnFalse} onClick={()=>onToggle("reverse")}
+            label="Reverse when the condition is no longer true" sub="Undo the action automatically when the rule stops matching" />
+          <V9Toggle on={adv.enforceSystemWide} onClick={()=>onToggle("system")}
+            label="Apply this rule to every form" sub="Enforce system-wide, overriding “Who should this affect”" />
+        </div>
+      )}
+    </div>
+  );
+}
+/* stable key for dismissing a specific conflict (module-scope so it isn't a new fn each render) */
+const v92ConflictKey = c => ((c.with && c.with.id) || "") + "|" + c.field + "|" + c.type;
+/* inline, actionable conflict callout — resolution stays embedded in the builder */
+function V92ConflictCallout({ items, allRules, onEditOther, onDisableOther, onResolve }){
+  const [peek, setPeek] = useState(null);
+  if(!items || !items.length) return null;
+  return (
+    <div className="mb-3 space-y-2">
+      {items.map((c,i)=>{
+        const other = (allRules||[]).find(r=>r.id===(c.with && c.with.id));
+        const open = peek===i;
+        return (
+          <div key={i} className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+            <p className="text-sm text-amber-800"><span className="font-semibold">Heads up:</span> {c.text}</p>
+            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs font-medium">
+              <button onClick={()=>setPeek(open?null:i)} className="text-amber-700 hover:underline">{open ? "Hide rule" : "View conflicting rule"}</button>
+              {c.with && <button onClick={()=>onEditOther(c.with.id)} className="text-amber-700 hover:underline">Edit the other rule</button>}
+              {c.with && <button onClick={()=>onDisableOther(c.with.id)} className="text-amber-700 hover:underline">Disable it</button>}
+              <button onClick={()=>onResolve(c)} className="text-amber-700 hover:underline">Let this rule win</button>
+              <button onClick={()=>onResolve(c)} className="text-slate-500 hover:underline">Resolve later</button>
+            </div>
+            {open && other && (
+              <div className="mt-2 rounded-lg border border-amber-100 bg-white p-2 text-xs text-slate-600">
+                <span className="font-medium text-slate-700">{other.name || genSlug(other)}:</span> {summarize(other) || "—"}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function RuleStudioV92({ initial, isNew, allRules, onCancel, onSave, onEditRule, onDisableRule }){
+  const [draft, setDraft] = useState(()=>{
+    const d = JSON.parse(JSON.stringify(initial));
+    if(!d.blocks || !d.blocks.length) d.blocks=[{ id:uid("b"), match:"ALL", mode:"ACTION", conditions:[], actions:[] }];
+    if(isNew){ d.trigger.moment=""; d.trigger.lifecycle=""; d.scope.audience=""; } // start unconfigured so the overview is honest
+    return d;
+  });
+  const update = fn => setDraft(d=>{ const n=JSON.parse(JSON.stringify(d)); fn(n); return n; });
+  const mutate0 = fn => update(d=>fn(d.blocks[0]));
+  const block = draft.blocks[0];
+
+  const [tab, setTab] = useState("create");          // create | settings | results
+  const [advOpen, setAdvOpen] = useState(false);
+  const [flash, setFlash] = useState(null);
+  const [dismissed, setDismissed] = useState(()=>new Set());
+
+  const allConflicts = useMemo(()=>detectConflicts(draft, allRules), [draft, allRules]);
+  const conflicts = useMemo(()=>allConflicts.filter(c=>!dismissed.has(v92ConflictKey(c))), [allConflicts, dismissed]);
+  const cf = useMemo(()=>new Set(conflicts.map(c=>c.field)), [conflicts]);
+
+  const conds = flatConds(block);
+  const validActions = (block.actions||[]).filter(a=>a.type && a.fieldId);
+  const advOn = !!(draft.advanced.reverseOnFalse || draft.advanced.enforceSystemWide);
+  const hasBehavior = validActions.length>0;
+  const valid = (draft.name||"").trim().length>0 && hasBehavior;
+
+  const condComplete = conds.length>0 && conds.every(c=>{ const k=opVal(c.op); return k==="none" || (k==="multi" ? (Array.isArray(c.value) && c.value.length>0) : (c.value!=null && String(c.value).trim()!=="")); });
+  const trigStatus = draft.trigger.moment ? "completed" : "empty";
+  const condStatus = conds.length===0 ? "empty" : (condComplete ? "completed" : "partial");
+  const actStatus  = validActions.length>0 ? "completed" : "empty";
+  const advStatus  = advOn ? "completed" : "empty";
+
+  const condConflicts = conflicts.filter(c=>conds.some(x=>x.fieldId===c.field));
+  const actConflicts  = conflicts.filter(c=>validActions.some(a=>a.fieldId===c.field));
+
+  const tRef=React.useRef(null), cRef=React.useRef(null), aRef=React.useRef(null), advRef=React.useRef(null);
+  const secRefs = { trigger:tRef, conditions:cRef, actions:aRef, advanced:advRef };
+  const focusSection = key => {
+    setTab("create");
+    let target = key;
+    if(key==="conflicts") target = condConflicts.length ? "conditions" : (actConflicts.length ? "actions" : "trigger");
+    if(target==="advanced") setAdvOpen(true);
+    setFlash(target);
+    const r = secRefs[target];
+    window.setTimeout(()=>{ if(r && r.current) r.current.scrollIntoView({ behavior:"smooth", block:"center" }); }, 60);
+  };
+  React.useEffect(()=>{ if(!flash) return; const t=window.setTimeout(()=>setFlash(null), 1300); return ()=>window.clearTimeout(t); }, [flash]);
+
+  const onAdvanced = k => update(d=>{ if(k==="reverse") d.advanced.reverseOnFalse=!d.advanced.reverseOnFalse; else if(k==="system") d.advanced.enforceSystemWide=!d.advanced.enforceSystemWide; });
+  const resolve = c => setDismissed(s=>{ const n=new Set(s); n.add(v92ConflictKey(c)); return n; });
+  const saveRule = () => {
+    const d = JSON.parse(JSON.stringify(draft));
+    if(!d.trigger.moment) d.trigger.moment="ON_FIELD_CHANGE";
+    if(!d.trigger.lifecycle) d.trigger.lifecycle="CREATE_EDIT";
+    if(!d.scope.audience) d.scope.audience="ALL";
+    onSave(d);
+  };
+
+  const bannerSummary = (draft.trigger.moment && draft.scope.audience && hasBehavior) ? summarize(draft) : "";
+  const trigSummary = draft.trigger.moment ? (v9WhenPhrase(draft.trigger.moment) + (draft.scope.audience ? " · " + (AUD_FRIENDLY.find(a=>a.id===draft.scope.audience)||{label:""}).label : "")) : "";
+  const condSummary = conds.length ? (condClause(block)||"") : "";
+  const actSummary  = validActions.length ? v9cap(validActions.map(actionPhrase).join(", ")) : "";
+  const advSummary  = advOn ? v9advLines(draft.advanced).join(" · ") : "";
+
+  return (
+    <div className="v9root flex h-full min-h-0 flex-1 flex-col">
+      {/* header + tab bar */}
+      <div className="flex shrink-0 items-end justify-between gap-4 border-b border-slate-200 bg-white px-6 pt-3">
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="flex items-center gap-3">
+            <button onClick={onCancel} className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50">‹ Back</button>
+            <div className="min-w-0">
+              <input value={draft.name} onChange={e=>update(d=>d.name=e.target.value)} placeholder="Untitled rule"
+                className="w-64 max-w-full rounded-md border border-transparent px-1 py-0.5 text-base font-semibold text-slate-800 placeholder:text-slate-300 hover:border-slate-200 focus:border-sky-300 focus:outline-none" />
+              <p className="px-1 text-xs text-slate-400">On the <span className="font-medium text-slate-500">New Incident</span> form · {isNew?"new rule":"editing rule"}</p>
+            </div>
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">V9.2 · Sequence editor</span>
+          </div>
+          <div className="mt-2 flex items-center gap-1">
+            {[["create","Create"],["settings","Settings"],["results","Results"]].map(([id,label])=>(
+              <button key={id} onClick={()=>setTab(id)} className={cx("relative px-3 py-2 text-sm font-medium transition-colors", tab===id?"text-sky-700":"text-slate-500 hover:text-slate-700")}>
+                {label}
+                {tab===id && <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-sky-500" />}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-2 pb-2">
+          <span className={cx("hidden text-xs font-medium sm:inline", conflicts.length?"text-amber-600":"text-emerald-600")}>{conflicts.length?`⚠ ${conflicts.length} to review`:"✓ No conflicts"}</span>
+          <button onClick={onCancel} className="rounded-full border border-slate-200 bg-white px-4 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50">Cancel</button>
+          <button onClick={saveRule} className={cx("rounded-full bg-sky-500 px-5 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-sky-600", !valid && "opacity-50 pointer-events-none")}>Save rule</button>
+        </div>
+      </div>
+
+      {/* body */}
+      <div className="flex min-h-0 flex-1">
+        {tab==="create" && (
+          <React.Fragment>
+            <aside className="hidden w-64 shrink-0 border-r border-slate-200 bg-white lg:block">
+              <V9Overview draft={draft} conflicts={conflicts} onNavigate={focusSection} />
+            </aside>
+            <main className="min-w-0 flex-1 overflow-y-auto bg-slate-50 px-6 py-5">
+              <div className="mx-auto max-w-2xl space-y-3">
+                <div className="flex items-start gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                  <span className="mt-px shrink-0 text-[10px] font-bold uppercase tracking-wide text-sky-500">Summary</span>
+                  <p className="text-xs leading-relaxed text-slate-600">{bannerSummary || "Build the rule in the cards below — a plain-English summary appears here as you go."}</p>
+                </div>
+
+                <V92Block refEl={tRef} flash={flash==="trigger"} icon="⚡" iconTone="bg-sky-50 text-sky-600"
+                  title="Trigger" desc="When this rule runs and who it affects" status={trigStatus}>
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-2 text-sm text-slate-600">
+                    <span className="text-slate-400">Runs</span>
+                    <Dropdown trigger={<span className={cx("inline-flex cursor-pointer items-center gap-1 rounded-md border px-2.5 py-1 text-sm font-medium", draft.trigger.moment ? "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100" : "border-dashed border-slate-300 bg-white text-slate-400")}>{(V9_WHEN.find(w=>w.id===draft.trigger.moment)||{label:"choose when"}).label}<span className="text-slate-400">▾</span></span>}>
+                      {close=><PickList items={V9_WHEN.map(w=>({value:w.id,label:w.label}))} onPick={v=>{update(d=>d.trigger.moment=v);close();}} />}
+                    </Dropdown>
+                    <span className="text-slate-400">for</span>
+                    <Dropdown trigger={<span className={cx("inline-flex cursor-pointer items-center gap-1 rounded-md border px-2.5 py-1 text-sm font-medium", draft.scope.audience ? "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100" : "border-dashed border-slate-300 bg-white text-slate-400")}>{(AUD_FRIENDLY.find(a=>a.id===draft.scope.audience)||{label:"choose who"}).label}<span className="text-slate-400">▾</span></span>}>
+                      {close=><PickList items={AUD_FRIENDLY.map(a=>({value:a.id,label:a.label}))} onPick={v=>{update(d=>d.scope.audience=v);close();}} />}
+                    </Dropdown>
+                    <span className="text-slate-400">on</span>
+                    <Dropdown trigger={<span className={cx("inline-flex cursor-pointer items-center gap-1 rounded-md border px-2.5 py-1 text-sm font-medium", draft.trigger.lifecycle ? "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100" : "border-dashed border-slate-300 bg-white text-slate-400")}>{(V9_LIFE.find(l=>l.id===draft.trigger.lifecycle)||{label:"choose requests"}).label}<span className="text-slate-400">▾</span></span>}>
+                      {close=><PickList items={V9_LIFE.map(l=>({value:l.id,label:l.label}))} onPick={v=>{update(d=>d.trigger.lifecycle=v);close();}} />}
+                    </Dropdown>
+                  </div>
+                </V92Block>
+
+                <V92Block refEl={cRef} flash={flash==="conditions"} icon="🔍" iconTone="bg-violet-50 text-violet-600"
+                  title="Conditions" desc="Limit when this rule applies — optional" status={condStatus} conflict={condConflicts.length>0}
+                  onClear={conds.length ? ()=>mutate0(b=>{ b.conditions=[]; }) : null}>
+                  <V92ConflictCallout items={condConflicts} allRules={allRules} onEditOther={onEditRule} onDisableOther={onDisableRule} onResolve={resolve} />
+                  <V92Conditions block={block} mutate={mutate0} />
+                </V92Block>
+
+                <V92Block refEl={aRef} flash={flash==="actions"} icon="→" iconTone="bg-emerald-50 text-emerald-600"
+                  title="Actions" desc="What should happen to the form" status={actStatus} conflict={actConflicts.length>0}
+                  onClear={validActions.length ? ()=>mutate0(b=>{ b.actions=[]; }) : null}>
+                  <V92ConflictCallout items={actConflicts} allRules={allRules} onEditOther={onEditRule} onDisableOther={onDisableRule} onResolve={resolve} />
+                  <V9Actions block={block} conflictFields={cf} update={mutate0} />
+                </V92Block>
+
+                <V92Advanced refEl={advRef} flash={flash==="advanced"} adv={draft.advanced} open={advOpen} setOpen={setAdvOpen} onToggle={onAdvanced} />
+              </div>
+            </main>
+          </React.Fragment>
+        )}
+
+        {tab==="settings" && (
+          <main className="min-w-0 flex-1 overflow-y-auto bg-slate-50 px-6 py-6">
+            <div className="mx-auto max-w-xl">
+              <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                <h3 className="text-sm font-semibold text-slate-800">Rule settings</h3>
+                <p className="mt-0.5 text-xs text-slate-500">Basic details for this rule. The behavior is built in the <button onClick={()=>setTab("create")} className="font-medium text-sky-600 hover:underline">Create</button> tab.</p>
+                <label className="mt-4 block text-xs font-semibold uppercase tracking-wide text-slate-400">Rule name</label>
+                <input value={draft.name} onChange={e=>update(d=>d.name=e.target.value)} placeholder="Untitled rule" className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-400 focus:outline-none" />
+                <label className="mt-4 block text-xs font-semibold uppercase tracking-wide text-slate-400">Description</label>
+                <textarea value={draft.description||""} onChange={e=>update(d=>d.description=e.target.value)} rows={2} placeholder="What does this rule do?" className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-400 focus:outline-none" />
+                <div className="mt-4 flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2.5">
+                  <span className="text-sm text-slate-700">Rule enabled</span>
+                  <button onClick={()=>update(d=>d.status=d.status==="ENABLED"?"DISABLED":"ENABLED")} className={cx("relative h-6 w-11 rounded-full transition-colors", draft.status==="ENABLED"?"bg-emerald-500":"bg-slate-300")}>
+                    <span className={cx("absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all", draft.status==="ENABLED"?"left-[22px]":"left-0.5")} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </main>
+        )}
+
+        {tab==="results" && (
+          <main className="min-w-0 flex-1 overflow-y-auto bg-slate-50 px-6 py-6">
+            <div className="mx-auto max-w-xl space-y-3">
+              <div className="rounded-lg border border-sky-100 bg-sky-50 px-4 py-2.5 text-sm text-slate-600">
+                <span className="font-semibold text-sky-700">Results.</span> Try this rule with sample values and see how the form behaves — without leaving the editor.
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <PreviewPanel draft={draft} allRules={allRules} />
+              </div>
+            </div>
+          </main>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================ APP */
 function App(){
   const [mode, setMode] = useState("example");                // "example" = sample loaded (default) · "guided" = empty start
   const [rules, setRules] = useState(() => SEED.map(r => ({ ...r, name: r.name || genSlug(r) })));  // example default: sample rules loaded
@@ -1445,13 +2278,14 @@ function App(){
     setRules(rs => rs.some(r=>r.id===draft.id) ? rs.map(r=>r.id===draft.id?draft:r) : [...rs, draft]);
     setView({ screen:"list" });
   };
+  const disableRule = id => setRules(rs => rs.map(r => r.id===id ? {...r, status:"DISABLED"} : r));
 
   return (
     <div className="flex h-screen flex-col">
       <VersionBar />
       {view.screen!=="studio" && <ModeBar mode={mode} onChange={switchMode} />}
       {view.screen==="studio"
-        ? <RuleStudio initial={view.rule} isNew={view.isNew} allRules={rules} onCancel={cancel} onSave={save} />
+        ? <RuleStudioV92 initial={view.rule} isNew={view.isNew} allRules={rules} onCancel={cancel} onSave={save} onEditRule={startEdit} onDisableRule={disableRule} />
         : <div className="flex-1 overflow-y-auto"><RulesList rules={rules} setRules={setRules} onCreate={startCreate} onEdit={startEdit} mode={mode} /></div>}
     </div>
   );

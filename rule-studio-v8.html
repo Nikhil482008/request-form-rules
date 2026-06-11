@@ -12,13 +12,59 @@
   body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
   ::-webkit-scrollbar { width: 10px; height: 10px; }
   ::-webkit-scrollbar-thumb { background:#cbd5e1; border-radius: 6px; }
+
+  /* ===== V8 scoped theme (ported from the Flow reference) — only applies inside .v8root ===== */
+  .v8root{
+    --v8-bg:#0a0a0c; --v8-panel:#0f0f12; --v8-panel2:#131317; --v8-topbar:#0c0c0f; --v8-border:#1f1f25;
+    --v8-border2:#2a2a32; --v8-text:#e6e6ea; --v8-muted:#86868f; --v8-faint:#5a5a63; --v8-ink:#b0b0b8;
+    --v8-pop:#16161b; --v8-pophover:#20202a;
+    --v8-accent:#5b6cff; --v8-accent2:#7c89ff; --v8-red:#f85149;
+    --v8-when:#a7c0ee; --v8-when-bg:#1b2740;
+    --v8-if:#e6cd8f;   --v8-if-bg:#2b2614;
+    --v8-then:#93d6ab; --v8-then-bg:#16271d;
+    --v8-for:#c7b0ec;  --v8-for-bg:#251c3a;
+    --v8-grain:#ffffff12;
+    --v8-shadow-pop:0 12px 34px -14px rgba(0,0,0,.7), 0 3px 10px -4px rgba(0,0,0,.45);
+    --v8-shadow-sm:0 6px 18px -10px rgba(0,0,0,.6), 0 1px 3px rgba(0,0,0,.35);
+    --v8-glow:color-mix(in srgb, var(--v8-accent) 8%, transparent);
+    font-family:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    background:var(--v8-bg); color:var(--v8-text); -webkit-font-smoothing:antialiased;
+  }
+  .v8root[data-v8theme="light"]{
+    --v8-bg:#f7f7f9; --v8-panel:#ffffff; --v8-panel2:#f1f1f4; --v8-topbar:#ffffff; --v8-border:#e6e6ea;
+    --v8-border2:#d8d8de; --v8-text:#16161a; --v8-muted:#6a6a73; --v8-faint:#9a9aa3; --v8-ink:#52525c;
+    --v8-pop:#ffffff; --v8-pophover:#eef0f4;
+    --v8-accent:#4f5dff; --v8-accent2:#5562e6; --v8-red:#cf222e;
+    --v8-when:#4f76c4; --v8-when-bg:#eef4fc;
+    --v8-if:#a8801f;   --v8-if-bg:#f9f1da;
+    --v8-then:#3f8d60; --v8-then-bg:#e9f6ed;
+    --v8-for:#7a5fc0;  --v8-for-bg:#f2edfb;
+    --v8-grain:#0000000d;
+    --v8-shadow-pop:0 16px 40px -16px rgba(15,23,42,.20), 0 4px 12px -6px rgba(15,23,42,.10);
+    --v8-shadow-sm:0 8px 22px -12px rgba(15,23,42,.16), 0 1px 3px rgba(15,23,42,.06);
+    --v8-glow:color-mix(in srgb, var(--v8-accent) 5%, transparent);
+  }
+  .v8root ::-webkit-scrollbar-thumb{ background:var(--v8-border2); border:2px solid var(--v8-bg); }
+  .v8slot{ background:none; border:0; padding:0; font:inherit; cursor:pointer;
+    text-decoration-line:underline; text-decoration-style:dashed; text-decoration-thickness:1.5px; text-underline-offset:4px; }
+  .v8slot:hover{ text-decoration-style:solid; }
+  .v8grain{ position:absolute; inset:0; pointer-events:none;
+    background-image:radial-gradient(circle at 1px 1px,var(--v8-grain) 1px,transparent 0); background-size:22px 22px; }
+  .v8glow{ position:absolute; inset:0; pointer-events:none;
+    background-image:radial-gradient(ellipse 60% 55% at 50% 38%,var(--v8-glow),transparent 60%); }
+  @keyframes v8pop{from{opacity:0;transform:translateY(-4px) scale(.98)}to{opacity:1;transform:none}}
+  .v8pop-enter{animation:v8pop .12s ease-out}
+  @keyframes v8in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  .v8in{animation:v8in .32s cubic-bezier(.2,.7,.3,1) both}
+  @keyframes v8beckon{0%,100%{color:var(--v8-faint);text-decoration-color:var(--v8-border2)}50%{color:var(--v8-accent2);text-decoration-color:var(--v8-accent2)}}
+  .v8beckon{animation:v8beckon 2.4s ease-in-out infinite}
 </style>
 </head>
 <body class="bg-slate-100 text-slate-800">
 <div id="root"></div>
 
 <script type="text/babel" data-presets="react">
-const { useState, useMemo, useRef } = React;
+const { useState, useMemo, useRef, useEffect } = React;
 
 /* ============================================================ DOMAIN DATA */
 // Field groups shown as headers in the field dropdown (DD1)
@@ -1050,289 +1096,552 @@ function ConditionsEditor({ block, mutate }){
 }
 
 /* ============================================================ RULE STUDIO */
-function RuleStudio({ initial, isNew, allRules, onCancel, onSave }){
-  const [draft, setDraft] = useState(() => JSON.parse(JSON.stringify(initial)));
-  const update = fn => setDraft(d => { const n = JSON.parse(JSON.stringify(d)); fn(n); return n; });
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [showTest, setShowTest] = useState(false);
-  const [showDesc, setShowDesc] = useState(!!initial.description);
-  const [dismissed, setDismissed] = useState(() => new Set());
+/* ============================================================ V8 — FORM-RULE CANVAS (reference-styled · big-node)
+   Canvas rebuilt to the Flow reference's clean look: icon-tile rail + connectors, big colored headword
+   (When/Check if/Then/For) + bold editable dashed-underline clause, and a "next →" chip row to add the next
+   step. Form-rule semantics kept (When → Check if → Then → For). Progressive: starts empty, grows via chips.
+   Sidebar unchanged. Scoped to .v8root. Reuses the shared engine + Rule model unchanged. */
+const lifeFriendly = id => (LIFECYCLES_FRIENDLY.find(l=>l.id===id)||{}).label || id;
+const RV = {
+  when:{ c:"var(--v8-when)", bg:"var(--v8-when-bg)", label:"WHEN" },
+  if:  { c:"var(--v8-if)",   bg:"var(--v8-if-bg)",   label:"IF" },
+  do:  { c:"var(--v8-then)", bg:"var(--v8-then-bg)", label:"DO" },
+  for: { c:"var(--v8-for)",  bg:"var(--v8-for-bg)",  label:"FOR" },
+};
+const BVERB = { MANDATE:"Make required", OPTIONAL:"Make optional", SHOW:"Show", HIDE:"Hide", ENABLE:"Enable", DISABLE:"Lock", SET_VALUE:"Set value", CLEAR_VALUE:"Clear value", SHOW_OPTIONS:"Show options", HIDE_OPTIONS:"Limit options", RUN_SCRIPT:"Run script", FILTER_DATA:"Filter data" };
+const bverb = id => id ? (BVERB[id] || (ACTION_TYPES.find(t=>t.id===id)||{}).label || id) : null;
+const fieldShort = id => { if(!id) return null; const f=fieldOf(id); return f ? f.name : fLabel(id); };
+const valDisplay = v => Array.isArray(v) ? v.join(", ") : (v===0?"0":(v||null));
+const vsvg = (d,s) => <svg width={s||15} height={s||15} viewBox="0 0 24 24" fill="none">{d}</svg>;
+const VI = {
+  bolt:    vsvg(<path d="M13 2L5 13h5l-1 9 9-12h-5l1-8z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round"/>),
+  diamond: vsvg(<path d="M12 3l9 9-9 9-9-9 9-9z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round"/>),
+  arrow:   vsvg(<path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>),
+  user:    vsvg(<><circle cx="12" cy="8" r="3.2" stroke="currentColor" strokeWidth="1.8"/><path d="M5 20a7 7 0 0114 0" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></>),
+  bulb:    vsvg(<path d="M9 18h6M10 21h4M12 3a6 6 0 00-4 10.5c.6.6 1 1.3 1 2.1h6c0-.8.4-1.5 1-2.1A6 6 0 0012 3z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>),
+  book:    vsvg(<path d="M4 5a2 2 0 012-2h13v15H6a2 2 0 00-2 2V5z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round"/>),
+};
+const NODE_ICON = { when:VI.bolt, if:VI.diamond, do:VI.arrow, for:VI.user };
+const V8_HELP = {
+  when: { title:"Timing", c:"var(--v8-when)", body:"When the behavior takes effect — as the form opens, while it is being filled, or when it is submitted." },
+  life: { title:"Forms",  c:"var(--v8-when)", body:"Whether this applies to new requests, existing ones, or both." },
+  if:   { title:"Condition", c:"var(--v8-if)", body:"The rule only runs when this is true. Combine checks with all / any." },
+  do:   { title:"Behavior", c:"var(--v8-then)", body:"What the form does to a field — show or hide it, make it required, lock it, or set a value." },
+  field:{ title:"Field", c:"var(--v8-then)", body:"The form field this behavior affects." },
+  for:  { title:"Audience", c:"var(--v8-for)", body:"Who sees this behavior while filling the form." },
+};
 
-  const conflicts = useMemo(
-    () => detectConflicts(draft, allRules).filter(c => !dismissed.has(c.with.id+c.field+c.type)),
-    [draft, allRules, dismissed]
-  );
-  const conflictFields = useMemo(() => new Set(conflicts.map(c=>c.field)), [conflicts]);
-
-  const setMatch = (bi,v) => update(d => d.blocks[bi].match=v);
-  const addCond  = bi => update(d => d.blocks[bi].conditions.push(newCondition()));
-  const setCond  = (bi,ci,k,v) => update(d => { d.blocks[bi].conditions[ci][k]=v; });
-  const rmCond   = (bi,ci) => update(d => d.blocks[bi].conditions.splice(ci,1));
-  const addAct   = bi => update(d => d.blocks[bi].actions.push(newAction()));
-  const setAct   = (bi,ai,k,v) => update(d => { d.blocks[bi].actions[ai][k]=v; });
-  const rmAct    = (bi,ai) => update(d => d.blocks[bi].actions.splice(ai,1));
-  const addBlock = () => update(d => d.blocks.push(newBlock()));
-  const removeBlock = bi => update(d => d.blocks.splice(bi,1));
-  const setAdv   = (k,v) => update(d => { d.advanced[k]=v; });
-  const setBlockMode = (bi,m) => update(d => { d.blocks[bi].mode=m; });
-  const dismiss  = c => setDismissed(s => { const n=new Set(s); n.add(c.with.id+c.field+c.type); return n; });
-
-  const allActionsReversible = draft.blocks.every(b => b.actions.every(a => REVERSIBLE.includes(a.type)));
-  const affectedFields = useMemo(() => { const s=new Set(); draft.blocks.forEach(b=>b.actions.forEach(a=>s.add(a.fieldId))); return [...s]; }, [draft]);
-  const valid = (draft.name||"").trim().length>0 && draft.blocks.length>0 && draft.blocks.every(b => b.actions.length>0);
-
+function V8Drop({ trigger, render, width }){
+  const [open,setOpen] = useState(false);
+  const ref = React.useRef(null);
+  const [pos,setPos] = useState(null);
+  const w = width||248;
+  const measure = () => {
+    const el=ref.current; if(!el) return null;
+    const r=el.getBoundingClientRect();
+    const vw=(typeof window!=="undefined"?window.innerWidth:1280), vh=(typeof window!=="undefined"?window.innerHeight:800);
+    return { top: Math.max(8, Math.min(r.bottom+8, vh-16)), left: Math.max(8, Math.min(r.left, vw - w - 12)) };
+  };
+  const menuRef = React.useRef(null);
+  const toggle = () => { if(!open){ setPos(measure()); setOpen(true); } else setOpen(false); };
+  React.useEffect(()=>{
+    if(!open) return;
+    const onScroll = (e)=>{ if(menuRef.current && menuRef.current.contains(e.target)) return; setOpen(false); }; // ignore scrolling inside the menu
+    const onResize = ()=>setOpen(false);
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onResize);
+    return ()=>{ window.removeEventListener("scroll", onScroll, true); window.removeEventListener("resize", onResize); };
+  }, [open]);
+  // portal into .v8root so the menu keeps the scoped --v8-* theme vars but still escapes the canvas scroll/stacking context
+  const host = (typeof document!=="undefined") ? (document.querySelector(".v8root") || document.body) : null;
+  const menu = (open && pos && host) ? ReactDOM.createPortal(
+    <React.Fragment>
+      <div className="fixed inset-0 z-[55]" onClick={()=>setOpen(false)} />
+      <div ref={menuRef} className="v8pop-enter overflow-hidden rounded-2xl text-left"
+        style={{ position:"fixed", top:pos.top, left:pos.left, zIndex:9999, width:w+"px", background:"var(--v8-pop)", border:"1px solid var(--v8-border2)", boxShadow:"var(--v8-shadow-pop)", fontSize:"14px", fontWeight:400 }}>
+        {render(()=>setOpen(false))}
+      </div>
+    </React.Fragment>, host) : null;
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col bg-slate-50">
-      {/* product-style header + breadcrumb */}
-      <div className="border-b border-slate-200 bg-white px-8 py-4">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <nav className="flex items-center gap-2 text-xs">
-              <button onClick={onCancel} className="font-medium text-sky-600 hover:underline">Admin</button>
-              <span className="text-slate-300">›</span>
-              <span className="text-slate-500">Request Management</span>
-              <span className="text-slate-300">›</span>
-              <button onClick={onCancel} className="text-slate-500 hover:underline">Request Form Rules</button>
-              <span className="text-slate-300">›</span>
-              <span className="text-slate-700">{isNew ? "Create" : "Edit"}</span>
-            </nav>
-            <h1 className="mt-1 text-xl font-bold text-slate-800">{isNew ? "Create Request Form Rule" : "Edit Request Form Rule"}</h1>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <button onClick={onCancel} className="h-10 rounded-full border border-slate-200 bg-white px-5 text-sm font-medium text-slate-600 hover:bg-slate-50">Cancel</button>
-            <button onClick={()=>onSave(draft)} className={cx("h-10 rounded-full bg-sky-500 px-6 text-sm font-semibold text-white shadow-sm hover:bg-sky-600", !valid && "opacity-50 pointer-events-none")}>Save Rule</button>
-          </div>
-        </div>
-      </div>
-
-      {/* structured form body */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="max-w-3xl px-8 py-6">
-
-          {/* live plain-English banner (refined UX, kept) */}
-          <div className="mb-6 rounded-lg border border-sky-100 bg-sky-50 px-4 py-3 text-sm text-slate-700">
-            <span className="font-semibold text-sky-700">In plain English:</span> {summarize(draft) || `${draft.blocks.length} requirements set.`}
-            <span className="ml-1 text-slate-400">· Affects {affectedFields.length} field{affectedFields.length!==1?"s":""}.</span>
-          </div>
-
-          {/* grouped conflict review */}
-          <div className="mb-6"><ConflictReview conflicts={conflicts} /></div>
-
-          {/* Rule Name + Description */}
-          <label className="block text-sm font-semibold text-slate-700">Rule Name <span className="text-red-500">*</span></label>
-          <input value={draft.name} onChange={e=>update(d=>d.name=e.target.value)} placeholder="e.g. Mandate assignee for high-priority tickets"
-            className="mt-1.5 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-300" />
-          {!showDesc
-            ? <button onClick={()=>setShowDesc(true)} className="mt-2 text-sm font-medium text-sky-600 hover:underline">Add Description</button>
-            : <textarea value={draft.description} onChange={e=>update(d=>d.description=e.target.value)} rows={2} placeholder="Describe what this rule does…"
-                className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-300" />}
-
-          {/* Applies to / Execute On */}
-          <div className="mt-5 grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-semibold text-slate-700">Applies to</label>
-              <Select value={draft.scope.audience} onChange={v=>update(d=>d.scope.audience=v)} options={AUD_FRIENDLY.map(a=>({value:a.id,label:a.label}))} className="mt-1.5 h-10 w-full" />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-slate-700">Execute On</label>
-              <Select value={draft.trigger.lifecycle} onChange={v=>update(d=>d.trigger.lifecycle=v)} options={EXECUTE_ON.map(l=>({value:l.id,label:l.label}))} className="mt-1.5 h-10 w-full" />
-            </div>
-          </div>
-
-          {/* Advanced Settings */}
-          <button onClick={()=>setShowAdvanced(s=>!s)} className="mt-4 flex items-center gap-2 text-sm font-medium text-sky-600 hover:underline">
-            <span className="flex h-4 w-4 items-center justify-center rounded-full border border-sky-400 text-[10px] leading-none">{showAdvanced?"˅":"›"}</span> Advanced Settings
-          </button>
-          {showAdvanced && (
-            <div className="mt-3 space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm">
-              <div className="flex items-center gap-3">
-                <span className="w-28 text-slate-600">Rule Event</span>
-                <Select value={draft.trigger.moment} onChange={v=>update(d=>d.trigger.moment=v)} options={MOMENTS.map(m=>({value:m.id,label:eventLabel(m.id)}))} className="h-9" />
-              </div>
-              <label className={cx("flex items-start gap-2", !allActionsReversible && "opacity-40")}>
-                <input type="checkbox" disabled={!allActionsReversible} checked={draft.advanced.reverseOnFalse} onChange={e=>setAdv("reverseOnFalse",e.target.checked)} className="mt-0.5" />
-                <span>Reverse the action when the condition is no longer true
-                  {!allActionsReversible && <em className="block text-xs text-slate-400">Not available with “Set value” (it has no opposite).</em>}</span>
-              </label>
-              <label className="flex items-start gap-2">
-                <input type="checkbox" checked={draft.advanced.enforceSystemWide} onChange={e=>setAdv("enforceSystemWide",e.target.checked)} className="mt-0.5" />
-                <span>Enforce across every form
-                  {draft.advanced.enforceSystemWide && <em className="block text-xs text-amber-600">Overrides “Applies to” everywhere — use with care.</em>}</span>
-              </label>
-            </div>
-          )}
-
-          {/* per-block Conditions + Actions */}
-          {draft.blocks.map((b,bi)=>(
-            <div key={b.id}>
-              <div className="my-6 border-t border-slate-200" />
-              {draft.blocks.length>1 && (
-                <div className="mb-3 flex items-center justify-between">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Condition &amp; action set {bi+1}</span>
-                  <button onClick={()=>removeBlock(bi)} className="text-xs font-medium text-red-500 hover:underline">Remove set</button>
-                </div>
-              )}
-
-              {/* CONDITIONS */}
-              <h3 className="text-base font-bold text-slate-800">Conditions</h3>
-              <div className="mt-4">
-                <ConditionsEditor block={b} mutate={fn=>update(d=>fn(d.blocks[bi]))} />
-              </div>
-
-              {/* ACTIONS */}
-              <h3 className="mt-7 text-base font-bold text-slate-800">Actions</h3>
-
-              <div className="mt-4 space-y-3">
-                {b.actions.map((a,ai)=>(
-                  <div key={a.id}>
-                    <div className="flex items-center gap-3">
-                      <button onClick={()=>rmAct(bi,ai)} title="Remove" className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-red-500 text-sm leading-none text-white hover:bg-red-600">−</button>
-                      <div className={cx("flex flex-1 flex-wrap items-center gap-2 rounded-md border p-1.5", conflictFields.has(a.fieldId) ? "border-amber-300 ring-1 ring-amber-200" : "border-slate-200 bg-white")}>
-                        <Dropdown trigger={<span className="cursor-pointer rounded-md bg-slate-100 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-200">{(ACTION_TYPES.find(t=>t.id===a.type)||{}).label} ▾</span>}>
-                          {close => <PickList items={ACTION_TYPES.map(t=>({value:t.id,label:t.label}))} onPick={v=>{setAct(bi,ai,"type",v);close();}} />}
-                        </Dropdown>
-                        <Dropdown trigger={<span className="cursor-pointer px-2 text-sm text-slate-700 hover:text-slate-900">{fieldOf(a.fieldId).name} ▾</span>}>
-                          {close => <PickList search items={ACTION_FIELDS.map(f=>({value:f.id,label:f.name}))} onPick={v=>{setAct(bi,ai,"fieldId",v);close();}} />}
-                        </Dropdown>
-                        {a.type==="SET_VALUE" && <span className="text-sm text-slate-400">to</span>}
-                        {a.type==="SET_VALUE" && (
-                          fieldOf(a.fieldId).options
-                            ? <Dropdown trigger={<span className="cursor-pointer rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700">{a.value||"choose"} ▾</span>}>
-                                {close => <PickList items={fieldOf(a.fieldId).options.map(o=>({value:o,label:o}))} onPick={v=>{setAct(bi,ai,"value",v);close();}} />}
-                              </Dropdown>
-                            : <input value={a.value} onChange={e=>setAct(bi,ai,"value",e.target.value)} placeholder="value" className="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-sky-400 focus:outline-none" />
-                        )}
-                      </div>
-                    </div>
-                    {conflicts.filter(c => c.field===a.fieldId).map((c,i)=>(
-                      <div key={i} className="ml-8 mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs">
-                        <p className="text-amber-800"><span className="font-medium">Heads up:</span> {c.text}</p>
-                        <div className="mt-1 flex gap-3 font-medium">
-                          <button className="text-amber-700 hover:underline">View that rule</button>
-                          <button onClick={()=>dismiss(c)} className="text-amber-700 hover:underline">Let this one win</button>
-                          <button onClick={()=>dismiss(c)} className="text-slate-400 hover:underline">Dismiss</button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </div>
-              <button onClick={()=>addAct(bi)} className="mt-3 flex items-center gap-2 text-sm font-medium text-sky-600 hover:underline">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-sm leading-none text-white">+</span> Add new action
-              </button>
-            </div>
-          ))}
-
-          {/* add another condition→action set (Scenario B) */}
-          <div className="my-6 border-t border-dashed border-slate-200" />
-          <button onClick={addBlock} className="text-sm font-medium text-slate-500 hover:text-sky-600">+ Add another condition &amp; action set</button>
-        </div>
-      </div>
-
-      {/* sticky footer */}
-      <div className="flex items-center justify-between border-t border-slate-200 bg-white px-5 py-3">
-        <span className={cx("text-sm font-medium", conflicts.length ? "text-amber-600" : "text-emerald-600")}>
-          {conflicts.length ? `⚠ ${conflicts.length} thing${conflicts.length>1?"s":""} to review` : "✓ No conflicts"}
-        </span>
-        <div className="flex items-center gap-2">
-          <button onClick={()=>setShowTest(true)} className="h-10 rounded-full border border-sky-200 bg-sky-50 px-5 text-sm font-medium text-sky-700 hover:bg-sky-100">▷ Try it</button>
-          <button onClick={onCancel} className="h-10 rounded-full border border-slate-200 bg-white px-5 text-sm font-medium text-slate-600 hover:bg-slate-50">Cancel</button>
-          <button onClick={()=>onSave(draft)} className={cx("h-10 rounded-full bg-sky-500 px-6 text-sm font-semibold text-white shadow-sm hover:bg-sky-600", !valid && "opacity-50 pointer-events-none")}>Save Rule</button>
-        </div>
-      </div>
-
-      {/* Try-it drawer (on demand) */}
-      {showTest && (
-        <React.Fragment>
-          <div className="fixed inset-0 z-40 bg-black/20" onClick={()=>setShowTest(false)} />
-          <div className="fixed right-0 top-0 z-50 h-full w-[380px] overflow-y-auto bg-white p-4 shadow-2xl">
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="font-semibold">Try it</h3>
-              <button onClick={()=>setShowTest(false)} className="text-slate-400 hover:text-slate-700">✕</button>
-            </div>
-            <PreviewPanel draft={draft} allRules={allRules} />
-          </div>
-        </React.Fragment>
-      )}
-    </div>
+    <span ref={ref} className="relative inline-block align-baseline">
+      <span onClick={toggle}>{trigger}</span>
+      {menu}
+    </span>
   );
 }
-
-/* ============================================================ PREVIEW PANEL */
-function PreviewPanel({ draft, allRules }){
-  const [persona, setPersona] = useState(draft.scope.audience==="ALL"?"TECHNICIANS":draft.scope.audience);
-  const [moment, setMoment]   = useState(draft.trigger.moment);
-  const refFields = useMemo(() => {
-    const s = new Set();
-    if (draft.trigger.moment==="ON_FIELD_CHANGE") s.add(draft.trigger.fieldId);
-    draft.blocks.forEach(b => flatConds(b).forEach(c => s.add(c.fieldId)));
-    return [...s];
-  }, [draft]);
-  const [values, setValues] = useState({});
-  const [result, setResult] = useState(null);
-
-  const setVal = (id,v) => setValues(o=>({...o,[id]:v}));
-  const run = () => setResult(simulate(draft, allRules, persona, values, moment));
-
+function MenuRow({ it, onPick }){
+  return (
+    <button onClick={()=>onPick(it.value)}
+      onMouseEnter={e=>e.currentTarget.style.background="var(--v8-pophover)"}
+      onMouseLeave={e=>e.currentTarget.style.background="transparent"}
+      className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[12.5px]" style={{ color:"var(--v8-text)" }}>
+      {it.icon && <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg" style={{ background:it.bg||"var(--v8-panel2)", color:it.color||"var(--v8-muted)" }}>{it.icon}</span>}
+      <span className="min-w-0 flex-1 truncate">{it.label}</span>
+    </button>
+  );
+}
+function V8MenuPanel({ help, search, groups, items, onPick }){
+  const [q,setQ] = useState(""); const ql=q.trim().toLowerCase();
+  const ok = it => !ql || it.label.toLowerCase().includes(ql);
   return (
     <div>
-      <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Preview &amp; Test</p>
-      <div className="rounded-md border border-slate-200 p-3 space-y-2 text-sm">
-        <div className="flex items-center gap-2">
-          <span className="w-16 text-slate-500">Run as</span>
-          <Select value={persona} onChange={setPersona} options={AUDIENCES.filter(a=>a.id!=="ALL").map(a=>({value:a.id,label:a.label}))} className="h-8 flex-1" />
+      {help && (
+        <div className="px-3 pt-3 pb-2.5" style={{ borderLeft:"3px solid "+help.c }}>
+          <div className="mb-1 text-[9px] uppercase tracking-[0.14em]" style={{ color:"var(--v8-faint)" }}>Quick help</div>
+          <div className="mb-1 text-[13px] font-semibold" style={{ color:help.c }}>{help.title}</div>
+          <div className="text-[11.5px] leading-snug" style={{ color:"var(--v8-muted)" }}>{help.body}</div>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="w-16 text-slate-500">Moment</span>
-          <Select value={moment} onChange={setMoment} options={MOMENTS.map(m=>({value:m.id,label:m.label}))} className="h-8 flex-1" />
+      )}
+      {search && (
+        <div className="px-2.5 pt-2 pb-1.5">
+          <input autoFocus value={q} onChange={e=>setQ(e.target.value)} placeholder="Search"
+            className="w-full rounded-xl px-3 py-2 text-[12px] outline-none"
+            style={{ background:"var(--v8-pop)", border:"1px solid var(--v8-accent)", color:"var(--v8-text)" }} />
         </div>
-        <div className="border-t border-slate-100 pt-2">
-          <p className="mb-1 text-xs font-medium text-slate-500">Test values</p>
-          {refFields.length===0 && <p className="text-xs italic text-slate-400">No condition fields — rule always matches.</p>}
-          {refFields.map(id=>(
-            <div key={id} className="mb-1 flex items-center gap-2">
-              <span className="w-24 text-xs text-slate-500">{fLabel(id)}</span>
-              {fieldOf(id).options
-                ? <Select value={values[id]||""} onChange={v=>setVal(id,v)} options={[{value:"",label:"—"},...fieldOf(id).options.map(o=>({value:o,label:o}))]} className="h-8 flex-1" />
-                : <TextInput value={values[id]||""} onChange={v=>setVal(id,v)} type={fieldOf(id).type==="number"?"number":"text"} className="h-8 flex-1" />}
-            </div>
-          ))}
-        </div>
-        <Btn onClick={run} className="w-full">▷ Run simulation</Btn>
-
-        {result && (
-          <div className="border-t border-slate-100 pt-2 space-y-2">
-            <p className="text-xs font-medium text-slate-500">Execution trace ({result.applicableCount} applicable rule{result.applicableCount!==1?"s":""})</p>
-            <div className="space-y-1">
-              {result.trace.filter(t=>t.matched).length===0 && <p className="text-xs italic text-slate-400">No blocks matched these values.</p>}
-              {result.trace.filter(t=>t.matched).map((t,i)=>(
-                <div key={i} className={cx("rounded px-2 py-1 text-xs", t.isDraft?"bg-sky-50 text-sky-800":"bg-slate-50 text-slate-600")}>
-                  <span className="font-semibold">{t.isDraft?"This rule":"Rule "+t.ruleId.replace("rule_","#")}</span> · block {t.blockIndex+1} matched
-                  <span className="block text-slate-500">→ {t.actions.map(actionPhrase).join("; ")}</span>
-                </div>
-              ))}
-            </div>
-            <p className="text-xs font-medium text-slate-500">Resulting form state</p>
-            <div className="space-y-1">
-              {Object.keys(result.state).map(fid=>{
-                const s = result.state[fid];
-                return (
-                  <div key={fid} className="flex items-center gap-2 text-xs">
-                    <span className={cx("inline-block h-2 w-2 rounded-full", s.visible?"bg-emerald-500":"bg-slate-300")} />
-                    <span className="font-medium">{fLabel(fid)}</span>
-                    <span className="text-slate-500">
-                      {s.visible?"visible":"hidden"}{s.required?", required":""}{!s.enabled?", disabled":""}{s.value?`, = ${s.value}`:""}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
+      )}
+      <div className="max-h-72 overflow-y-auto px-1.5 py-1">
+        {groups
+          ? groups.map((g,gi)=>{ const its=g.items.filter(ok); if(!its.length) return null;
+              return <div key={gi}>
+                <div className="px-2.5 pt-2.5 pb-1 text-[11px] font-medium" style={{ color:"var(--v8-faint)" }}>{g.header}</div>
+                {its.map(it=> <MenuRow key={it.value} it={it} onPick={onPick} />)}
+              </div>; })
+          : items.filter(ok).map(it=> <MenuRow key={it.value} it={it} onPick={onPick} />)}
+        {!groups && !items.filter(ok).length && <div className="px-3 py-2 text-[12px]" style={{ color:"var(--v8-faint)" }}>No matches</div>}
       </div>
     </div>
   );
 }
+/* inline editable slot — bold dark value with a dashed underline (color lives on the headword, not here) */
+function V8Slot({ value, placeholder, items, groups, search, onPick, help, valueInput, width, beckon }){
+  const filled = value!=null && value!=="";
+  return (
+    <V8Drop width={width} trigger={
+      <button className={"v8slot"+(beckon && !filled ? " v8beckon" : "")} style={{ color: filled ? "var(--v8-text)" : "var(--v8-faint)", textDecorationColor:"var(--v8-border2)" }}>
+        {filled ? value : placeholder}
+      </button>}
+      render={close => valueInput
+        ? <div className="p-2.5">
+            {help && <div className="mb-2 text-[11.5px] leading-snug" style={{color:"var(--v8-muted)"}}><span className="font-semibold" style={{color:help.c}}>{help.title}. </span>{help.body}</div>}
+            <input autoFocus defaultValue={value||""} placeholder={placeholder}
+              onKeyDown={e=>{ if(e.key==="Enter"){ onPick(e.target.value); close(); } }}
+              className="w-44 rounded-lg px-2.5 py-1.5 text-sm outline-none" style={{ background:"var(--v8-pop)", border:"1px solid var(--v8-border2)", color:"var(--v8-text)" }} />
+            <div className="mt-1 text-[11px]" style={{color:"var(--v8-faint)"}}>Press Enter</div>
+          </div>
+        : <V8MenuPanel help={help} search={search} groups={groups} items={items} onPick={v=>{ onPick(v); close(); }} />} />
+  );
+}
+const Conn = ({children}) => <span style={{ color:"var(--v8-faint)", fontWeight:400 }}>{children}</span>;
+const MatchChip = ({ match, onClick }) => (
+  <button onClick={onClick} className="mx-1.5 inline-flex items-center rounded px-1.5 py-[1px] align-middle text-[11px] font-semibold uppercase tracking-[0.06em]"
+    style={{ color:"var(--v8-accent2)", background:"transparent", border:"1px solid var(--v8-border2)", fontWeight:600 }}>{match==="ALL"?"and":"or"}</button>
+);
+/* a "next →" affordance pill */
+const NextChip = ({ icon, label, role, onClick, primary }) => (
+  <button onClick={onClick} className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium"
+    onMouseEnter={e=>{ if(!primary){ e.currentTarget.style.background=RV[role].bg; e.currentTarget.style.color=RV[role].c; } }}
+    onMouseLeave={e=>{ if(!primary){ e.currentTarget.style.background="var(--v8-panel2)"; e.currentTarget.style.color="var(--v8-muted)"; } }}
+    style={ primary ? { background:RV[role].bg, color:RV[role].c } : { background:"var(--v8-panel2)", color:"var(--v8-muted)" } }>
+    <span className="flex h-4 w-4 items-center justify-center">{icon}</span><span>{label}</span>
+  </button>
+);
+/* a big node on the rail: icon-tile marker + connector + colored headword + bold clause + chip row */
+function V8Node({ role, head, first, last, removable, onRemove, children, chips, footer }){
+  const r = RV[role];
+  const line = first&&last ? { display:"none" } : first ? { top:"42px", bottom:"0" } : last ? { top:"0", height:"22px" } : { top:"0", bottom:"0" };
+  return (
+    <div className="v8in group relative" style={{ paddingLeft:"58px", paddingTop:"6px", paddingBottom:"30px" }}>
+      <div className="absolute" style={{ left:"19px", width:"2px", background:"var(--v8-border)", ...line }} />
+      <span className="absolute flex h-10 w-10 items-center justify-center rounded-xl" style={{ left:"0", top:"22px", transform:"translateY(-50%)", background:r.bg, color:r.c, boxShadow:"0 0 0 5px var(--v8-bg)" }}>{NODE_ICON[role]}</span>
+      <div className="text-[21px] font-bold leading-snug" style={{ color:"var(--v8-text)" }}>
+        <span style={{ color:r.c }}>{head}</span> {children}
+        {removable && <button onClick={onRemove} className="ml-2 align-middle text-[14px] font-normal opacity-0 transition-opacity group-hover:opacity-100" style={{ color:"var(--v8-faint)" }} title="Remove">✕</button>}
+      </div>
+      {chips && chips.length>0 && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-[13px]">
+          <span style={{ color:"var(--v8-faint)" }}>next →</span>{chips}
+        </div>
+      )}
+      {footer && <div className="mt-2.5 text-[13px]" style={{ color:"var(--v8-faint)" }}>{footer}</div>}
+    </div>
+  );
+}
+
+const V8_STEPS = [
+  { title:"Your form-rule canvas", body:"A rule reads top to bottom and starts empty. Click the underlined blanks, then use the next → chips to add the following step." },
+  { title:"Start with when", body:"Pick when the rule runs — as the form opens, while it is being filled, or when it is submitted." },
+  { title:"Add a condition, then a behavior", body:"Optionally add a Check-if condition, then a Then behavior — show, hide, require, lock or set a value on a field." },
+  { title:"Review & save", body:"Choose who it is for, watch the summary and field impact build on the right, resolve conflicts, then Save." },
+];
+function V8HowItWorks({ onClose }){
+  const [i,setI]=useState(0); const s=V8_STEPS[i];
+  const rows=[["when","When","Service Request is updated"],["if","Check if","Priority is High"],["do","Then","Make Assignee required"],["for","For","Technicians"]];
+  const cnt=[1,2,3,4][i]||4;
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center px-4" style={{ background:"rgba(0,0,0,.5)" }} onMouseDown={onClose}>
+      <div className="v8in w-[560px] max-w-full overflow-hidden rounded-2xl" style={{ background:"var(--v8-panel2)", border:"1px solid var(--v8-border2)", boxShadow:"var(--v8-shadow-pop)" }} onMouseDown={e=>e.stopPropagation()}>
+        <div className="flex h-[230px] items-center justify-center px-6" style={{ background:"var(--v8-bg)" }}>
+          <div className="w-full max-w-[360px] space-y-2.5">
+            {rows.slice(0,cnt).map((row,k)=>{ const r=RV[row[0]]; return (
+              <div key={k} className="v8in flex items-center gap-3">
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ background:r.bg, color:r.c }}>{NODE_ICON[row[0]]}</span>
+                <div className="text-[15px] font-bold" style={{ color:"var(--v8-text)" }}><span style={{ color:r.c }}>{row[1]}</span> {row[2]}</div>
+              </div>
+            );})}
+          </div>
+        </div>
+        <div className="p-6">
+          <div className="text-lg font-bold" style={{ color:"var(--v8-text)" }}>{s.title}</div>
+          <p className="mt-1.5 text-sm leading-relaxed" style={{ color:"var(--v8-muted)" }}>{s.body}</p>
+          <div className="mt-5 flex items-center justify-between">
+            <div className="flex items-center gap-1.5">{V8_STEPS.map((_,k)=><span key={k} className="h-1.5 rounded-full" style={{ width:k===i?"18px":"7px", background:k===i?"var(--v8-accent)":"var(--v8-border2)" }} />)}</div>
+            <div className="flex items-center gap-2">
+              {i>0 && <button onClick={()=>setI(i-1)} className="rounded-lg px-4 py-1.5 text-sm font-medium" style={{ border:"1px solid var(--v8-border2)", color:"var(--v8-muted)" }}>Back</button>}
+              {i<V8_STEPS.length-1
+                ? <button onClick={()=>setI(i+1)} className="rounded-lg px-5 py-1.5 text-sm font-semibold" style={{ background:"var(--v8-accent)", color:"#fff" }}>Next</button>
+                : <button onClick={onClose} className="rounded-lg px-5 py-1.5 text-sm font-semibold" style={{ background:"var(--v8-accent)", color:"#fff" }}>Start building</button>}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+const BEHAVIOR_DOCS = [
+  { k:"do",  name:"Show / Hide", body:"Reveal or remove a field on the form for the people the rule applies to." },
+  { k:"do",  name:"Make required", body:"Force an answer before the form can be submitted." },
+  { k:"do",  name:"Make optional", body:"Drop a requirement so the field can be left blank." },
+  { k:"do",  name:"Lock (disable)", body:"Keep a field visible but read-only — people can see it, not change it." },
+  { k:"do",  name:"Set / Clear value", body:"Pre-fill or empty a field's answer automatically." },
+  { k:"do",  name:"Limit options", body:"Show only some of a dropdown's choices." },
+  { k:"if",  name:"Conditions", body:"Run the behavior only when field values match. Combine checks with all (AND) or any (OR)." },
+  { k:"when",name:"Timing", body:"Apply as the form opens, while it is being filled, or when it is submitted — on new and/or existing requests." },
+  { k:"for", name:"Audience", body:"Limit the behavior to requesters, technicians, signed-in users, or everyone." },
+  { k:"if",  name:"Conflicts", body:"When two rules touch the same field at the same time they are grouped as Contradictory, Duplicate, Overlapping, or Same-time." },
+];
+function V8BehaviorRef({ onClose }){
+  const [sel,setSel]=useState(0); const d=BEHAVIOR_DOCS[sel]; const r=RV[d.k];
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center px-4" style={{ background:"rgba(0,0,0,.5)" }} onMouseDown={onClose}>
+      <div className="v8in flex h-[460px] w-[720px] max-w-full overflow-hidden rounded-2xl" style={{ background:"var(--v8-panel2)", border:"1px solid var(--v8-border2)", boxShadow:"var(--v8-shadow-pop)" }} onMouseDown={e=>e.stopPropagation()}>
+        <div className="w-[244px] shrink-0 overflow-y-auto p-2" style={{ borderRight:"1px solid var(--v8-border)", background:"var(--v8-panel)" }}>
+          <div className="px-2 py-2 text-[11px] font-semibold uppercase tracking-wider" style={{ color:"var(--v8-faint)" }}>Form-rule behaviors</div>
+          {BEHAVIOR_DOCS.map((b,i)=>{ const br=RV[b.k]; return (
+            <button key={i} onClick={()=>setSel(i)} className="mb-0.5 flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left" style={{ background:i===sel?"var(--v8-pophover)":"transparent" }}>
+              <span className="rounded px-1.5 py-0.5 text-[9px] font-bold uppercase" style={{ color:br.c, background:br.bg }}>{br.label}</span>
+              <span className="text-[13px] font-medium" style={{ color:"var(--v8-text)" }}>{b.name}</span>
+            </button>
+          );})}
+        </div>
+        <div key={sel} className="v8in flex-1 overflow-y-auto p-6">
+          <div className="flex items-start justify-between">
+            <div className="text-xl font-bold" style={{ color:r.c }}>{d.name}</div>
+            <button onClick={onClose} style={{ color:"var(--v8-faint)" }}>✕</button>
+          </div>
+          <div className="mt-4 flex h-28 items-center justify-center rounded-2xl px-6 text-center text-sm" style={{ background:r.bg, color:r.c, border:"1px solid var(--v8-border)" }}>{d.name}</div>
+          <p className="mt-5 text-sm leading-relaxed" style={{ color:"var(--v8-ink)" }}>{d.body}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+function V8TestModal({ draft, allRules, onClose }){
+  const initPersona = draft.scope.audience==="REQUESTERS" ? "REQUESTERS" : "TECHNICIANS";
+  const [persona,setPersona]=useState(initPersona);
+  const [values,setValues]=useState({});
+  const moment=draft.trigger.moment;
+  const condFields=[]; { const s={}; draft.blocks.forEach(b=>flatConds(b).forEach(c=>{ if(c.fieldId && !s[c.fieldId]){s[c.fieldId]=1;condFields.push(c.fieldId);} })); }
+  const affected=[]; { const s={}; draft.blocks.forEach(b=>b.actions.forEach(a=>{ if(a.fieldId && !s[a.fieldId]){s[a.fieldId]=1;affected.push(a.fieldId);} })); }
+  const sim=simulate(draft, allRules, persona, values, moment);
+  const setV=(fid,v)=>setValues(o=>{ const n={...o}; n[fid]=v; return n; });
+  const stOf=fid=>sim.state[fid]||{visible:true,required:false,enabled:true,value:(values[fid]||"")};
+  const inp = { background:"var(--v8-pop)", border:"1px solid var(--v8-border2)", color:"var(--v8-text)" };
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center px-4" style={{ background:"rgba(0,0,0,.5)" }} onMouseDown={onClose}>
+      <div className="v8in w-[480px] max-w-full overflow-hidden rounded-2xl" style={{ background:"var(--v8-panel2)", border:"1px solid var(--v8-border2)", boxShadow:"var(--v8-shadow-pop)" }} onMouseDown={e=>e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom:"1px solid var(--v8-border)" }}>
+          <div className="text-[14px] font-semibold" style={{ color:"var(--v8-text)" }}>Try this rule</div>
+          <button onClick={onClose} style={{ color:"var(--v8-faint)" }}>✕</button>
+        </div>
+        <div className="max-h-[70vh] overflow-y-auto p-5">
+          <p className="text-xs" style={{ color:"var(--v8-faint)" }}>Pretend you are filling the form. Change the answers and watch the rule react.</p>
+          <div className="mt-3 flex items-center gap-2">
+            <span className="text-xs font-medium" style={{ color:"var(--v8-muted)" }}>I am a</span>
+            {[["REQUESTERS","Requester"],["TECHNICIANS","Technician"]].map(p=>(
+              <button key={p[0]} onClick={()=>setPersona(p[0])} className="rounded-full px-3 py-1 text-xs font-medium"
+                style={ persona===p[0] ? { background:"var(--v8-when-bg)", color:"var(--v8-when)" } : { border:"1px solid var(--v8-border2)", color:"var(--v8-muted)" } }>{p[1]}</button>
+            ))}
+          </div>
+          {condFields.length>0 && (
+            <div className="mt-4">
+              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide" style={{ color:"var(--v8-faint)" }}>Your answers</div>
+              {condFields.map(fid=>{ const f=fieldOf(fid); const opts=(f&&f.options)?f.options:[]; return (
+                <div key={fid} className="mb-2 flex items-center justify-between gap-2">
+                  <span className="text-sm" style={{ color:"var(--v8-muted)" }}>{f?f.name:fLabel(fid)}</span>
+                  {opts.length
+                    ? <select value={values[fid]||""} onChange={e=>setV(fid,e.target.value)} className="w-44 rounded-lg px-2 py-1.5 text-sm outline-none" style={inp}><option value="">—</option>{opts.map(o=><option key={o} value={o}>{o}</option>)}</select>
+                    : <input value={values[fid]||""} onChange={e=>setV(fid,e.target.value)} placeholder="Type a value…" className="w-44 rounded-lg px-2 py-1.5 text-sm outline-none" style={inp} />}
+                </div>
+              );})}
+            </div>
+          )}
+          <div className="mt-4">
+            <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide" style={{ color:"var(--v8-faint)" }}>The form right now</div>
+            {affected.length===0 && <p className="text-sm italic" style={{ color:"var(--v8-faint)" }}>Add a behavior to see its effect.</p>}
+            {affected.map(fid=>{ const st=stOf(fid); const f=fieldOf(fid); const name=f?f.name:fLabel(fid);
+              if(!st.visible) return <div key={fid} className="mb-2 flex items-center gap-2 rounded-lg px-3 py-2 text-xs" style={{ border:"1px dashed var(--v8-border2)", color:"var(--v8-faint)" }}><span>{name}</span><span className="ml-auto rounded-full px-2 py-0.5" style={{background:"var(--v8-panel)"}}>Hidden by this rule</span></div>;
+              return <div key={fid} className="mb-2 rounded-lg px-3 py-2" style={{ border:"1px solid var(--v8-border)", background:"var(--v8-panel)" }}>
+                <div className="flex items-center gap-1 text-xs font-medium" style={{ color:"var(--v8-muted)" }}>{name}{st.required && <span style={{color:"var(--v8-red)"}}>*</span>}</div>
+                <input disabled={!st.enabled} value={st.value||""} readOnly placeholder={st.enabled?"":"Locked"} className="mt-1 h-8 w-full rounded-md px-2 text-sm outline-none" style={ st.enabled ? inp : { background:"var(--v8-panel2)", border:"1px solid var(--v8-border)", color:"var(--v8-faint)" } } />
+              </div>;
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RuleStudioV8({ initial, isNew, allRules, onCancel, onSave }){
+  const [draft,setDraft]=useState(()=>{
+    const d=JSON.parse(JSON.stringify(initial));
+    if(isNew){ d.name=""; d.trigger.moment=""; d.trigger.lifecycle=""; d.scope.audience="";
+      d.blocks[0].match="ALL"; d.blocks[0].conditions=[]; d.blocks[0].actions=[]; }
+    return d;
+  });
+  const past=useRef([]); const future=useRef([]);
+  const update = fn => setDraft(prev=>{ past.current.push(JSON.stringify(prev)); if(past.current.length>120)past.current.shift(); future.current=[]; const n=JSON.parse(JSON.stringify(prev)); fn(n); return n; });
+  const undo = ()=> setDraft(prev=>{ if(!past.current.length) return prev; future.current.push(JSON.stringify(prev)); return JSON.parse(past.current.pop()); });
+  const redo = ()=> setDraft(prev=>{ if(!future.current.length) return prev; past.current.push(JSON.stringify(prev)); return JSON.parse(future.current.pop()); });
+  const [theme,setTheme]=useState("dark");
+  const [howOpen,setHowOpen]=useState(false);
+  const [refOpen,setRefOpen]=useState(false);
+  const [testOpen,setTestOpen]=useState(false);
+  const [conflictNote,setConflictNote]=useState("");
+
+  const block=draft.blocks[0];
+  const leafConds = block.conditions.filter(c=>!(c && c.kind==="GROUP"));
+  const moment=draft.trigger.moment;
+  const [showIf,setShowIf]=useState(!isNew && leafConds.length>0);
+  const [showThen,setShowThen]=useState(!isNew && block.actions.length>0);
+  const [showFor,setShowFor]=useState(!isNew && !!draft.scope.audience);
+  const railEmpty = isNew && !moment;
+
+  const clean = useMemo(()=>{ const d=JSON.parse(JSON.stringify(draft));
+    d.blocks=d.blocks.map(b=>({...b,
+      conditions:(b.conditions||[]).filter(c=> (c&&c.kind==="GROUP") ? true : !!(c&&c.fieldId)),
+      actions:(b.actions||[]).filter(a=>a.type&&a.fieldId) }));
+    return d; }, [draft]);
+  const cc=clean.blocks[0];
+  const ruleReady = cc.actions.length>0;
+  const hasDo = ruleReady;
+  const conflicts = useMemo(()=> ruleReady ? detectConflicts(clean, allRules) : [], [clean, allRules, ruleReady]);
+  const summary = ruleReady ? summarize(clean) : null;
+  const affected=[]; { const s={}; cc.actions.forEach(a=>{ if(!s[a.fieldId]){s[a.fieldId]=1;affected.push(a.fieldId);} }); }
+  const valid=(draft.name||"").trim().length>0 && hasDo;
+
+  const setActType=(ai,v)=>update(d=>{ d.blocks[0].actions[ai].type=v; if(v!=="SET_VALUE") d.blocks[0].actions[ai].value=""; });
+  const setActField=(ai,v)=>update(d=>{ d.blocks[0].actions[ai].fieldId=v; });
+  const setActValue=(ai,v)=>update(d=>{ d.blocks[0].actions[ai].value=v; });
+  const addAction=()=>update(d=>{ d.blocks[0].actions.push({id:uid("a"),type:"",fieldId:"",value:""}); });
+  const rmAction=ai=>update(d=>{ d.blocks[0].actions.splice(ai,1); });
+  const setMoment=v=>update(d=>{ d.trigger.moment=v; });
+  const setLifecycle=v=>update(d=>{ d.trigger.lifecycle=v; });
+  const setAudience=v=>update(d=>{ d.scope.audience=v; });
+  const setName=v=>update(d=>{ d.name=v; });
+  const addCond=()=>update(d=>{ d.blocks[0].conditions.push({id:uid("c"),fieldId:"",op:"",value:""}); });
+  const setCondField=(ci,v)=>update(d=>{ const c=d.blocks[0].conditions[ci]; c.fieldId=v; c.op=fieldOps(v)[0]; c.value=defaultVal(c.op); });
+  const setCondOp=(ci,v)=>update(d=>{ const c=d.blocks[0].conditions[ci]; c.op=v; c.value=defaultVal(v); });
+  const setCondValue=(ci,v)=>update(d=>{ d.blocks[0].conditions[ci].value=v; });
+  const rmCond=ci=>update(d=>{ d.blocks[0].conditions.splice(ci,1); });
+  const toggleMatch=()=>update(d=>{ d.blocks[0].match = d.blocks[0].match==="ALL"?"ANY":"ALL"; });
+
+  const finalize=()=>{ const d=JSON.parse(JSON.stringify(draft));
+    if(!d.trigger.moment) d.trigger.moment="ON_FIELD_CHANGE";
+    if(!d.trigger.lifecycle) d.trigger.lifecycle="CREATE";
+    if(!d.scope.audience) d.scope.audience="ALL";
+    d.blocks=d.blocks.map(b=>({...b, conditions:(b.conditions||[]).filter(c=>(c&&c.kind==="GROUP")||(c&&c.fieldId)), actions:(b.actions||[]).filter(a=>a.type&&a.fieldId) }));
+    return d; };
+
+  const FIELD_GROUPED = FIELD_GROUPS.map(g=>({ header:g.label, items:FIELDS.filter(f=>f.group===g.id).map(f=>({value:f.id,label:f.name})) })).filter(g=>g.items.length);
+  const condValueSlot = (c,ci)=>{ const f=fieldOf(c.fieldId); const opts=(f&&f.options)?f.options:null;
+    return opts ? <V8Slot value={valDisplay(c.value)} placeholder="a value" items={opts.map(o=>({value:o,label:o}))} onPick={v=>setCondValue(ci,v)} />
+                : <V8Slot value={valDisplay(c.value)} placeholder="a value" valueInput onPick={v=>setCondValue(ci,v)} />; };
+  const actValueSlot = (a,ai)=>{ const f=fieldOf(a.fieldId); const opts=(f&&f.options)?f.options:null;
+    return opts ? <V8Slot value={valDisplay(a.value)} placeholder="a value" items={opts.map(o=>({value:o,label:o}))} onPick={v=>setActValue(ai,v)} />
+                : <V8Slot value={valDisplay(a.value)} placeholder="a value" valueInput onPick={v=>setActValue(ai,v)} />; };
+
+  const overview=[];
+  if(moment) overview.push({ role:"when", lead:"When", text: momentLabel(moment)+(draft.trigger.lifecycle?" · "+lifeFriendly(draft.trigger.lifecycle):"") });
+  if(condClause(cc)) overview.push({ role:"if", lead:"Only if", text:cap(condClause(cc)) });
+  cc.actions.forEach((a,i)=> overview.push({ role:"do", lead:i===0?"Do":"And", text:cap(actionPhrase(a)) }));
+  if(draft.scope.audience) overview.push({ role:"for", lead:"For", text:audFriendly(draft.scope.audience) });
+
+  const grp = CONFLICT_CATS.map(cat=>({ cat, items:conflicts.filter(c=>(c.category||"CONTRADICTORY")===cat.id) })).filter(g=>g.items.length);
+  const CTONE = { red:"var(--v8-red)", amber:"var(--v8-if)", violet:"var(--v8-if)", slate:"var(--v8-muted)" };
+  const tbtn = { background:"var(--v8-panel2)", border:"1px solid var(--v8-border2)", color:"var(--v8-muted)" };
+  const lastActionIdx = block.actions.length-1;
+
+  return (
+    <div className="v8root flex min-h-0 flex-1 flex-col" data-v8theme={theme}>
+
+      <header className="flex h-14 shrink-0 items-center gap-3 px-6" style={{ borderBottom:"1px solid var(--v8-border)", background:"var(--v8-topbar)" }}>
+        <div className="mr-1 flex h-6 w-6 items-center justify-center rounded-lg text-xs font-bold" style={{ background:"linear-gradient(135deg,#5b6cff,#7c89ff)", color:"#fff" }}>R</div>
+        <input value={draft.name||""} onChange={e=>setName(e.target.value)} placeholder="Untitled rule"
+          className="w-60 bg-transparent text-[15px] font-medium outline-none" style={{ color:"var(--v8-text)" }} />
+        <span className="rounded-full px-2 py-0.5 text-xs" style={ valid ? { background:"var(--v8-then-bg)", color:"var(--v8-then)" } : { background:"var(--v8-panel2)", color:"var(--v8-muted)" } }>{valid?"Ready":"Draft"}</span>
+        <nav className="ml-2 flex items-center gap-1.5 text-xs" style={{ color:"var(--v8-faint)" }}>
+          <button onClick={onCancel} className="hover:underline" style={{ color:"var(--v8-accent2)" }}>Request Form Rules</button>
+          <span>›</span><span style={{ color:"var(--v8-muted)" }}>{isNew?"Create":"Edit"}</span>
+        </nav>
+        <div className="ml-auto flex items-center gap-2">
+          <button onClick={()=>setTheme(theme==="dark"?"light":"dark")} title="Toggle theme" className="flex h-8 w-8 items-center justify-center rounded-lg" style={tbtn}>{theme==="dark"?"☾":"☀"}</button>
+          <button onClick={undo} title="Undo" className="flex h-8 w-8 items-center justify-center rounded-lg" style={tbtn}>↶</button>
+          <button onClick={redo} title="Redo" className="flex h-8 w-8 items-center justify-center rounded-lg" style={tbtn}>↷</button>
+          <button onClick={()=>setHowOpen(true)} title="How it works" className="flex h-8 w-8 items-center justify-center rounded-lg" style={tbtn}>{VI.bulb}</button>
+          <button onClick={()=>setRefOpen(true)} title="Behavior reference" className="flex h-8 w-8 items-center justify-center rounded-lg" style={tbtn}>{VI.book}</button>
+          <button onClick={()=>setTestOpen(true)} className="rounded-lg px-3 py-1.5 text-sm font-medium" style={{ background:"var(--v8-panel2)", border:"1px solid var(--v8-border2)", color:"var(--v8-text)" }}>Test</button>
+          <button onClick={onCancel} className="rounded-lg px-3 py-1.5 text-sm font-medium" style={{ border:"1px solid var(--v8-border2)", color:"var(--v8-muted)" }}>Cancel</button>
+          <button onClick={()=>{ if(valid) onSave(finalize()); }} className="rounded-lg px-4 py-1.5 text-sm font-semibold" style={ valid ? { background:"var(--v8-accent)", color:"#fff" } : { background:"var(--v8-panel2)", color:"var(--v8-faint)" } }>Save rule</button>
+        </div>
+      </header>
+
+      <div className="flex min-h-0 flex-1">
+        <div className="relative flex-1 overflow-y-auto">
+          <div className="v8grain" /><div className="v8glow" />
+          <div className="relative mx-auto w-full" style={{ maxWidth:"720px", paddingLeft:"36px", paddingRight:"36px", paddingTop:"7vh", paddingBottom:"64px" }}>
+
+            {/* WHEN */}
+            <V8Node role="when" head="When" first last={!showIf && !showThen && !showFor}
+              footer={ isNew && !moment ? "Click to start — then type to fill each field" : null }
+              chips={ moment ? [
+                (!showIf) && <NextChip key="ci" role="if" icon={VI.diamond} label="Check if" onClick={()=>{ setShowIf(true); addCond(); }} />,
+                (!showThen) && <NextChip key="th" role="do" primary icon={VI.arrow} label="Then" onClick={()=>{ setShowThen(true); addAction(); }} />,
+              ].filter(Boolean) : null }>
+              {moment
+                ? <><V8Slot value={momentLabel(moment)} items={MOMENTS.map(m=>({value:m.id,label:m.label}))} onPick={setMoment} width={280} help={V8_HELP.when} /> <Conn>on</Conn> <V8Slot value={lifeFriendly(draft.trigger.lifecycle)||null} placeholder="any form" items={LIFECYCLES_FRIENDLY.map(l=>({value:l.id,label:l.label}))} onPick={setLifecycle} help={V8_HELP.life} /></>
+                : <V8Slot value={null} placeholder="something happens" beckon width={280} help={V8_HELP.when} items={MOMENTS.map(m=>({value:m.id,label:m.label}))} onPick={setMoment} />}
+            </V8Node>
+
+            {/* CHECK IF */}
+            {showIf && (
+              <V8Node role="if" head="Check if" last={!showThen && !showFor}
+                chips={[
+                  <NextChip key="ao" role="if" icon={VI.diamond} label="+ and/or" onClick={addCond} />,
+                  (!showThen) && <NextChip key="th" role="do" primary icon={VI.arrow} label="Then" onClick={()=>{ setShowThen(true); addAction(); }} />,
+                ].filter(Boolean)}>
+                {leafConds.length===0
+                  ? <V8Slot value={null} placeholder="a field" beckon search groups={FIELD_GROUPED} width={300} help={V8_HELP.if} onPick={v=>{ addCond(); setCondField(0,v); }} />
+                  : leafConds.map((c,ci)=>(
+                      <React.Fragment key={c.id}>
+                        {ci>0 && <MatchChip match={block.match} onClick={toggleMatch} />}
+                        <V8Slot value={fieldShort(c.fieldId)} placeholder="a field" search groups={FIELD_GROUPED} width={300} help={V8_HELP.if} beckon={!c.fieldId} onPick={v=>setCondField(ci,v)} />
+                        {c.fieldId && <> <V8Slot value={opLabel(c.op)} placeholder="is" items={fieldOps(c.fieldId).map(o=>({value:o,label:opLabel(o)}))} onPick={v=>setCondOp(ci,v)} /></>}
+                        {c.fieldId && c.op && opVal(c.op)!=="none" && <> {condValueSlot(c,ci)}</>}
+                        {leafConds.length>1 && <button onClick={()=>rmCond(ci)} className="ml-1 align-middle text-[14px] font-normal" style={{ color:"var(--v8-faint)" }} title="Remove">✕</button>}
+                      </React.Fragment>
+                    ))}
+              </V8Node>
+            )}
+
+            {/* THEN (one node per action) */}
+            {showThen && block.actions.map((a,ai)=>(
+              <V8Node key={a.id} role="do" head={ai===0?"Then":"And"} last={ai===lastActionIdx && !showFor}
+                removable={block.actions.length>1} onRemove={()=>rmAction(ai)}
+                chips={ai===lastActionIdx ? [
+                  <NextChip key="aa" role="do" icon={VI.arrow} label="+ and also" onClick={addAction} />,
+                  (!showFor) && <NextChip key="fr" role="for" primary icon={VI.user} label="For" onClick={()=>setShowFor(true)} />,
+                  (!showIf) && <NextChip key="ci" role="if" icon={VI.diamond} label="Check if" onClick={()=>{ setShowIf(true); addCond(); }} />,
+                ].filter(Boolean) : null}>
+                <V8Slot value={bverb(a.type)} placeholder="do something" items={ACTION_TYPES.map(t=>({value:t.id,label:bverb(t.id)}))} onPick={v=>setActType(ai,v)} help={V8_HELP.do} beckon={!a.type} />
+                {" "}
+                <V8Slot value={fieldShort(a.fieldId)} placeholder="a field" search items={ACTION_FIELDS.map(f=>({value:f.id,label:f.name}))} onPick={v=>setActField(ai,v)} help={V8_HELP.field} beckon={!!a.type && !a.fieldId} />
+                {a.type==="SET_VALUE" && <> <Conn>to</Conn> {actValueSlot(a,ai)}</>}
+              </V8Node>
+            ))}
+
+            {/* FOR */}
+            {showFor && (
+              <V8Node role="for" head="For" last>
+                <V8Slot value={audFriendly(draft.scope.audience)||null} placeholder="everyone" items={AUD_FRIENDLY.map(x=>({value:x.id,label:x.label}))} onPick={setAudience} help={V8_HELP.for} />
+              </V8Node>
+            )}
+          </div>
+        </div>
+
+        <aside className="hidden w-[340px] shrink-0 flex-col lg:flex" style={{ borderLeft:"1px solid var(--v8-border)", background:"var(--v8-panel)" }}>
+          {railEmpty ? (
+            <div className="flex flex-1 flex-col items-center justify-center px-9 text-center">
+              <span className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl" style={{ background:"var(--v8-panel2)", color:"var(--v8-muted)" }}>{VI.bulb}</span>
+              <div className="text-[15px] font-semibold" style={{ color:"var(--v8-text)" }}>Build a form rule</div>
+              <div className="mt-1.5 text-[12.5px] leading-relaxed" style={{ color:"var(--v8-muted)" }}>Start on the left: choose when the rule runs, then add steps with the next → chips. Each part appears as you go.</div>
+              <div className="mt-5 flex items-center justify-center gap-2">
+                <button onClick={()=>setHowOpen(true)} className="rounded-lg px-4 py-2 text-[12.5px] font-medium" style={{ background:"color-mix(in srgb, var(--v8-accent) 16%, transparent)", border:"1px solid color-mix(in srgb, var(--v8-accent) 30%, transparent)", color:"var(--v8-accent2)" }}>Show me how</button>
+                <button onClick={()=>setRefOpen(true)} className="rounded-lg px-4 py-2 text-[12.5px] font-medium" style={{ border:"1px solid var(--v8-border2)", color:"var(--v8-muted)" }}>Behaviors</button>
+              </div>
+            </div>
+          ) : (
+            <React.Fragment>
+              <div className="flex-1 overflow-y-auto px-6 py-6">
+                <div className="text-[10px] uppercase tracking-[0.14em]" style={{ color:"var(--v8-faint)" }}>In plain English</div>
+                <p className="mt-2 rounded-xl px-3 py-2.5 text-[13px] leading-relaxed" style={{ background:"var(--v8-panel2)", color: summary?"var(--v8-text)":"var(--v8-faint)" }}>{summary || "Your rule will read here once you add a behavior."}</p>
+                <div className="mt-4 text-[11px] uppercase tracking-[0.12em]" style={{ color:"var(--v8-faint)" }}>Your rule</div>
+                <div className="mt-3 flex flex-col gap-2">
+                  {overview.map((o,i)=>{ const r=RV[o.role]; return (
+                    <div key={o.role+"-"+i} className="v8in flex items-start gap-2.5 rounded-xl px-3 py-2.5" style={{ background:r.bg, border:"1px solid var(--v8-border)" }}>
+                      <span className="mt-1 h-2 w-2 shrink-0 rounded-full" style={{ background:r.c }} />
+                      <div className="min-w-0">
+                        <div className="text-[10px] font-semibold uppercase tracking-wider" style={{ color:r.c }}>{o.lead}</div>
+                        <div className="text-[12.5px] leading-snug" style={{ color:"var(--v8-text)" }}>{o.text}</div>
+                      </div>
+                    </div>
+                  );})}
+                  {overview.length===0 && <div className="text-[12px]" style={{ color:"var(--v8-faint)" }}>Pick a moment, then keep going…</div>}
+                </div>
+
+                {hasDo && <React.Fragment>
+                  <div className="mt-5 flex items-center justify-between">
+                    <div className="text-[10px] uppercase tracking-[0.14em]" style={{ color:"var(--v8-faint)" }}>Field impact</div>
+                    <button onClick={()=>setTestOpen(true)} className="text-[11px] font-medium" style={{ color:"var(--v8-accent2)" }}>Try it ▷</button>
+                  </div>
+                  <p className="mt-1 text-xs" style={{ color:"var(--v8-faint)" }}>Affects {affected.length} field{affected.length===1?"":"s"}.</p>
+                </React.Fragment>}
+
+                {ruleReady && <React.Fragment>
+                  <div className="mt-5 text-[10px] uppercase tracking-[0.14em]" style={{ color:"var(--v8-faint)" }}>Conflicts</div>
+                  {grp.length===0
+                    ? <div className="mt-2 flex items-center gap-2 rounded-xl px-3 py-2 text-[12.5px]" style={{ background:"var(--v8-then-bg)", color:"var(--v8-then)" }}>✓ No conflicts with your other rules.</div>
+                    : <div className="mt-2 flex flex-col gap-2">
+                        {grp.map(g=>(
+                          <div key={g.cat.id} className="v8in rounded-xl px-3 py-2.5" style={{ background:"var(--v8-panel2)", border:"1px solid var(--v8-border)", borderLeft:"3px solid "+(CTONE[g.cat.tone]||"var(--v8-muted)") }}>
+                            <div className="text-[12px] font-semibold" style={{ color:CTONE[g.cat.tone]||"var(--v8-text)" }}>{g.items.length} {g.cat.label}</div>
+                            {g.items.map((c,k)=><div key={k} className="mt-1 text-[11.5px] leading-snug" style={{ color:"var(--v8-muted)" }}>{c.text}</div>)}
+                          </div>
+                        ))}
+                        <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                          <button onClick={()=>setConflictNote("Marked for review")} className="rounded-md px-2 py-1 font-medium" style={{ border:"1px solid var(--v8-border2)", color:"var(--v8-muted)" }}>Review later</button>
+                          <button onClick={()=>setConflictNote("Keeping this rule")} className="rounded-md px-2 py-1 font-medium" style={{ border:"1px solid var(--v8-border2)", color:"var(--v8-muted)" }}>Let this win</button>
+                          {conflictNote && <span style={{ color:"var(--v8-then)" }}>✓ {conflictNote}</span>}
+                        </div>
+                      </div>}
+                </React.Fragment>}
+              </div>
+              <div className="flex shrink-0" style={{ borderTop:"1px solid var(--v8-border)" }}>
+                <button onClick={()=>setHowOpen(true)} className="flex-1 px-4 py-3 text-[12px]" style={{ color:"var(--v8-faint)" }}>How it works</button>
+                <button onClick={()=>setRefOpen(true)} className="flex-1 px-4 py-3 text-[12px]" style={{ borderLeft:"1px solid var(--v8-border)", color:"var(--v8-faint)" }}>Behaviors</button>
+              </div>
+            </React.Fragment>
+          )}
+        </aside>
+      </div>
+
+      {howOpen && <V8HowItWorks onClose={()=>setHowOpen(false)} />}
+      {refOpen && <V8BehaviorRef onClose={()=>setRefOpen(false)} />}
+      {testOpen && <V8TestModal draft={clean} allRules={allRules} onClose={()=>setTestOpen(false)} />}
+    </div>
+  );
+}
+
 
 /* ============================================================ VERSION SWITCHER */
 const VERSIONS = [
@@ -1451,7 +1760,7 @@ function App(){
       <VersionBar />
       {view.screen!=="studio" && <ModeBar mode={mode} onChange={switchMode} />}
       {view.screen==="studio"
-        ? <RuleStudio initial={view.rule} isNew={view.isNew} allRules={rules} onCancel={cancel} onSave={save} />
+        ? <RuleStudioV8 initial={view.rule} isNew={view.isNew} allRules={rules} onCancel={cancel} onSave={save} />
         : <div className="flex-1 overflow-y-auto"><RulesList rules={rules} setRules={setRules} onCreate={startCreate} onEdit={startEdit} mode={mode} /></div>}
     </div>
   );
