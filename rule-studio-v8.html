@@ -812,33 +812,46 @@ function Dropdown({ trigger, children, align }){
   const [open,setOpen]=useState(false);
   const ref = React.useRef(null);
   const [pos,setPos]=useState(null);
-  const measure = () => {
-    const el = ref.current; if(!el) return null;
-    const r = el.getBoundingClientRect();
-    const vw = (typeof window!=="undefined"?window.innerWidth:1280), vh = (typeof window!=="undefined"?window.innerHeight:800);
-    let left = align==="right" ? r.right - 224 : r.left;
-    left = Math.max(8, Math.min(left, vw - 232));
-    return { top: Math.max(8, Math.min(r.bottom + 4, vh - 16)), left };
-  };
   const menuRef = React.useRef(null);
-  const toggle = () => { if(!open){ setPos(measure()); setOpen(true); } else setOpen(false); };
+  // Open the menu inside the nearest scrollable ancestor (the form's middle area) so a tall menu extends THAT
+  // container's scroll height — the middle scrolls to reveal it, the page + sticky footer stay put, and the menu
+  // itself never needs a scrollbar. Falls back to a viewport-fixed menu when there is no scroll container.
+  const place = () => {
+    const el = ref.current; if(!el) return;
+    let sc = el.parentElement;
+    while (sc && sc !== document.body) { const oy = getComputedStyle(sc).overflowY; if (oy==="auto"||oy==="scroll") break; sc = sc.parentElement; }
+    const r = el.getBoundingClientRect();
+    if (sc && sc !== document.body) {
+      if (getComputedStyle(sc).position==="static") sc.style.position = "relative";
+      const cr = sc.getBoundingClientRect();
+      setPos({ host:sc, abs:true, top: r.bottom - cr.top + sc.scrollTop + 4, left: r.left - cr.left + sc.scrollLeft });
+    } else {
+      const vw = (typeof window!=="undefined"?window.innerWidth:1280);
+      let left = align==="right" ? r.right - 224 : r.left;
+      left = Math.max(8, Math.min(left, vw - 232));
+      setPos({ host:(typeof document!=="undefined"?document.body:null), abs:false, top: r.bottom + 4, left });
+    }
+  };
+  const toggle = () => { if(!open){ place(); setOpen(true); } else setOpen(false); };
+  React.useLayoutEffect(()=>{
+    if(!open || !menuRef.current || !pos) return;
+    const m = menuRef.current;
+    if (pos.abs && pos.host){ const sc=pos.host; const L=Math.max(sc.scrollLeft+8, Math.min(pos.left, sc.scrollLeft+sc.clientWidth-m.offsetWidth-8)); if (L!==pos.left) setPos(p=>p?{...p,left:L}:p); }
+    m.scrollIntoView({ block:"nearest", behavior:"smooth" });
+  }, [open]);
   React.useEffect(()=>{
     if(!open) return;
-    const onScroll = (e)=>{ if(menuRef.current && menuRef.current.contains(e.target)) return; setOpen(false); }; // ignore scrolling inside the menu
+    const onDown = (e)=>{ if(ref.current && ref.current.contains(e.target)) return; if(menuRef.current && menuRef.current.contains(e.target)) return; setOpen(false); };
     const onResize = ()=>setOpen(false);
-    window.addEventListener("scroll", onScroll, true);
+    document.addEventListener("mousedown", onDown, true);
     window.addEventListener("resize", onResize);
-    return ()=>{ window.removeEventListener("scroll", onScroll, true); window.removeEventListener("resize", onResize); };
+    return ()=>{ document.removeEventListener("mousedown", onDown, true); window.removeEventListener("resize", onResize); };
   }, [open]);
-  // rendered in a body portal so the menu escapes every ancestor's clipping / stacking / transform context
-  const menu = (open && pos && typeof document!=="undefined") ? ReactDOM.createPortal(
-    <React.Fragment>
-      <div className="fixed inset-0" style={{zIndex:9998}} onClick={()=>setOpen(false)} />
-      <div ref={menuRef} className="min-w-[190px] rounded-lg border border-slate-200 bg-white p-1 shadow-xl"
-        style={{ position:"fixed", top:pos.top, left:pos.left, zIndex:9999, maxHeight:"60vh", overflowY:"auto" }}>
-        {typeof children==="function" ? children(()=>setOpen(false)) : children}
-      </div>
-    </React.Fragment>, document.body) : null;
+  const menu = (open && pos && pos.host) ? ReactDOM.createPortal(
+    <div ref={menuRef} className="min-w-[190px] rounded-lg border border-slate-200 bg-white p-1 shadow-xl"
+      style={{ position: pos.abs?"absolute":"fixed", top:pos.top, left:pos.left, zIndex:9999 }}>
+      {typeof children==="function" ? children(()=>setOpen(false)) : children}
+    </div>, pos.host) : null;
   return (
     <span ref={ref} className="relative inline-block align-middle">
       <span onClick={toggle}>{trigger}</span>
@@ -1123,45 +1136,171 @@ const VI = {
 };
 const NODE_ICON = { when:VI.bolt, if:VI.diamond, do:VI.arrow, for:VI.user };
 const V8_HELP = {
-  when: { title:"Timing", c:"var(--v8-when)", body:"When the behavior takes effect — as the form opens, while it is being filled, or when it is submitted." },
-  life: { title:"Forms",  c:"var(--v8-when)", body:"Whether this applies to new requests, existing ones, or both." },
-  if:   { title:"Condition", c:"var(--v8-if)", body:"The rule only runs when this is true. Combine checks with all / any." },
-  do:   { title:"Behavior", c:"var(--v8-then)", body:"What the form does to a field — show or hide it, make it required, lock it, or set a value." },
-  field:{ title:"Field", c:"var(--v8-then)", body:"The form field this behavior affects." },
-  for:  { title:"Audience", c:"var(--v8-for)", body:"Who sees this behavior while filling the form." },
+  when: { title:"Timing", c:"var(--v8-when)", body:"When the rule takes effect — as the form opens, while it is being filled, or when it is submitted." },
+  life: { title:"Forms",  c:"var(--v8-when)", body:"Whether the rule applies to new requests, existing ones, or both." },
+  if:   { title:"Condition", c:"var(--v8-if)", body:"Pick the field to check. The rule only runs when this is true — combine several checks with all (AND) or any (OR). E.g. Priority is High." },
+  do:   { title:"Behavior", c:"var(--v8-then)", body:"What the form does to a field — show, hide, require, lock, or set a value." },
+  field:{ title:"Field", c:"var(--v8-then)", body:"The form field this behavior changes. E.g. make Assignee required." },
+  for:  { title:"Audience", c:"var(--v8-for)", body:"Who experiences this behavior while filling the form." },
 };
+/* contextual guide content for the trigger slots — same decision-aid copy as V6's GuidedSelect */
+const V8_WHEN_GUIDE = [
+  { value:"ON_LOAD", label:"When the form opens",
+    desc:"Runs once, the moment the form appears.",
+    when:"Use this to set the form up before anyone starts typing — preset values or show and hide fields up front.",
+    how:"Checks the conditions a single time as the form loads, before the user touches anything.",
+    output:"The form opens already adjusted — fields hidden, shown, or pre-filled.",
+    example:"Hide the Vendor field on load unless the request is about software." },
+  { value:"ON_FIELD_CHANGE", label:"While the form is being filled",
+    desc:"Reacts live as the user edits fields.",
+    when:"Use this when the form should respond instantly to what the user selects.",
+    how:"Re-checks every time a field used in the condition changes value.",
+    output:"The behavior applies the moment the condition becomes true.",
+    example:"When Priority becomes High, make Assignee required right away." },
+  { value:"ON_SUBMIT", label:"When the form is submitted",
+    desc:"Runs once, just before the request is saved.",
+    when:"Use this for final checks or values that only matter at save time.",
+    how:"Runs a single time at the point of submission, after the user clicks Submit.",
+    output:"The request can be validated, completed, or blocked before it is saved.",
+    example:"Require a Resolution note before a ticket can be submitted." },
+];
+const V8_LIFE_GUIDE = [
+  { value:"CREATE", label:"New requests only",
+    desc:"Applies only while a brand-new request is raised.",
+    when:"Use this for rules that should shape how new requests are created.",
+    how:"Active on the create form; ignored when an existing request is edited later.",
+    output:"New requests follow the rule; already-raised ones stay untouched.",
+    example:"Auto-set Status to 'Open' only when a new request is created." },
+  { value:"EDIT", label:"Existing requests only",
+    desc:"Applies only when an already-raised request is reopened.",
+    when:"Use this for rules that should only affect updates to existing requests.",
+    how:"Active on the edit form; ignored while a request is first being created.",
+    output:"Edits follow the rule; brand-new requests stay untouched.",
+    example:"Lock the Requester field whenever an existing ticket is edited." },
+  { value:"CREATE_EDIT", label:"New and existing requests",
+    desc:"Applies the same way whether creating or editing.",
+    when:"Use this when the behavior should stay consistent across a request's whole life.",
+    how:"Active on both the create and edit forms.",
+    output:"The rule behaves identically at create and edit time.",
+    example:"Always show the Impact field, on both new and existing requests." },
+];
+/* behavior / operator / audience / match-logic guides — every important dropdown explains itself */
+const V8_ACTION_INFO = {
+  SHOW:        { desc:"Makes a hidden field appear.", when:"Reveal a field only when it is actually relevant.", how:"The field becomes visible once the condition is met.", output:"The field appears on the form.", example:"Show the Vendor field when Category is Hardware." },
+  HIDE:        { desc:"Removes a field from view.", when:"Keep a field off the form until it matters.", how:"The field is removed from view once the condition is met.", output:"The field is hidden from the user.", example:"Hide Cc Emails for requesters raising a simple request." },
+  MANDATE:     { desc:"Forces the field to be filled before submitting.", when:"Require key information before a request can be saved.", how:"The field is marked required once the condition is met.", output:"The form can't be submitted until the field is filled.", example:"Make Assignee required when Priority is High." },
+  OPTIONAL:    { desc:"Lets a normally-required field be left blank.", when:"Relax a requirement in cases where it isn't needed.", how:"The required flag is removed once the condition is met.", output:"The field can be left empty.", example:"Make Department optional for internal requests." },
+  ENABLE:      { desc:"Unlocks a field so it can be edited.", when:"Allow editing of a field that is normally locked.", how:"The field becomes editable once the condition is met.", output:"The user can change the field's value.", example:"Enable the Resolution field once Status is In Progress." },
+  DISABLE:     { desc:"Keeps a field visible but read-only.", when:"Show a value without letting anyone change it.", how:"The field is made read-only once the condition is met.", output:"The user can see the field but not edit it.", example:"Lock Priority after a ticket has been submitted." },
+  SET_VALUE:   { desc:"Fills a field with a chosen value automatically.", when:"Pre-fill a field to save time or enforce a standard.", how:"The field's value is set once the condition is met.", output:"The field is filled in for the user.", example:"Set Status to 'In Progress' when an Assignee is chosen." },
+  CLEAR_VALUE: { desc:"Empties whatever is in the field.", when:"Reset a field when an earlier choice no longer applies.", how:"The field's value is removed once the condition is met.", output:"The field becomes blank.", example:"Clear Vendor if Category changes away from Hardware." },
+  SHOW_OPTIONS:{ desc:"Adds specific choices to a dropdown.", when:"Reveal extra choices only in the right situation.", how:"Selected options are added once the condition is met.", output:"More choices become available in the dropdown.", example:"Show 'Critical' in Priority only for technicians." },
+  HIDE_OPTIONS:{ desc:"Removes specific choices from a dropdown.", when:"Narrow a dropdown down to only the relevant choices.", how:"Selected options are taken out once the condition is met.", output:"Those choices can no longer be picked.", example:"Hide 'On Hold' from Status for requesters." },
+  RUN_SCRIPT:  { desc:"Runs custom logic the standard actions can't.", when:"Handle advanced behavior beyond the built-in actions.", how:"A custom script runs once the condition is met.", output:"Whatever your script defines is applied.", example:"Call a script to calculate an SLA date on submit." },
+  FILTER_DATA: { desc:"Limits the records a field can show.", when:"Restrict a lookup to only the relevant records.", how:"The field's data is filtered once the condition is met.", output:"Only matching records appear in the field.", example:"Show only IT vendors when Department is IT." },
+};
+const V8_ACTION_GUIDE = ACTION_TYPES.map(t => ({ value:t.id, label:bverb(t.id), ...(V8_ACTION_INFO[t.id] || { desc:"Applies this behavior to a form field.", when:"Apply this behavior to a form field.", how:"Applied once the condition is met.", output:"The form behavior changes accordingly.", example:"Adjust the field when the condition is met." }) }));
+const V8_OP_INFO = {
+  EQUALS:      { desc:"Matches one exact value.", when:"Match a single, specific value.", how:"Passes only when the field is exactly what you choose.", output:"True for that one value, nothing else.", example:"Priority equals 'Urgent'." },
+  NOT_EQUALS:  { desc:"Matches anything except one value.", when:"Exclude a single value.", how:"Passes when the field is anything other than your choice.", output:"True for every value but that one.", example:"Status not equals 'Closed'." },
+  STARTS_WITH: { desc:"Checks how the text begins.", when:"Match text by its opening characters.", how:"Passes when the text starts with what you type.", output:"True when the beginning matches.", example:"Subject starts with 'VIP'." },
+  ENDS_WITH:   { desc:"Checks how the text ends.", when:"Match text by its ending.", how:"Passes when the text ends with what you type.", output:"True when the ending matches.", example:"Email ends with '@acme.com'." },
+  CONTAINS:    { desc:"Checks if the text includes something.", when:"Match text that contains a keyword anywhere.", how:"Passes when the text includes what you type.", output:"True when the keyword is found.", example:"Subject contains 'refund'." },
+  IS_NOT_BLANK:{ desc:"Checks the field has been filled.", when:"Confirm a text field has any value.", how:"Passes whenever the field isn't empty.", output:"True when something has been entered.", example:"Cc Emails is not blank." },
+  IS_BLANK:    { desc:"Checks the field is empty.", when:"Confirm a text field has been left empty.", how:"Passes whenever the field holds no value.", output:"True when nothing has been entered.", example:"Resolution is blank." },
+  MATCH_ANY:   { desc:"Matches if any selected value fits.", when:"Accept one of several choices.", how:"Passes when the field equals at least one value you pick.", output:"True if it matches any of them.", example:"Priority matches any of High, Urgent." },
+  MATCH_ALL:   { desc:"Matches only if every selected value fits.", when:"Require every selected choice at once.", how:"Passes only when all selected values match.", output:"True only if all of them match.", example:"Tags match all of VIP, Escalated." },
+  IS_EMPTY:    { desc:"Checks nothing is selected.", when:"Confirm a choice field has no selection.", how:"Passes when no option is chosen.", output:"True when the field is empty.", example:"Assignee is empty (unassigned)." },
+  IS_NOT_EMPTY:{ desc:"Checks something is selected.", when:"Confirm a choice field has a selection.", how:"Passes when at least one option is chosen.", output:"True when something is selected.", example:"Assignee is not empty (someone is assigned)." },
+  IN:          { desc:"Matches a value in your list.", when:"Accept one of a list of items.", how:"Passes when the value is among the items you pick.", output:"True when it's one of them.", example:"Location in New York, London." },
+  NOT_IN:      { desc:"Matches a value not in your list.", when:"Exclude a list of items.", how:"Passes when the value is none of the items you pick.", output:"True when it's outside the list.", example:"Department not in HR, Finance." },
+};
+const v8OpGuide = id => ({ value:id, label:opLabel(id), ...(V8_OP_INFO[id] || { desc:"Compares the field with this operator.", when:"Compare the field this way.", how:"Checks the field using this operator.", output:"True when the comparison holds.", example:"The field matches your chosen value." }) });
+const V8_AUD_GUIDE = [
+  { value:"ALL", label:"Everyone",
+    desc:"The safe default — applies to all users.",
+    when:"Use this when the behavior should apply to anyone who opens the form.",
+    how:"The rule runs no matter who is using the form.",
+    output:"Everyone sees the same behavior.",
+    example:"Hide an internal-only field from everyone on the portal." },
+  { value:"REQUESTERS", label:"Requesters only",
+    desc:"Just the end users raising requests.",
+    when:"Use this for behavior meant for the people raising requests.",
+    how:"The rule runs for requesters and skips technicians.",
+    output:"Technicians see the form unchanged.",
+    example:"Simplify the form by hiding agent-only fields from requesters." },
+  { value:"TECHNICIANS", label:"Technicians only",
+    desc:"Just the agents working on requests.",
+    when:"Use this for behavior meant for the agents handling requests.",
+    how:"The rule runs for technicians and skips requesters.",
+    output:"Requesters see the form unchanged.",
+    example:"Show the Assignee field only to technicians." },
+  { value:"LOGGED_IN", label:"Signed-in users only",
+    desc:"Anyone signed in — skips anonymous users.",
+    when:"Use this when the behavior should not apply to anonymous portal users.",
+    how:"The rule runs only for users who are signed in.",
+    output:"Anyone using the form without logging in is unaffected.",
+    example:"Pre-fill Requester details only for signed-in users." },
+];
+const V8_MATCH_GUIDE = [
+  { value:"ALL", label:"and — all must match",
+    desc:"Every condition has to be true.",
+    when:"Use this when the behavior should run only in one specific situation.",
+    how:"The rule requires every condition to be true at the same time.",
+    output:"The behavior runs only when all conditions match.",
+    example:"Priority is High AND Category is Hardware." },
+  { value:"ANY", label:"or — any one can match",
+    desc:"One true condition is enough.",
+    when:"Use this when several different situations should trigger the same behavior.",
+    how:"The rule needs just one condition to be true.",
+    output:"The behavior runs when at least one condition matches.",
+    example:"Priority is High OR Impact is High." },
+];
 
 function V8Drop({ trigger, render, width }){
   const [open,setOpen] = useState(false);
   const ref = React.useRef(null);
   const [pos,setPos] = useState(null);
   const w = width||248;
-  const measure = () => {
-    const el=ref.current; if(!el) return null;
-    const r=el.getBoundingClientRect();
-    const vw=(typeof window!=="undefined"?window.innerWidth:1280), vh=(typeof window!=="undefined"?window.innerHeight:800);
-    return { top: Math.max(8, Math.min(r.bottom+8, vh-16)), left: Math.max(8, Math.min(r.left, vw - w - 12)) };
-  };
   const menuRef = React.useRef(null);
-  const toggle = () => { if(!open){ setPos(measure()); setOpen(true); } else setOpen(false); };
+  // Open the menu inside the nearest scrollable ancestor (the canvas) so a tall menu extends THAT container's
+  // scroll height — the canvas scrolls to reveal it, the chrome stays put, and the menu needs no scrollbar.
+  // The canvas lives inside .v8root, so the scoped --v8-* theme vars still apply. Falls back to .v8root/fixed.
+  const place = () => {
+    const el=ref.current; if(!el) return;
+    let sc = el.parentElement;
+    while (sc && sc !== document.body) { const oy = getComputedStyle(sc).overflowY; if (oy==="auto"||oy==="scroll") break; sc = sc.parentElement; }
+    const r=el.getBoundingClientRect();
+    if (sc && sc !== document.body) {
+      if (getComputedStyle(sc).position==="static") sc.style.position = "relative";
+      const cr = sc.getBoundingClientRect();
+      setPos({ host:sc, abs:true, top: r.bottom - cr.top + sc.scrollTop + 8, left: r.left - cr.left + sc.scrollLeft });
+    } else {
+      const vw=(typeof window!=="undefined"?window.innerWidth:1280);
+      const left = Math.max(8, Math.min(r.left, vw - w - 12));
+      setPos({ host:(typeof document!=="undefined" ? (document.querySelector(".v8root")||document.body) : null), abs:false, top: r.bottom + 8, left });
+    }
+  };
+  const toggle = () => { if(!open){ place(); setOpen(true); } else setOpen(false); };
+  React.useLayoutEffect(()=>{
+    if(!open || !menuRef.current || !pos) return;
+    const m = menuRef.current;
+    if (pos.abs && pos.host){ const sc=pos.host; const L=Math.max(sc.scrollLeft+8, Math.min(pos.left, sc.scrollLeft+sc.clientWidth-m.offsetWidth-8)); if (L!==pos.left) setPos(p=>p?{...p,left:L}:p); }
+    m.scrollIntoView({ block:"nearest", behavior:"smooth" });
+  }, [open]);
   React.useEffect(()=>{
     if(!open) return;
-    const onScroll = (e)=>{ if(menuRef.current && menuRef.current.contains(e.target)) return; setOpen(false); }; // ignore scrolling inside the menu
+    const onDown = (e)=>{ if(ref.current && ref.current.contains(e.target)) return; if(menuRef.current && menuRef.current.contains(e.target)) return; setOpen(false); };
     const onResize = ()=>setOpen(false);
-    window.addEventListener("scroll", onScroll, true);
+    document.addEventListener("mousedown", onDown, true);
     window.addEventListener("resize", onResize);
-    return ()=>{ window.removeEventListener("scroll", onScroll, true); window.removeEventListener("resize", onResize); };
+    return ()=>{ document.removeEventListener("mousedown", onDown, true); window.removeEventListener("resize", onResize); };
   }, [open]);
-  // portal into .v8root so the menu keeps the scoped --v8-* theme vars but still escapes the canvas scroll/stacking context
-  const host = (typeof document!=="undefined") ? (document.querySelector(".v8root") || document.body) : null;
-  const menu = (open && pos && host) ? ReactDOM.createPortal(
-    <React.Fragment>
-      <div className="fixed inset-0 z-[55]" onClick={()=>setOpen(false)} />
-      <div ref={menuRef} className="v8pop-enter overflow-hidden rounded-2xl text-left"
-        style={{ position:"fixed", top:pos.top, left:pos.left, zIndex:9999, width:w+"px", background:"var(--v8-pop)", border:"1px solid var(--v8-border2)", boxShadow:"var(--v8-shadow-pop)", fontSize:"14px", fontWeight:400 }}>
-        {render(()=>setOpen(false))}
-      </div>
-    </React.Fragment>, host) : null;
+  const menu = (open && pos && pos.host) ? ReactDOM.createPortal(
+    <div ref={menuRef} className="v8pop-enter overflow-hidden rounded-2xl text-left"
+      style={{ position: pos.abs?"absolute":"fixed", top:pos.top, left:pos.left, zIndex:9999, width:w+"px", background:"var(--v8-pop)", border:"1px solid var(--v8-border2)", boxShadow:"var(--v8-shadow-pop)", fontSize:"14px", fontWeight:400 }}>
+      {render(()=>setOpen(false))}
+    </div>, pos.host) : null;
   return (
     <span ref={ref} className="relative inline-block align-baseline">
       <span onClick={toggle}>{trigger}</span>
@@ -1212,15 +1351,76 @@ function V8MenuPanel({ help, search, groups, items, onPick }){
     </div>
   );
 }
+/* V8-themed contextual decision panel — the same two-column "when to use / how it works / output"
+   aid as V6's GuidedSelect, rendered in the scoped --v8-* palette */
+function V8GuidedPanel({ title, support, options, value, onPick }){
+  const [hover,setHover]=useState(null);
+  const [q,setQ]=useState(""); const ql=q.trim().toLowerCase();
+  const filtered = options.filter(o=>!ql || o.label.toLowerCase().includes(ql));
+  const info = options.find(o=>o.value===(hover||value)) || filtered[0] || options[0];
+  const showSearch = options.length>6;
+  return (
+    <div>
+      <div className="px-4 pt-3 pb-2.5" style={{ borderBottom:"1px solid var(--v8-border)" }}>
+        <div className="text-[13px] font-semibold" style={{ color:"var(--v8-text)" }}>{title}</div>
+        {support && <div className="mt-0.5 text-[11.5px] leading-snug" style={{ color:"var(--v8-muted)" }}>{support}</div>}
+      </div>
+      <div className="flex">
+        <div className="w-[236px] shrink-0 p-1.5" style={{ borderRight:"1px solid var(--v8-border)" }}>
+          {showSearch && <input autoFocus value={q} onChange={e=>setQ(e.target.value)} placeholder="Search"
+            className="mb-1.5 w-full rounded-lg px-2.5 py-1.5 text-[12px] outline-none"
+            style={{ background:"var(--v8-pop)", border:"1px solid var(--v8-accent)", color:"var(--v8-text)" }} />}
+          <div className="max-h-80 overflow-y-auto pr-0.5">
+          {filtered.map(o=>{ const sel=o.value===value; return (
+            <button key={o.value} onClick={()=>onPick(o.value)}
+              onMouseEnter={e=>{ setHover(o.value); if(!sel) e.currentTarget.style.background="var(--v8-pophover)"; }}
+              onMouseLeave={e=>{ if(!sel) e.currentTarget.style.background="transparent"; }}
+              onFocus={()=>setHover(o.value)}
+              className="mb-0.5 w-full rounded-lg px-2.5 py-2 text-left transition-colors"
+              style={ sel
+                ? { background:"color-mix(in srgb, var(--v8-accent) 10%, transparent)", boxShadow:"inset 0 0 0 1px color-mix(in srgb, var(--v8-accent) 32%, transparent)" }
+                : {} }>
+              <span className="flex items-center justify-between gap-2 text-[12.5px]" style={{ color: sel?"var(--v8-accent2)":"var(--v8-text)", fontWeight: sel?600:500 }}>
+                <span className="truncate">{o.label}</span>{sel && <span className="shrink-0" style={{ color:"var(--v8-accent)" }}>✓</span>}
+              </span>
+              {o.desc && <span className="mt-0.5 block text-[11px] leading-snug" style={{ color: sel?"var(--v8-accent2)":"var(--v8-faint)" }}>{o.desc}</span>}
+            </button>
+          );})}
+          {filtered.length===0 && <div className="px-2.5 py-2 text-[12px]" style={{ color:"var(--v8-faint)" }}>No matches</div>}
+          </div>
+        </div>
+        <div className="flex-1 px-3.5 py-3" style={{ background:"var(--v8-panel2)" }}>
+          <div className="text-[12.5px] font-semibold" style={{ color:"var(--v8-text)" }}>{info.label}</div>
+          <div className="mt-2.5 space-y-2.5 text-[11.5px] leading-snug">
+            {[["When to use",info.when],["How it works",info.how],["Output",info.output]].map(r=> r[1] ? (
+              <div key={r[0]}>
+                <div className="text-[9px] font-semibold uppercase tracking-[0.14em]" style={{ color:"var(--v8-faint)" }}>{r[0]}</div>
+                <div className="mt-0.5" style={{ color:"var(--v8-muted)" }}>{r[1]}</div>
+              </div>
+            ) : null)}
+          </div>
+          {info.example && (
+            <div className="mt-3 pt-2.5" style={{ borderTop:"1px solid var(--v8-border)" }}>
+              <div className="text-[9px] font-semibold uppercase tracking-[0.14em]" style={{ color:"var(--v8-faint)" }}>Example</div>
+              <div className="mt-0.5 italic" style={{ color:"var(--v8-muted)" }}>{info.example}</div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 /* inline editable slot — bold dark value with a dashed underline (color lives on the headword, not here) */
-function V8Slot({ value, placeholder, items, groups, search, onPick, help, valueInput, width, beckon }){
+function V8Slot({ value, placeholder, items, groups, search, onPick, help, valueInput, width, beckon, guide }){
   const filled = value!=null && value!=="";
   return (
     <V8Drop width={width} trigger={
       <button className={"v8slot"+(beckon && !filled ? " v8beckon" : "")} style={{ color: filled ? "var(--v8-text)" : "var(--v8-faint)", textDecorationColor:"var(--v8-border2)" }}>
         {filled ? value : placeholder}
       </button>}
-      render={close => valueInput
+      render={close => guide
+        ? <V8GuidedPanel title={guide.title} support={guide.support} options={guide.options} value={guide.value} onPick={v=>{ onPick(v); close(); }} />
+        : valueInput
         ? <div className="p-2.5">
             {help && <div className="mb-2 text-[11.5px] leading-snug" style={{color:"var(--v8-muted)"}}><span className="font-semibold" style={{color:help.c}}>{help.title}. </span>{help.body}</div>}
             <input autoFocus defaultValue={value||""} placeholder={placeholder}
@@ -1232,9 +1432,12 @@ function V8Slot({ value, placeholder, items, groups, search, onPick, help, value
   );
 }
 const Conn = ({children}) => <span style={{ color:"var(--v8-faint)", fontWeight:400 }}>{children}</span>;
-const MatchChip = ({ match, onClick }) => (
-  <button onClick={onClick} className="mx-1.5 inline-flex items-center rounded px-1.5 py-[1px] align-middle text-[11px] font-semibold uppercase tracking-[0.06em]"
-    style={{ color:"var(--v8-accent2)", background:"transparent", border:"1px solid var(--v8-border2)", fontWeight:600 }}>{match==="ALL"?"and":"or"}</button>
+const MatchChip = ({ match, onPick }) => (
+  <V8Drop width={520} trigger={
+    <button className="mx-1.5 inline-flex items-center rounded px-1.5 py-[1px] align-middle text-[11px] font-semibold uppercase tracking-[0.06em]"
+      style={{ color:"var(--v8-accent2)", background:"transparent", border:"1px solid var(--v8-border2)", fontWeight:600 }}>{match==="ALL"?"and":"or"}</button>}
+    render={close => <V8GuidedPanel title="Condition Logic" support="How multiple conditions combine before the rule runs."
+      options={V8_MATCH_GUIDE} value={match} onPick={v=>{ onPick(v); close(); }} />} />
 );
 /* a "next →" affordance pill */
 const NextChip = ({ icon, label, role, onClick, primary }) => (
@@ -1246,21 +1449,20 @@ const NextChip = ({ icon, label, role, onClick, primary }) => (
   </button>
 );
 /* a big node on the rail: icon-tile marker + connector + colored headword + bold clause + chip row */
-function V8Node({ role, head, first, last, removable, onRemove, children, chips, footer }){
+function V8Node({ role, head, first, last, removable, onRemove, children, chips, footer, done }){
   const r = RV[role];
   const line = first&&last ? { display:"none" } : first ? { top:"42px", bottom:"0" } : last ? { top:"0", height:"22px" } : { top:"0", bottom:"0" };
   return (
     <div className="v8in group relative" style={{ paddingLeft:"58px", paddingTop:"6px", paddingBottom:"30px" }}>
       <div className="absolute" style={{ left:"19px", width:"2px", background:"var(--v8-border)", ...line }} />
       <span className="absolute flex h-10 w-10 items-center justify-center rounded-xl" style={{ left:"0", top:"22px", transform:"translateY(-50%)", background:r.bg, color:r.c, boxShadow:"0 0 0 5px var(--v8-bg)" }}>{NODE_ICON[role]}</span>
+      {done && <span className="v8in absolute flex h-[18px] w-[18px] items-center justify-center rounded-full text-[10px] font-bold" style={{ left:"30px", top:"0", background:"var(--v8-then-bg)", color:"var(--v8-then)", boxShadow:"0 0 0 3px var(--v8-bg)" }} title="Configured">✓</span>}
       <div className="text-[21px] font-bold leading-snug" style={{ color:"var(--v8-text)" }}>
         <span style={{ color:r.c }}>{head}</span> {children}
         {removable && <button onClick={onRemove} className="ml-2 align-middle text-[14px] font-normal opacity-0 transition-opacity group-hover:opacity-100" style={{ color:"var(--v8-faint)" }} title="Remove">✕</button>}
       </div>
       {chips && chips.length>0 && (
-        <div className="mt-3 flex flex-wrap items-center gap-2 text-[13px]">
-          <span style={{ color:"var(--v8-faint)" }}>next →</span>{chips}
-        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-[13px]">{chips}</div>
       )}
       {footer && <div className="mt-2.5 text-[13px]" style={{ color:"var(--v8-faint)" }}>{footer}</div>}
     </div>
@@ -1268,7 +1470,7 @@ function V8Node({ role, head, first, last, removable, onRemove, children, chips,
 }
 
 const V8_STEPS = [
-  { title:"Your form-rule canvas", body:"A rule reads top to bottom and starts empty. Click the underlined blanks, then use the next → chips to add the following step." },
+  { title:"Your form-rule canvas", body:"A rule reads top to bottom and starts empty. Fill the underlined blanks — as you complete each step, the next one appears on its own." },
   { title:"Start with when", body:"Pick when the rule runs — as the form opens, while it is being filled, or when it is submitted." },
   { title:"Add a condition, then a behavior", body:"Optionally add a Check-if condition, then a Then behavior — show, hide, require, lock or set a value on a field." },
   { title:"Review & save", body:"Choose who it is for, watch the summary and field impact build on the right, resolve conflicts, then Save." },
@@ -1413,7 +1615,7 @@ function RuleStudioV8({ initial, isNew, allRules, onCancel, onSave }){
   const update = fn => setDraft(prev=>{ past.current.push(JSON.stringify(prev)); if(past.current.length>120)past.current.shift(); future.current=[]; const n=JSON.parse(JSON.stringify(prev)); fn(n); return n; });
   const undo = ()=> setDraft(prev=>{ if(!past.current.length) return prev; future.current.push(JSON.stringify(prev)); return JSON.parse(past.current.pop()); });
   const redo = ()=> setDraft(prev=>{ if(!future.current.length) return prev; past.current.push(JSON.stringify(prev)); return JSON.parse(future.current.pop()); });
-  const [theme,setTheme]=useState("dark");
+  const [theme,setTheme]=useState("light");
   const [howOpen,setHowOpen]=useState(false);
   const [refOpen,setRefOpen]=useState(false);
   const [testOpen,setTestOpen]=useState(false);
@@ -1422,10 +1624,22 @@ function RuleStudioV8({ initial, isNew, allRules, onCancel, onSave }){
   const block=draft.blocks[0];
   const leafConds = block.conditions.filter(c=>!(c && c.kind==="GROUP"));
   const moment=draft.trigger.moment;
-  const [showIf,setShowIf]=useState(!isNew && leafConds.length>0);
-  const [showThen,setShowThen]=useState(!isNew && block.actions.length>0);
-  const [showFor,setShowFor]=useState(!isNew && !!draft.scope.audience);
-  const railEmpty = isNew && !moment;
+  const condComplete = c => !!(c && c.fieldId && c.op && (opVal(c.op)==="none" || (Array.isArray(c.value) ? c.value.length>0 : (c.value!=null && c.value!==""))));
+  const actComplete = a => !!(a && a.type && a.fieldId && (a.type!=="SET_VALUE" || (a.value!=null && a.value!=="")));
+  const firstCondDone = leafConds.some(condComplete);
+  const firstActDone = block.actions.some(actComplete);
+  const [ifSkipped,setIfSkipped]=useState(false);
+  /* auto-progression: each block reveals on its own once the previous one is configured; latched so a revealed block never disappears */
+  const eligIf = !!moment;
+  const eligThen = eligIf && (firstCondDone || ifSkipped);
+  const eligFor = eligThen && firstActDone;
+  const [rev,setRev]=useState(()=> isNew ? {if:false,then:false,for:false} : {if:true,then:true,for:true});
+  useEffect(()=>{ setRev(r=>{
+    const n={ if:r.if||eligIf, then:r.then||eligThen, for:r.for||eligFor };
+    return (n.if===r.if && n.then===r.then && n.for===r.for) ? r : n;
+  }); },[eligIf,eligThen,eligFor]);
+  const showIf=rev.if, showThen=rev.then, showFor=rev.for;
+  const railEmpty = !moment && !showIf && !showThen && !showFor;
 
   const clean = useMemo(()=>{ const d=JSON.parse(JSON.stringify(draft));
     d.blocks=d.blocks.map(b=>({...b,
@@ -1436,7 +1650,23 @@ function RuleStudioV8({ initial, isNew, allRules, onCancel, onSave }){
   const ruleReady = cc.actions.length>0;
   const hasDo = ruleReady;
   const conflicts = useMemo(()=> ruleReady ? detectConflicts(clean, allRules) : [], [clean, allRules, ruleReady]);
-  const summary = ruleReady ? summarize(clean) : null;
+  // Live, value-aware right-panel summary — names the actual selections and makes missing parts obvious.
+  const thirdPerson = p => { if(!p) return p; const i=p.indexOf(" "); return i<0 ? p+"s" : p.slice(0,i)+"s"+p.slice(i); };
+  const _scopeText = draft.trigger.lifecycle ? lifeFriendly(draft.trigger.lifecycle).toLowerCase() : "";
+  const _condText  = condClause(cc);
+  const _actPhrases = cc.actions.map(a=>thirdPerson(actionPhrase(a)));
+  const _audText = (draft.scope.audience && draft.scope.audience!=="ALL") ? audPlural(draft.scope.audience) : "";
+  let summary;
+  if(!moment){
+    summary = "Choose when this rule should run to begin.";
+  } else {
+    const _trig = "Runs " + (momentLabel(moment).charAt(0).toLowerCase()+momentLabel(moment).slice(1))
+      + (_scopeText ? " for "+_scopeText : "")
+      + (_condText ? ", only when "+_condText : "") + ".";
+    summary = _actPhrases.length
+      ? _trig + " " + cap(listJoin(_actPhrases)) + (_audText ? " for "+_audText : "") + "."
+      : _trig + (_condText ? " Add what should happen in Then." : " Add a condition or continue with actions.");
+  }
   const affected=[]; { const s={}; cc.actions.forEach(a=>{ if(!s[a.fieldId]){s[a.fieldId]=1;affected.push(a.fieldId);} }); }
   const valid=(draft.name||"").trim().length>0 && hasDo;
 
@@ -1454,7 +1684,10 @@ function RuleStudioV8({ initial, isNew, allRules, onCancel, onSave }){
   const setCondOp=(ci,v)=>update(d=>{ const c=d.blocks[0].conditions[ci]; c.op=v; c.value=defaultVal(v); });
   const setCondValue=(ci,v)=>update(d=>{ d.blocks[0].conditions[ci].value=v; });
   const rmCond=ci=>update(d=>{ d.blocks[0].conditions.splice(ci,1); });
-  const toggleMatch=()=>update(d=>{ d.blocks[0].match = d.blocks[0].match==="ALL"?"ANY":"ALL"; });
+  const setMatch=v=>update(d=>{ d.blocks[0].match=v; });
+  const resetCanvas=()=>{ update(d=>{ d.name=""; d.trigger.moment=""; d.trigger.lifecycle=""; d.scope.audience="";
+      d.blocks=[{ ...d.blocks[0], match:"ALL", conditions:[], actions:[] }]; });
+    setRev({if:false,then:false,for:false}); setIfSkipped(false); setConflictNote(""); };
 
   const finalize=()=>{ const d=JSON.parse(JSON.stringify(draft));
     if(!d.trigger.moment) d.trigger.moment="ON_FIELD_CHANGE";
@@ -1472,10 +1705,17 @@ function RuleStudioV8({ initial, isNew, allRules, onCancel, onSave }){
                 : <V8Slot value={valDisplay(a.value)} placeholder="a value" valueInput onPick={v=>setActValue(ai,v)} />; };
 
   const overview=[];
-  if(moment) overview.push({ role:"when", lead:"When", text: momentLabel(moment)+(draft.trigger.lifecycle?" · "+lifeFriendly(draft.trigger.lifecycle):"") });
-  if(condClause(cc)) overview.push({ role:"if", lead:"Only if", text:cap(condClause(cc)) });
-  cc.actions.forEach((a,i)=> overview.push({ role:"do", lead:i===0?"Do":"And", text:cap(actionPhrase(a)) }));
-  if(draft.scope.audience) overview.push({ role:"for", lead:"For", text:audFriendly(draft.scope.audience) });
+  // Trigger — timing + request scope
+  overview.push({ role:"when", lead:"Trigger", text: momentLabel(moment), sub: _scopeText ? cap(_scopeText) : "Any form — new & existing" });
+  // Conditions — the checks, or "runs every time"
+  overview.push({ role:"if", lead:"Conditions",
+    text: _condText ? cap(_condText) : (ifSkipped ? "Runs every time — no conditions" : null),
+    placeholder: (_condText || ifSkipped) ? null : "No conditions yet — optional" });
+  // Actions — the behaviors applied
+  if(cc.actions.length) cc.actions.forEach((a,i)=> overview.push({ role:"do", lead: cc.actions.length>1 ? "Action "+(i+1) : "Action", text:cap(actionPhrase(a)) }));
+  else overview.push({ role:"do", lead:"Action", placeholder:"No action yet — choose what happens in Then" });
+  // Audience — who it affects
+  overview.push({ role:"for", lead:"Audience", text: draft.scope.audience ? audFriendly(draft.scope.audience) : null, placeholder: draft.scope.audience ? null : "Everyone (default)" });
 
   const grp = CONFLICT_CATS.map(cat=>({ cat, items:conflicts.filter(c=>(c.category||"CONTRADICTORY")===cat.id) })).filter(g=>g.items.length);
   const CTONE = { red:"var(--v8-red)", amber:"var(--v8-if)", violet:"var(--v8-if)", slate:"var(--v8-muted)" };
@@ -1500,6 +1740,7 @@ function RuleStudioV8({ initial, isNew, allRules, onCancel, onSave }){
           <button onClick={redo} title="Redo" className="flex h-8 w-8 items-center justify-center rounded-lg" style={tbtn}>↷</button>
           <button onClick={()=>setHowOpen(true)} title="How it works" className="flex h-8 w-8 items-center justify-center rounded-lg" style={tbtn}>{VI.bulb}</button>
           <button onClick={()=>setRefOpen(true)} title="Behavior reference" className="flex h-8 w-8 items-center justify-center rounded-lg" style={tbtn}>{VI.book}</button>
+          <button onClick={resetCanvas} title="Clear the canvas and start over" className="rounded-lg px-3 py-1.5 text-sm font-medium" style={tbtn}>Reset</button>
           <button onClick={()=>setTestOpen(true)} className="rounded-lg px-3 py-1.5 text-sm font-medium" style={{ background:"var(--v8-panel2)", border:"1px solid var(--v8-border2)", color:"var(--v8-text)" }}>Test</button>
           <button onClick={onCancel} className="rounded-lg px-3 py-1.5 text-sm font-medium" style={{ border:"1px solid var(--v8-border2)", color:"var(--v8-muted)" }}>Cancel</button>
           <button onClick={()=>{ if(valid) onSave(finalize()); }} className="rounded-lg px-4 py-1.5 text-sm font-semibold" style={ valid ? { background:"var(--v8-accent)", color:"#fff" } : { background:"var(--v8-panel2)", color:"var(--v8-faint)" } }>Save rule</button>
@@ -1512,31 +1753,35 @@ function RuleStudioV8({ initial, isNew, allRules, onCancel, onSave }){
           <div className="relative mx-auto w-full" style={{ maxWidth:"720px", paddingLeft:"36px", paddingRight:"36px", paddingTop:"7vh", paddingBottom:"64px" }}>
 
             {/* WHEN */}
-            <V8Node role="when" head="When" first last={!showIf && !showThen && !showFor}
-              footer={ isNew && !moment ? "Click to start — then type to fill each field" : null }
-              chips={ moment ? [
-                (!showIf) && <NextChip key="ci" role="if" icon={VI.diamond} label="Check if" onClick={()=>{ setShowIf(true); addCond(); }} />,
-                (!showThen) && <NextChip key="th" role="do" primary icon={VI.arrow} label="Then" onClick={()=>{ setShowThen(true); addAction(); }} />,
-              ].filter(Boolean) : null }>
+            <V8Node role="when" head="When" first last={!showIf && !showThen && !showFor} done={!!moment}
+              footer={ !moment ? "Choose when this rule should take effect — each option explains itself" : null }>
               {moment
-                ? <><V8Slot value={momentLabel(moment)} items={MOMENTS.map(m=>({value:m.id,label:m.label}))} onPick={setMoment} width={280} help={V8_HELP.when} /> <Conn>on</Conn> <V8Slot value={lifeFriendly(draft.trigger.lifecycle)||null} placeholder="any form" items={LIFECYCLES_FRIENDLY.map(l=>({value:l.id,label:l.label}))} onPick={setLifecycle} help={V8_HELP.life} /></>
-                : <V8Slot value={null} placeholder="something happens" beckon width={280} help={V8_HELP.when} items={MOMENTS.map(m=>({value:m.id,label:m.label}))} onPick={setMoment} />}
+                ? <><V8Slot value={momentLabel(moment)} width={520} onPick={setMoment}
+                      guide={{ title:"When should this rule run?", support:"Choose the moment that best matches the behavior you want.", options:V8_WHEN_GUIDE, value:moment }} /> <Conn>on</Conn> <V8Slot value={lifeFriendly(draft.trigger.lifecycle)||null} placeholder="any form" width={520} onPick={setLifecycle}
+                      guide={{ title:"Which requests should it apply to?", support:"Limit the rule to new requests, existing ones, or both.", options:V8_LIFE_GUIDE, value:draft.trigger.lifecycle }} /></>
+                : <V8Slot value={null} placeholder="should this rule run?" beckon width={520} onPick={setMoment}
+                      guide={{ title:"When should this rule run?", support:"Choose the moment that best matches the behavior you want.", options:V8_WHEN_GUIDE, value:moment }} />}
             </V8Node>
 
             {/* CHECK IF */}
             {showIf && (
-              <V8Node role="if" head="Check if" last={!showThen && !showFor}
-                chips={[
+              <V8Node role="if" head="Check if" last={!showThen && !showFor} done={firstCondDone || (ifSkipped && leafConds.length===0)}
+                chips={ leafConds.length>0 ? [
                   <NextChip key="ao" role="if" icon={VI.diamond} label="+ and/or" onClick={addCond} />,
-                  (!showThen) && <NextChip key="th" role="do" primary icon={VI.arrow} label="Then" onClick={()=>{ setShowThen(true); addAction(); }} />,
-                ].filter(Boolean)}>
+                ] : null }
+                footer={ leafConds.length===0 && !ifSkipped
+                  ? <span style={{ color:"var(--v8-faint)" }}>Conditions are optional — <button onClick={()=>setIfSkipped(true)} className="font-medium hover:underline" style={{ color:"var(--v8-accent2)" }}>skip this and go straight to Then</button>. The rule will still run every time.</span>
+                  : null }>
                 {leafConds.length===0
-                  ? <V8Slot value={null} placeholder="a field" beckon search groups={FIELD_GROUPED} width={300} help={V8_HELP.if} onPick={v=>{ addCond(); setCondField(0,v); }} />
+                  ? (ifSkipped
+                      ? <span style={{ color:"var(--v8-faint)", fontWeight:500 }}>anything — it runs every time <button onClick={()=>setIfSkipped(false)} className="ml-1 align-middle text-[13px] font-medium hover:underline" style={{ color:"var(--v8-accent2)" }}>add a condition</button></span>
+                      : <V8Slot value={null} placeholder="a field" beckon search groups={FIELD_GROUPED} width={300} help={V8_HELP.if} onPick={v=>{ addCond(); setCondField(0,v); }} />)
                   : leafConds.map((c,ci)=>(
                       <React.Fragment key={c.id}>
-                        {ci>0 && <MatchChip match={block.match} onClick={toggleMatch} />}
+                        {ci>0 && <MatchChip match={block.match} onPick={setMatch} />}
                         <V8Slot value={fieldShort(c.fieldId)} placeholder="a field" search groups={FIELD_GROUPED} width={300} help={V8_HELP.if} beckon={!c.fieldId} onPick={v=>setCondField(ci,v)} />
-                        {c.fieldId && <> <V8Slot value={opLabel(c.op)} placeholder="is" items={fieldOps(c.fieldId).map(o=>({value:o,label:opLabel(o)}))} onPick={v=>setCondOp(ci,v)} /></>}
+                        {c.fieldId && <> <V8Slot value={opLabel(c.op)} placeholder="is" width={520} onPick={v=>setCondOp(ci,v)}
+                          guide={{ title:"Condition Logic", support:"Defines how the field value is evaluated.", options:fieldOps(c.fieldId).map(v8OpGuide), value:c.op }} /></>}
                         {c.fieldId && c.op && opVal(c.op)!=="none" && <> {condValueSlot(c,ci)}</>}
                         {leafConds.length>1 && <button onClick={()=>rmCond(ci)} className="ml-1 align-middle text-[14px] font-normal" style={{ color:"var(--v8-faint)" }} title="Remove">✕</button>}
                       </React.Fragment>
@@ -1544,16 +1789,22 @@ function RuleStudioV8({ initial, isNew, allRules, onCancel, onSave }){
               </V8Node>
             )}
 
-            {/* THEN (one node per action) */}
+            {/* THEN (one node per action; empty starter node until the first action begins) */}
+            {showThen && block.actions.length===0 && (
+              <V8Node role="do" head="Then" last={!showFor}>
+                <V8Slot value={null} placeholder="do something" beckon width={520}
+                  guide={{ title:"Behavior", support:"What this rule does to a field on the form.", options:V8_ACTION_GUIDE, value:"" }}
+                  onPick={v=>update(d=>{ d.blocks[0].actions.push({id:uid("a"),type:v,fieldId:"",value:""}); })} />
+              </V8Node>
+            )}
             {showThen && block.actions.map((a,ai)=>(
-              <V8Node key={a.id} role="do" head={ai===0?"Then":"And"} last={ai===lastActionIdx && !showFor}
+              <V8Node key={a.id} role="do" head={ai===0?"Then":"And"} last={ai===lastActionIdx && !showFor} done={actComplete(a)}
                 removable={block.actions.length>1} onRemove={()=>rmAction(ai)}
                 chips={ai===lastActionIdx ? [
                   <NextChip key="aa" role="do" icon={VI.arrow} label="+ and also" onClick={addAction} />,
-                  (!showFor) && <NextChip key="fr" role="for" primary icon={VI.user} label="For" onClick={()=>setShowFor(true)} />,
-                  (!showIf) && <NextChip key="ci" role="if" icon={VI.diamond} label="Check if" onClick={()=>{ setShowIf(true); addCond(); }} />,
-                ].filter(Boolean) : null}>
-                <V8Slot value={bverb(a.type)} placeholder="do something" items={ACTION_TYPES.map(t=>({value:t.id,label:bverb(t.id)}))} onPick={v=>setActType(ai,v)} help={V8_HELP.do} beckon={!a.type} />
+                ] : null}>
+                <V8Slot value={bverb(a.type)} placeholder="do something" width={520} onPick={v=>setActType(ai,v)} beckon={!a.type}
+                  guide={{ title:"Behavior", support:"What this rule does to a field on the form.", options:V8_ACTION_GUIDE, value:a.type }} />
                 {" "}
                 <V8Slot value={fieldShort(a.fieldId)} placeholder="a field" search items={ACTION_FIELDS.map(f=>({value:f.id,label:f.name}))} onPick={v=>setActField(ai,v)} help={V8_HELP.field} beckon={!!a.type && !a.fieldId} />
                 {a.type==="SET_VALUE" && <> <Conn>to</Conn> {actValueSlot(a,ai)}</>}
@@ -1562,8 +1813,9 @@ function RuleStudioV8({ initial, isNew, allRules, onCancel, onSave }){
 
             {/* FOR */}
             {showFor && (
-              <V8Node role="for" head="For" last>
-                <V8Slot value={audFriendly(draft.scope.audience)||null} placeholder="everyone" items={AUD_FRIENDLY.map(x=>({value:x.id,label:x.label}))} onPick={setAudience} help={V8_HELP.for} />
+              <V8Node role="for" head="For" last done={!!draft.scope.audience}>
+                <V8Slot value={audFriendly(draft.scope.audience)||null} placeholder="everyone" beckon width={520} onPick={setAudience}
+                  guide={{ title:"Audience", support:"Who experiences this rule while filling the form.", options:V8_AUD_GUIDE, value:draft.scope.audience }} />
               </V8Node>
             )}
           </div>
@@ -1574,7 +1826,7 @@ function RuleStudioV8({ initial, isNew, allRules, onCancel, onSave }){
             <div className="flex flex-1 flex-col items-center justify-center px-9 text-center">
               <span className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl" style={{ background:"var(--v8-panel2)", color:"var(--v8-muted)" }}>{VI.bulb}</span>
               <div className="text-[15px] font-semibold" style={{ color:"var(--v8-text)" }}>Build a form rule</div>
-              <div className="mt-1.5 text-[12.5px] leading-relaxed" style={{ color:"var(--v8-muted)" }}>Start on the left: choose when the rule runs, then add steps with the next → chips. Each part appears as you go.</div>
+              <div className="mt-1.5 text-[12.5px] leading-relaxed" style={{ color:"var(--v8-muted)" }}>Start on the left: choose when the rule runs. As you complete each step, the next one appears on its own.</div>
               <div className="mt-5 flex items-center justify-center gap-2">
                 <button onClick={()=>setHowOpen(true)} className="rounded-lg px-4 py-2 text-[12.5px] font-medium" style={{ background:"color-mix(in srgb, var(--v8-accent) 16%, transparent)", border:"1px solid color-mix(in srgb, var(--v8-accent) 30%, transparent)", color:"var(--v8-accent2)" }}>Show me how</button>
                 <button onClick={()=>setRefOpen(true)} className="rounded-lg px-4 py-2 text-[12.5px] font-medium" style={{ border:"1px solid var(--v8-border2)", color:"var(--v8-muted)" }}>Behaviors</button>
@@ -1583,8 +1835,8 @@ function RuleStudioV8({ initial, isNew, allRules, onCancel, onSave }){
           ) : (
             <React.Fragment>
               <div className="flex-1 overflow-y-auto px-6 py-6">
-                <div className="text-[10px] uppercase tracking-[0.14em]" style={{ color:"var(--v8-faint)" }}>In plain English</div>
-                <p className="mt-2 rounded-xl px-3 py-2.5 text-[13px] leading-relaxed" style={{ background:"var(--v8-panel2)", color: summary?"var(--v8-text)":"var(--v8-faint)" }}>{summary || "Your rule will read here once you add a behavior."}</p>
+                <div className="text-[10px] uppercase tracking-[0.14em]" style={{ color:"var(--v8-faint)" }}>Summary</div>
+                <p className="mt-2 rounded-xl px-3 py-2.5 text-[13px] leading-relaxed" style={{ background:"var(--v8-panel2)", color: (moment && cc.actions.length)?"var(--v8-text)":"var(--v8-muted)" }}>{summary}</p>
                 <div className="mt-4 text-[11px] uppercase tracking-[0.12em]" style={{ color:"var(--v8-faint)" }}>Your rule</div>
                 <div className="mt-3 flex flex-col gap-2">
                   {overview.map((o,i)=>{ const r=RV[o.role]; return (
@@ -1592,12 +1844,22 @@ function RuleStudioV8({ initial, isNew, allRules, onCancel, onSave }){
                       <span className="mt-1 h-2 w-2 shrink-0 rounded-full" style={{ background:r.c }} />
                       <div className="min-w-0">
                         <div className="text-[10px] font-semibold uppercase tracking-wider" style={{ color:r.c }}>{o.lead}</div>
-                        <div className="text-[12.5px] leading-snug" style={{ color:"var(--v8-text)" }}>{o.text}</div>
+                        {o.text
+                          ? <div className="text-[12.5px] leading-snug" style={{ color:"var(--v8-text)" }}>{o.text}</div>
+                          : <div className="text-[12.5px] italic leading-snug" style={{ color:"var(--v8-faint)" }}>{o.placeholder}</div>}
+                        {o.sub && <div className="mt-0.5 text-[11px] leading-snug" style={{ color:"var(--v8-muted)" }}>{o.sub}</div>}
                       </div>
                     </div>
                   );})}
-                  {overview.length===0 && <div className="text-[12px]" style={{ color:"var(--v8-faint)" }}>Pick a moment, then keep going…</div>}
                 </div>
+
+                <div className="mt-5 text-[10px] uppercase tracking-[0.14em]" style={{ color:"var(--v8-faint)" }}>Status</div>
+                {(()=>{ const miss=[]; if(!(draft.name||"").trim()) miss.push("a name"); if(!cc.actions.length) miss.push("an action");
+                  return <div className="mt-2 flex items-center gap-2 rounded-xl px-3 py-2.5 text-[12.5px]"
+                    style={ valid ? { background:"var(--v8-then-bg)", color:"var(--v8-then)" } : { background:"var(--v8-panel2)", color:"var(--v8-muted)" } }>
+                    {valid ? <React.Fragment><span>✓</span><span>Ready to save.</span></React.Fragment>
+                           : <span>Incomplete — add {listJoin(miss)} to save.</span>}
+                  </div>; })()}
 
                 {hasDo && <React.Fragment>
                   <div className="mt-5 flex items-center justify-between">
@@ -1645,15 +1907,15 @@ function RuleStudioV8({ initial, isNew, allRules, onCancel, onSave }){
 
 /* ============================================================ VERSION SWITCHER */
 const VERSIONS = [
-  { id:"v1", label:"Version 1", note:"Sentence-first builder", href:"rule-studio-v1.html" },
-  { id:"v2", label:"Version 2", note:"Structured form",        href:"rule-studio-demo.html" },
-  { id:"v3", label:"Version 3", note:"Block workspace",        href:"rule-studio-v3.html" },
-  { id:"v4", label:"Version 4", note:"Starter cards",          href:"rule-studio-v4.html" },
-  { id:"v6", label:"Version 6", note:"Refined classic form",   href:"rule-studio-v6.html" },
-  { id:"v7", label:"Version 7", note:"Progressive workspace",  href:"rule-studio-v7.html" },
-  { id:"v8", label:"Version 8", note:"Guided form canvas",     href:"rule-studio-v8.html" },
-  { id:"v9", label:"Version 9", note:"Rule sequence workspace", href:"rule-studio-v9.html" },
-  { id:"v92", label:"Version 9.2", note:"Guided sequence editor", href:"rule-studio-v9-2.html" },
+  { id:"v1",  label:"Sentence-First Builder",  note:"V1",   href:"rule-studio-v1.html" },
+  { id:"v2",  label:"Structured Form",         note:"V2",   href:"rule-studio-demo.html" },
+  { id:"v3",  label:"Block Workspace",         note:"V3",   href:"rule-studio-v3.html" },
+  { id:"v4",  label:"Starter Cards",           note:"V4",   href:"rule-studio-v4.html" },
+  { id:"v6",  label:"Refined Classic Form",    note:"V6",   href:"rule-studio-v6.html" },
+  { id:"v7",  label:"Progressive Workspace",   note:"V7",   href:"rule-studio-v7.html" },
+  { id:"v8",  label:"Guided Form Canvas",      note:"V8",   href:"rule-studio-v8.html" },
+  { id:"v9",  label:"Rule Sequence Workspace", note:"V9",   href:"rule-studio-v9.html" },
+  { id:"v92", label:"Guided Sequence Editor",  note:"V9.2", href:"rule-studio-v9-2.html" },
 ];
 const currentVersionId = () => {
   const p = (typeof window!=="undefined" && window.location.pathname) || "";

@@ -20,6 +20,10 @@
   .v9card:hover { box-shadow: 0 10px 24px -14px rgba(15,23,42,.25); }
   @keyframes v9in { from { opacity:0; transform: translateY(6px); } to { opacity:1; transform:none; } }
   .v9in { animation: v9in .32s ease both; }
+  @keyframes v7in  { from { opacity:0; transform: translateY(-4px); } to { opacity:1; transform:none; } }
+  @keyframes v7pop { from { opacity:0; transform: scale(.85); }        to { opacity:1; transform:none; } }
+  .v7in  { animation: v7in .18s ease both; }
+  .v7pop { animation: v7pop .14s ease both; }
   @keyframes v9pulse { 0%,100%{opacity:.45;} 50%{opacity:1;} }
   .v9beckon { animation: v9pulse 1.8s ease-in-out infinite; }
   /* brief highlight when navigating to a canvas section from the Rule Overview */
@@ -70,6 +74,9 @@ const OPT = {
   company:  ["Acme","Globex","Initech","Umbrella"],
   vendor:   ["Dell","Cisco","Microsoft","Apple"],
   portal:   ["Employee Portal","Customer Portal","Partner Portal"],
+  source:   ["Email","Support Portal","Technician Portal","Phone","Chat","External","Others","Scheduler","Mobile App","NMS","Teams","Slack","Telegram","WhatsApp","Facebook Messenger","Viber"],
+  template: ["Major Incident","Network Connectivity Issue","Laptop Performance Degradation","Password Reset","Printer Malfunction","Email Service Down"],
+  txnModel: ["Default Workflow","Incident Lifecycle","Service Request Fulfilment","Change Management","Problem Investigation"],
 };
 
 const _slugName = n => n.replace(/[^a-zA-Z0-9]+/g,"_").replace(/^_+|_+$/g,"").toLowerCase();
@@ -124,6 +131,9 @@ const FIELDS = [
   mkField("REQUEST","Description","text"),
   mkField("REQUEST","Attachment","text"),
   mkField("REQUEST","Requester","choice",OPT.assignee),
+  mkField("REQUEST","Source","membership",OPT.source),
+  mkField("REQUEST","Template","membership",OPT.template),
+  mkField("REQUEST","Transition Model","membership",OPT.txnModel),
   // ---- Global Fields ----
   mkField("GLOBAL","Support Portal","choice",OPT.portal),
 ];
@@ -153,6 +163,46 @@ const MOMENTS = [
   { id:"ON_FIELD_CHANGE", label:"While the form is being filled" },
   { id:"ON_SUBMIT",       label:"When the form is submitted" },
 ];
+// Timing options with contextual guidance — shared decision-aid copy (source of truth = V6)
+const MOMENT_GUIDE = [
+  { value:"ON_LOAD", label:"When the form opens",
+    desc:"Reacts once, as soon as the form loads.",
+    when:"Use this when the rule should prepare the form before the user starts filling it.",
+    how:"The rule checks once when the form first loads.",
+    output:"Fields can be shown, hidden, or preset immediately.",
+    example:"Show the Priority field immediately when a new request form loads." },
+  { value:"ON_FIELD_CHANGE", label:"While the form is being filled",
+    desc:"Reacts as the user changes values.",
+    when:"Use this when the rule should react as the user changes fields.",
+    how:"The rule checks again whenever a watched field changes.",
+    output:"The action happens immediately after the condition becomes true.",
+    example:"Recalculate the rule as the user changes the Department field." },
+  { value:"ON_SUBMIT", label:"When the form is submitted",
+    desc:"Runs just before the request is saved.",
+    when:"Use this for final checks before the request is saved.",
+    how:"The rule runs only at the point of submission.",
+    output:"The form can be validated or blocked if conditions are not met.",
+    example:"Validate the rule just before the request is saved." },
+];
+const momentGuideLabel = id => (MOMENT_GUIDE.find(m=>m.value===id)||{}).label || id;
+// "Execute On" options with the same contextual guidance
+const EXEC_GUIDE = [
+  { value:"CREATE", label:"New Form",
+    desc:"Only while raising a brand-new request.",
+    when:"Use this when the rule should only apply while someone raises a brand-new request.",
+    how:"The rule is active on the create form, not when editing later.",
+    output:"Requests being edited afterwards are left untouched." },
+  { value:"EDIT", label:"Edit Form",
+    desc:"Only when a raised request is reopened.",
+    when:"Use this when the rule should only apply when an already-raised request is reopened.",
+    how:"The rule is active on the edit form, not while creating.",
+    output:"Brand-new requests are left untouched." },
+  { value:"CREATE_EDIT", label:"New & Edit Form",
+    desc:"Applies when creating and when editing.",
+    when:"Use this when the rule should behave the same whether creating or editing.",
+    how:"The rule is active on both the create and edit forms.",
+    output:"The behaviour stays consistent across the request's life." },
+];
 const momentLabel = id => (MOMENTS.find(m=>m.id===id)||{}).label || id;
 const lcVerb = id => (LIFECYCLES.find(l=>l.id===id)||{}).verb || "uses a request";
 const LIFECYCLES_FRIENDLY = [
@@ -165,6 +215,33 @@ const EXECUTE_ON = [
   { id:"CREATE",      label:"New Form" },
   { id:"EDIT",        label:"Edit Form" },
   { id:"CREATE_EDIT", label:"New & Edit Form" },
+];
+// "Who should this affect?" options with contextual guidance (V7 parity)
+const AUD_GUIDE = [
+  { value:"ALL", label:"Everyone",
+    desc:"The safe default — applies to all users.",
+    when:"Use this when the behaviour should apply to anyone who opens the form.",
+    how:"The rule runs no matter who is using the form.",
+    output:"Everyone sees the same behaviour.",
+    example:"Require Priority for everyone who opens the form." },
+  { value:"REQUESTERS", label:"Requesters only",
+    desc:"Just the people raising requests.",
+    when:"Use this for behaviour meant for the people raising requests.",
+    how:"The rule runs for requesters and skips agents.",
+    output:"Technicians see the form unchanged.",
+    example:"Hide the Technician Group field from requesters." },
+  { value:"TECHNICIANS", label:"Technicians only",
+    desc:"Just the agents working on requests.",
+    when:"Use this for behaviour meant for the agents working on requests.",
+    how:"The rule runs for technicians and skips requesters.",
+    output:"Requesters see the form unchanged.",
+    example:"Show the Assignee field only to technicians." },
+  { value:"LOGGED_IN", label:"Signed-in users only",
+    desc:"Skips anonymous form users.",
+    when:"Use this when the behaviour should skip anonymous form users.",
+    how:"The rule runs only for users who are signed in.",
+    output:"Anyone using the form without logging in is unaffected.",
+    example:"Pre-fill the Requester field for signed-in users." },
 ];
 // who experiences the rule, in plain language
 const AUD_FRIENDLY = [
@@ -189,8 +266,8 @@ const OPERATORS = [
   { id:"MATCH_ALL",    label:"Match All",       val:"multi" },
   { id:"IS_EMPTY",     label:"Is Empty",        val:"none" },
   { id:"IS_NOT_EMPTY", label:"Is Not Empty",    val:"none" },
-  { id:"IN",           label:"in",              val:"multi" },
-  { id:"NOT_IN",       label:"not in",          val:"multi" },
+  { id:"IN",           label:"In",              val:"multi" },
+  { id:"NOT_IN",       label:"Not In",          val:"multi" },
   // legacy ids kept so older summaries/eval paths never throw
   { id:"BECOMES",      label:"becomes",         val:"single" },
   { id:"GREATER_THAN", label:"is greater than", val:"single" },
@@ -215,9 +292,13 @@ const ACTION_TYPES = [
 ];
 const REVERSIBLE = ["SHOW","HIDE","MANDATE","OPTIONAL","ENABLE","DISABLE","SHOW_OPTIONS","HIDE_OPTIONS"];
 const OPPOSITE = { SHOW:"HIDE", HIDE:"SHOW", MANDATE:"OPTIONAL", OPTIONAL:"MANDATE", ENABLE:"DISABLE", DISABLE:"ENABLE", SHOW_OPTIONS:"HIDE_OPTIONS", HIDE_OPTIONS:"SHOW_OPTIONS" };
+// an action can target one or many fields; fieldIds is the source of truth, fieldId stays = first field for back-compat
+const actFields = a => (a.fieldIds && a.fieldIds.length) ? a.fieldIds : (a.fieldId ? [a.fieldId] : []);
 const actionPhrase = a => {
+  const fids = actFields(a);
+  if(!a.type || !fids.length) return "";   // incomplete action contributes nothing to the summary
   const t = ACTION_TYPES.find(x=>x.id===a.type);
-  const fName = fieldOf(a.fieldId).name || fLabel(a.fieldId);
+  const fName = listJoin(fids.map(id=>(fieldOf(id)||{}).name || fLabel(id)));
   return t ? t.phrase(fName, a.value) : a.type;
 };
 
@@ -226,9 +307,9 @@ const uid = p => `${p}_${++_uid}`;
 
 /* ============================================================ FACTORIES */
 const defaultVal  = op => { const k=opVal(op); return k==="multi" ? [] : k==="none" ? undefined : ""; };
-const newCondition = () => { const fieldId="request__priority"; const op=fieldOps(fieldId)[0]; return { id:uid("c"), fieldId, op, value:defaultVal(op) }; };
+const newCondition = () => ({ id:uid("c"), fieldId:"", op:"", value:"" });                  // starts empty — the user configures it
 const newGroup     = () => ({ id:uid("g"), kind:"GROUP", match:"ANY", conditions:[ newCondition() ] });
-const newAction    = () => ({ id:uid("a"), type:"MANDATE", fieldId:"request__assignee", value:"" });
+const newAction    = () => ({ id:uid("a"), type:"", fieldId:"", fieldIds:[], value:"" });    // starts empty — the user configures it
 const newBlock     = () => ({ id:uid("b"), match:"ALL", mode:"ACTION", conditions:[ newCondition() ], actions:[ newAction() ] });
 const newRule = () => ({
   id: uid("rule"),
@@ -337,6 +418,7 @@ function flatConds(block){
 function firstLeaf(block){ return flatConds(block)[0] || null; }
 function condValText(c){ return Array.isArray(c.value) ? c.value.join("/") : (c.value==null ? "" : String(c.value)); }
 function condText(c){
+  if(!c || !c.fieldId || !c.op) return "";   // incomplete condition contributes nothing to the summary
   const f=fLabel(c.fieldId), o=opLabel(c.op).toLowerCase(), k=opVal(c.op);
   if(k==="none") return `${f} ${o}`;
   if(k==="multi"){ const a=Array.isArray(c.value)?c.value:[]; return `${f} ${o} ${a.join(", ")||"…"}`; }
@@ -357,7 +439,7 @@ function listJoin(arr){
   if (arr.length <= 1) return arr[0] || "";
   return arr.slice(0,-1).join(", ") + " and " + arr[arr.length-1];
 }
-function actClause(block){ return listJoin(block.actions.map(actionPhrase)); }
+function actClause(block){ return listJoin(block.actions.map(actionPhrase).filter(Boolean)); }
 function advClause(rule){
   const x=[];
   if (rule.advanced.reverseOnFalse) x.push("reverses when the condition is no longer true");
@@ -395,21 +477,21 @@ function detectConflicts(rule, all){
   const myCond = new Set(); rule.blocks.forEach(b=>flatConds(b).forEach(c=>myCond.add(c.fieldId)));
   for (const o of others){
     if (!triggerOverlap(rule, o)) continue;
-    for (const da of mine) for (const oa of allActions(o)){
-      if (da.fieldId !== oa.fieldId) continue;
+    for (const da of mine) for (const oa of allActions(o))
+      for (const fid of actFields(da).filter(f=>actFields(oa).includes(f))){
       if (OPPOSITE[da.type] === oa.type){
-        out.push({ type:"CONTRADICTORY", category:"CONTRADICTORY", severity:"HIGH", with:o, field:da.fieldId,
+        out.push({ type:"CONTRADICTORY", category:"CONTRADICTORY", severity:"HIGH", with:o, field:fid,
           text:`This rule does "${actionPhrase(da)}" while ${ruleName(o)} does "${actionPhrase(oa)}" on the same trigger.` });
       } else if (da.type === oa.type){
         if (da.type==="SET_VALUE" && da.value!==oa.value)
-          out.push({ type:"CONTRADICTORY", category:"CONTRADICTORY", severity:"HIGH", with:o, field:da.fieldId,
-            text:`This rule sets ${fLabel(da.fieldId)} to "${da.value}" but ${ruleName(o)} sets it to "${oa.value}".` });
+          out.push({ type:"CONTRADICTORY", category:"CONTRADICTORY", severity:"HIGH", with:o, field:fid,
+            text:`This rule sets ${fLabel(fid)} to "${da.value}" but ${ruleName(o)} sets it to "${oa.value}".` });
         else
-          out.push({ type:"REDUNDANT", category:"DUPLICATE", severity:"MEDIUM", with:o, field:da.fieldId,
+          out.push({ type:"REDUNDANT", category:"DUPLICATE", severity:"MEDIUM", with:o, field:fid,
             text:`This rule duplicates "${actionPhrase(da)}" already done by ${ruleName(o)}.` });
       } else {
-        out.push({ type:"SAME_TIME", category:"SAME_TIME", severity:"LOW", with:o, field:da.fieldId,
-          text:`This rule and ${ruleName(o)} both change ${fLabel(da.fieldId)} at the same moment.` });
+        out.push({ type:"SAME_TIME", category:"SAME_TIME", severity:"LOW", with:o, field:fid,
+          text:`This rule and ${ruleName(o)} both change ${fLabel(fid)} at the same moment.` });
       }
     }
     const oCond = new Set(); o.blocks.forEach(b=>flatConds(b).forEach(c=>oCond.add(c.fieldId)));
@@ -486,6 +568,7 @@ function ConflictReview({ conflicts }){
 /* ============================================================ SIMULATION */
 function evalCondition(c, values){
   if(!c) return true;
+  if(!c.fieldId || !c.op) return true;   // not yet configured → don't constrain the preview
   const raw = values[c.fieldId];
   const v = raw === undefined ? "" : raw;
   const arr = Array.isArray(c.value) ? c.value : (c.value==null || c.value==="" ? [] : [c.value]);
@@ -528,17 +611,19 @@ function scopeMatchPersona(aud, persona){
   return aud === persona;
 }
 function applyAction(state, a){
-  const s = state[a.fieldId] || (state[a.fieldId] = { visible:true, required:false, enabled:true, value: "" });
-  switch(a.type){
-    case "SHOW": s.visible=true; break;
-    case "HIDE": s.visible=false; break;
-    case "MANDATE": s.required=true; break;
-    case "OPTIONAL": s.required=false; break;
-    case "ENABLE": s.enabled=true; break;
-    case "DISABLE": s.enabled=false; break;
-    case "SET_VALUE": s.value=a.value; break;
-    case "CLEAR_VALUE": s.value=""; break;
-  }
+  actFields(a).forEach(fid=>{
+    const s = state[fid] || (state[fid] = { visible:true, required:false, enabled:true, value: "" });
+    switch(a.type){
+      case "SHOW": s.visible=true; break;
+      case "HIDE": s.visible=false; break;
+      case "MANDATE": s.required=true; break;
+      case "OPTIONAL": s.required=false; break;
+      case "ENABLE": s.enabled=true; break;
+      case "DISABLE": s.enabled=false; break;
+      case "SET_VALUE": s.value=a.value; break;
+      case "CLEAR_VALUE": s.value=""; break;
+    }
+  });
 }
 function simulate(draft, all, persona, values, moment){
   const ruleset = [...all.filter(r => r.id !== draft.id && r.status === "ENABLED"), draft];
@@ -779,33 +864,46 @@ function Dropdown({ trigger, children, align }){
   const [open,setOpen]=useState(false);
   const ref = React.useRef(null);
   const [pos,setPos]=useState(null);
-  const measure = () => {
-    const el = ref.current; if(!el) return null;
-    const r = el.getBoundingClientRect();
-    const vw = (typeof window!=="undefined"?window.innerWidth:1280), vh = (typeof window!=="undefined"?window.innerHeight:800);
-    let left = align==="right" ? r.right - 224 : r.left;
-    left = Math.max(8, Math.min(left, vw - 232));
-    return { top: Math.max(8, Math.min(r.bottom + 4, vh - 16)), left };
-  };
   const menuRef = React.useRef(null);
-  const toggle = () => { if(!open){ setPos(measure()); setOpen(true); } else setOpen(false); };
+  // Open the menu inside the nearest scrollable ancestor (the form's middle area) so a tall menu extends THAT
+  // container's scroll height — the middle scrolls to reveal it, the page + sticky footer stay put, and the menu
+  // itself never needs a scrollbar. Falls back to a viewport-fixed menu when there is no scroll container.
+  const place = () => {
+    const el = ref.current; if(!el) return;
+    let sc = el.parentElement;
+    while (sc && sc !== document.body) { const oy = getComputedStyle(sc).overflowY; if (oy==="auto"||oy==="scroll") break; sc = sc.parentElement; }
+    const r = el.getBoundingClientRect();
+    if (sc && sc !== document.body) {
+      if (getComputedStyle(sc).position==="static") sc.style.position = "relative";
+      const cr = sc.getBoundingClientRect();
+      setPos({ host:sc, abs:true, top: r.bottom - cr.top + sc.scrollTop + 4, left: r.left - cr.left + sc.scrollLeft });
+    } else {
+      const vw = (typeof window!=="undefined"?window.innerWidth:1280);
+      let left = align==="right" ? r.right - 224 : r.left;
+      left = Math.max(8, Math.min(left, vw - 232));
+      setPos({ host:(typeof document!=="undefined"?document.body:null), abs:false, top: r.bottom + 4, left });
+    }
+  };
+  const toggle = () => { if(!open){ place(); setOpen(true); } else setOpen(false); };
+  React.useLayoutEffect(()=>{
+    if(!open || !menuRef.current || !pos) return;
+    const m = menuRef.current;
+    if (pos.abs && pos.host){ const sc=pos.host; const L=Math.max(sc.scrollLeft+8, Math.min(pos.left, sc.scrollLeft+sc.clientWidth-m.offsetWidth-8)); if (L!==pos.left) setPos(p=>p?{...p,left:L}:p); }
+    m.scrollIntoView({ block:"nearest", behavior:"smooth" });
+  }, [open]);
   React.useEffect(()=>{
     if(!open) return;
-    const onScroll = (e)=>{ if(menuRef.current && menuRef.current.contains(e.target)) return; setOpen(false); }; // ignore scrolling inside the menu
+    const onDown = (e)=>{ if(ref.current && ref.current.contains(e.target)) return; if(menuRef.current && menuRef.current.contains(e.target)) return; setOpen(false); };
     const onResize = ()=>setOpen(false);
-    window.addEventListener("scroll", onScroll, true);
+    document.addEventListener("mousedown", onDown, true);
     window.addEventListener("resize", onResize);
-    return ()=>{ window.removeEventListener("scroll", onScroll, true); window.removeEventListener("resize", onResize); };
+    return ()=>{ document.removeEventListener("mousedown", onDown, true); window.removeEventListener("resize", onResize); };
   }, [open]);
-  // rendered in a body portal so the menu escapes every ancestor's clipping / stacking / transform context
-  const menu = (open && pos && typeof document!=="undefined") ? ReactDOM.createPortal(
-    <React.Fragment>
-      <div className="fixed inset-0" style={{zIndex:9998}} onClick={()=>setOpen(false)} />
-      <div ref={menuRef} className="min-w-[190px] rounded-lg border border-slate-200 bg-white p-1 shadow-xl"
-        style={{ position:"fixed", top:pos.top, left:pos.left, zIndex:9999, maxHeight:"60vh", overflowY:"auto" }}>
-        {typeof children==="function" ? children(()=>setOpen(false)) : children}
-      </div>
-    </React.Fragment>, document.body) : null;
+  const menu = (open && pos && pos.host) ? ReactDOM.createPortal(
+    <div ref={menuRef} className="min-w-[190px] rounded-lg border border-slate-200 bg-white p-1 shadow-xl"
+      style={{ position: pos.abs?"absolute":"fixed", top:pos.top, left:pos.left, zIndex:9999 }}>
+      {typeof children==="function" ? children(()=>setOpen(false)) : children}
+    </div>, pos.host) : null;
   return (
     <span ref={ref} className="relative inline-block align-middle">
       <span onClick={toggle}>{trigger}</span>
@@ -828,6 +926,105 @@ function TokenBtn({ label, kind, warn, placeholder }){
     </button>
   );
 }
+/* ============================================================ SHARED CONTEXTUAL DROPDOWN PANEL (source of truth = V6) */
+function GuidedPanel({ options, value, onPick }){
+  const [q, setQ] = useState("");
+  const [hover, setHover] = useState(null);
+  const ql = q.trim().toLowerCase();
+  const filtered = options.filter(o => !ql || o.label.toLowerCase().includes(ql));
+  const cur = options.find(o=>o.value===value) || options[0];
+  const info = options.find(o=>o.value===(hover||value)) || cur || options[0] || {};
+  const showSearch = options.length > 6;
+  return (
+    <div className="flex w-[540px] max-w-[92vw]">
+      <div className="w-60 shrink-0 border-r border-slate-100 p-2.5">
+        {showSearch && <input autoFocus value={q} onChange={e=>setQ(e.target.value)} placeholder="Search…"
+          className="mb-2.5 w-full rounded-md border border-slate-200 px-2.5 py-1.5 text-sm focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-100" />}
+        <div className="max-h-72 space-y-1 overflow-y-auto pr-0.5">
+          {filtered.map(o=>{
+            const sel = o.value===value;
+            return (
+              <button key={o.value} type="button" onMouseEnter={()=>setHover(o.value)} onFocus={()=>setHover(o.value)} onClick={()=>onPick(o.value)}
+                className={cx("w-full rounded-lg px-3 py-2.5 text-left text-sm leading-snug transition-colors", sel ? "bg-sky-50 ring-1 ring-sky-100" : "hover:bg-slate-50")}>
+                <span className={cx("flex items-center justify-between gap-2", sel ? "font-semibold text-sky-700" : "text-slate-700")}>
+                  <span>{o.label}</span>{sel && <span className="shrink-0 text-sky-500">✓</span>}
+                </span>
+                {o.desc && <span className={cx("mt-0.5 block text-xs leading-snug", sel ? "text-sky-600" : "text-slate-400")}>{o.desc}</span>}
+              </button>
+            );
+          })}
+          {filtered.length===0 && <p className="px-3 py-2 text-xs text-slate-400">No matches</p>}
+        </div>
+      </div>
+      <div className="flex-1 bg-slate-50/60 p-4 text-xs leading-relaxed">
+        <p className="mb-3 text-sm font-semibold text-slate-800">{info.label}</p>
+        <div className="space-y-3">
+          <div><span className="block text-[10px] font-semibold uppercase tracking-wide text-slate-400">When to use</span><span className="mt-0.5 block text-slate-600">{info.when}</span></div>
+          <div><span className="block text-[10px] font-semibold uppercase tracking-wide text-slate-400">How it works</span><span className="mt-0.5 block text-slate-600">{info.how}</span></div>
+          <div><span className="block text-[10px] font-semibold uppercase tracking-wide text-slate-400">Output</span><span className="mt-0.5 block text-slate-600">{info.output}</span></div>
+        </div>
+        {info.example && (
+          <div className="mt-3 border-t border-slate-200/70 pt-2.5">
+            <span className="block text-[10px] font-semibold uppercase tracking-wide text-slate-400">Example</span>
+            <span className="mt-0.5 block italic text-slate-500">{info.example}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+/* select-style trigger that opens the contextual GuidedPanel (same decision aid as V6) */
+function GuidedSelect({ value, onChange, options, className }){
+  const [open, setOpen] = useState(false);
+  const cur = options.find(o=>o.value===value) || options[0];
+  return (
+    <div className={cx("relative", className)}>
+      <button type="button" onClick={()=>setOpen(o=>!o)}
+        className="flex h-10 w-full items-center justify-between rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 hover:border-slate-400 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500">
+        <span className="truncate">{cur ? cur.label : "Choose…"}</span><span className="ml-2 shrink-0 text-[9px] opacity-50">▾</span>
+      </button>
+      {open && (
+        <React.Fragment>
+          <div className="fixed inset-0 z-40" onClick={()=>setOpen(false)} />
+          <div className="absolute left-0 top-full z-50 mt-1.5 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
+            <GuidedPanel options={options} value={value} onPick={v=>{ onChange(v); setOpen(false); }} />
+          </div>
+        </React.Fragment>
+      )}
+    </div>
+  );
+}
+const ACTION_INFO = {
+  SHOW:        { when:"Reveal a field that should appear only in certain cases.", how:"The field becomes visible when the condition is met.", output:"The field appears on the form.", example:"Show the Priority field only when the request is marked urgent." },
+  HIDE:        { when:"Keep a field off the form unless it's relevant.", how:"The field is removed from view when the condition is met.", output:"The field is hidden from the user.", example:"Hide the Vendor field for internal service requests." },
+  MANDATE:     { when:"Require a field to be filled before submitting.", how:"The field is marked required when the condition is met.", output:"The form can't be submitted until it's filled.", example:"Make Assignee mandatory when Priority is High." },
+  OPTIONAL:    { when:"Relax a field that is normally required.", how:"The required flag is removed when the condition is met.", output:"The field can be left blank.", example:"Allow Assignee to stay optional for low-priority requests." },
+  ENABLE:      { when:"Allow editing of a field that is otherwise locked.", how:"The field becomes editable when the condition is met.", output:"The user can change the field's value.", example:"Enable the Impact field when the user selects Hardware." },
+  DISABLE:     { when:"Lock a field so it can't be edited.", how:"The field is made read-only when the condition is met.", output:"The user can see but not change it.", example:"Disable the Category field until Department is chosen." },
+  SET_VALUE:   { when:"Auto-fill a field with a chosen value.", how:"The field's value is set when the condition is met.", output:"The field is pre-filled for the user.", example:"Set Status to Open automatically when the rule runs." },
+  CLEAR_VALUE: { when:"Reset a field back to empty.", how:"The field's value is removed when the condition is met.", output:"The field becomes blank.", example:"Clear the Assignee field when the request is reassigned." },
+  SHOW_OPTIONS:{ when:"Reveal specific choices within a dropdown field.", how:"Selected options are added when the condition is met.", output:"Only the relevant choices are available.", example:"Show only laptop models when Category is Hardware." },
+  HIDE_OPTIONS:{ when:"Remove specific choices from a dropdown field.", how:"Selected options are taken out when the condition is met.", output:"Those choices can no longer be picked.", example:"Hide closed statuses while a new request is being created." },
+  RUN_SCRIPT:  { when:"Handle advanced logic the standard actions can't.", how:"A custom script runs when the condition is met.", output:"Behaviour defined by your script is applied.", example:"Run a script to fetch asset details when the form loads." },
+  FILTER_DATA: { when:"Limit the records a field can show.", how:"The field's data is filtered when the condition is met.", output:"Only matching data appears in the field.", example:"Show only assets from the requester's own department." },
+};
+const ACTION_GUIDE2 = ACTION_TYPES.map(t => ({ value:t.id, label:t.label, ...(ACTION_INFO[t.id] || { when:"Apply this behaviour to a form field.", how:"Applied when the condition is met.", output:"The form behaviour changes accordingly." }) }));
+const OP_INFO = {
+  EQUALS:      { when:"Match one exact value.", how:"Checks the field equals exactly what you choose.", output:"True only for that single value." },
+  NOT_EQUALS:  { when:"Match anything except one value.", how:"Checks the field is different from what you choose.", output:"True for every value but that one." },
+  STARTS_WITH: { when:"Match text that begins a certain way.", how:"Checks the start of the text against what you type.", output:"True when the text begins with it." },
+  ENDS_WITH:   { when:"Match text that ends a certain way.", how:"Checks the end of the text against what you type.", output:"True when the text ends with it." },
+  CONTAINS:    { when:"Match text that includes something.", how:"Checks whether the text contains what you type.", output:"True when the text includes it." },
+  IS_NOT_BLANK:{ when:"Check that a field has been filled.", how:"Checks the field holds any value at all.", output:"True whenever the field isn't empty." },
+  IS_BLANK:    { when:"Check that a field is empty.", how:"Checks the field holds no value.", output:"True whenever the field is empty." },
+  MATCH_ANY:   { when:"Match any one of several choices.", how:"Checks the field equals any value you select.", output:"True if it matches at least one." },
+  MATCH_ALL:   { when:"Require every selected choice.", how:"Checks the field equals every value you select.", output:"True only if all of them match." },
+  IS_EMPTY:    { when:"Check that nothing is selected.", how:"Checks the choice field has no selection.", output:"True when nothing is chosen." },
+  IS_NOT_EMPTY:{ when:"Check that something is selected.", how:"Checks the choice field has at least one selection.", output:"True when one or more are chosen." },
+  IN:          { when:"Match one of a list of items.", how:"Checks the value is among the items you pick.", output:"True when it's one of them." },
+  NOT_IN:      { when:"Exclude a list of items.", how:"Checks the value is none of the items you pick.", output:"True when it's none of them." },
+};
+const opGuide2 = id => ({ value:id, label:opLabel(id), ...(OP_INFO[id] || { when:opLabel(id), how:"Compares the field using this operator.", output:"True when the comparison holds." }) });
 function PickList({ items, onPick, search }){
   const [q,setQ]=useState("");
   const filtered = search ? items.filter(i=>i.label.toLowerCase().includes(q.toLowerCase())) : items;
@@ -915,18 +1112,21 @@ function GroupedFieldPicker({ value, onPick, fields }){
     </div>
   );
 }
-function MultiSelect({ field, value, onChange }){
-  const opts = fieldOf(field).options || [];
-  const sel = Array.isArray(value) ? value : [];
-  const toggle = o => onChange(sel.includes(o) ? sel.filter(x=>x!==o) : [...sel, o]);
+/* boxed multi-select — shared by Conditions (values) and Actions (target fields): a compact box shows up to 2
+   chips (+N), opening a list with a "Selected Items" summary + a toggle list. options = [{value,label}]. */
+function ValueMultiSelect({ options, selected, onToggle, addLabel="value", search }){
+  const sel = Array.isArray(selected) ? selected : [];
+  const [q,setQ] = useState("");
+  const label = v => { const o=options.find(x=>x.value===v); return o ? o.label : v; };
+  const filtered = search ? options.filter(o=>String(o.label).toLowerCase().includes(q.toLowerCase())) : options;
   return (
     <Dropdown trigger={
-      <span className={cx("inline-flex min-w-[150px] max-w-full cursor-pointer flex-wrap items-center gap-1 rounded-md border px-2 py-1 text-sm",
-        sel.length ? "border-slate-200 bg-white" : "border-dashed border-slate-300 text-slate-400")}>
-        {sel.length===0 && <span>Select values…</span>}
-        {sel.slice(0,2).map(o=>(
-          <span key={o} className="inline-flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-700">
-            {o}<span onClick={e=>{e.stopPropagation();toggle(o);}} className="cursor-pointer text-slate-400 hover:text-slate-600">×</span>
+      <span className={cx("inline-flex min-w-[150px] max-w-full cursor-pointer flex-wrap items-center gap-1 rounded-md border px-2 py-1 text-sm transition-colors",
+        sel.length ? "border-slate-200 bg-white hover:bg-slate-50" : "border-dashed border-slate-300 text-slate-400 hover:border-slate-400")}>
+        {sel.length===0 && <span>Select {addLabel}s…</span>}
+        {sel.slice(0,2).map(v=>(
+          <span key={v} className="inline-flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-700">
+            {label(v)}<span onClick={e=>{e.stopPropagation();onToggle(v);}} className="cursor-pointer text-slate-400 transition-colors hover:text-slate-600">×</span>
           </span>
         ))}
         {sel.length>2 && <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500">+{sel.length-2}</span>}
@@ -934,26 +1134,28 @@ function MultiSelect({ field, value, onChange }){
       </span>}>
       {close => (
         <div className="w-56">
+          {search && <input autoFocus value={q} onChange={e=>setQ(e.target.value)} placeholder="Search…"
+            className="mb-1 w-full rounded-md border border-slate-200 px-2.5 py-1.5 text-sm focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-100" />}
           {sel.length>0 && (
             <div className="mb-1 border-b border-slate-100 pb-1">
               <p className="px-2 py-0.5 text-[11px] font-semibold text-sky-600">Selected Items</p>
               <div className="flex flex-wrap gap-1 px-2 py-1">
-                {sel.map(o=>(
-                  <span key={o} className="inline-flex items-center gap-1 rounded bg-sky-50 px-1.5 py-0.5 text-xs text-sky-700">
-                    {o}<span onClick={()=>toggle(o)} className="cursor-pointer">×</span>
+                {sel.map(v=>(
+                  <span key={v} className="inline-flex items-center gap-1 rounded bg-sky-50 px-1.5 py-0.5 text-xs text-sky-700">
+                    {label(v)}<span onClick={()=>onToggle(v)} className="cursor-pointer">×</span>
                   </span>
                 ))}
               </div>
             </div>
           )}
           <div className="max-h-48 overflow-y-auto">
-            {opts.map(o=>(
-              <button key={o} onClick={()=>toggle(o)}
-                className={cx("flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-sm hover:bg-sky-50", sel.includes(o) && "text-sky-700")}>
-                <span>{o}</span>{sel.includes(o) && <span className="text-sky-500">✓</span>}
+            {filtered.map(o=>(
+              <button key={o.value} onClick={()=>onToggle(o.value)}
+                className={cx("flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-sm transition-colors hover:bg-sky-50", sel.includes(o.value) && "text-sky-700")}>
+                <span>{o.label}</span>{sel.includes(o.value) && <span className="text-sky-500">✓</span>}
               </button>
             ))}
-            {opts.length===0 && <p className="px-2 py-1 text-sm text-slate-400">No options</p>}
+            {filtered.length===0 && <p className="px-2 py-1 text-sm text-slate-400">No matches</p>}
           </div>
         </div>
       )}
@@ -961,10 +1163,13 @@ function MultiSelect({ field, value, onChange }){
   );
 }
 function ValueControl({ cond, onChange }){
+  if(!cond.fieldId || !cond.op) return null;   // value appears only after a field + operator are chosen
   const f = fieldOf(cond.fieldId);
   const kind = opVal(cond.op);
   if(kind==="none") return <span className="px-1 text-xs italic text-slate-400">no value needed</span>;
-  if(kind==="multi") return <MultiSelect field={cond.fieldId} value={cond.value} onChange={onChange} />;
+  if(kind==="multi"){ const sel = Array.isArray(cond.value)?cond.value:[];
+    return <ValueMultiSelect options={(f.options||[]).map(o=>({value:o,label:o}))} selected={sel} addLabel="value"
+      onToggle={v=>onChange(sel.includes(v) ? sel.filter(x=>x!==v) : [...sel, v])} />; }
   if(f.options) return (
     <Dropdown trigger={<span className={cx("cursor-pointer rounded-md border px-3 py-1.5 text-sm", cond.value ? "border-slate-200 bg-slate-50 text-slate-700" : "border-dashed border-slate-300 text-slate-400")}>{cond.value || "choose value"} ▾</span>}>
       {close => <PickList search items={f.options.map(o=>({value:o,label:o}))} onPick={v=>{onChange(v);close();}} />}
@@ -975,17 +1180,19 @@ function ValueControl({ cond, onChange }){
 }
 function ConditionRow({ cond, onField, onOp, onValue, onRemove }){
   return (
-    <div className="flex items-center gap-2">
+    <div className="v7in flex items-center gap-2">
       <div className="flex flex-1 flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-white p-1.5">
-        <Dropdown trigger={<span className="cursor-pointer rounded-md bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-200">{fLabel(cond.fieldId)} ▾</span>}>
+        <Dropdown trigger={<span className={cx("cursor-pointer rounded-md px-3 py-1.5 text-sm font-medium transition-colors", cond.fieldId ? "bg-slate-100 text-slate-700 hover:bg-slate-200" : "border border-dashed border-slate-300 italic text-slate-400 hover:bg-slate-50")}>{cond.fieldId ? fLabel(cond.fieldId) : "choose field"} ▾</span>}>
           {close => <GroupedFieldPicker value={cond.fieldId} onPick={v=>{onField(v);close();}} />}
         </Dropdown>
-        <Dropdown trigger={<span className="cursor-pointer rounded-md border border-slate-200 px-2.5 py-1.5 text-sm text-slate-600 hover:bg-slate-50">{opLabel(cond.op)} ▾</span>}>
-          {close => <PickList items={fieldOps(cond.fieldId).map(id=>({value:id,label:opLabel(id)}))} onPick={v=>{onOp(v);close();}} />}
-        </Dropdown>
+        {cond.fieldId && (
+          <Dropdown trigger={<span className={cx("cursor-pointer rounded-md border px-2.5 py-1.5 text-sm transition-colors", cond.op ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-dashed border-slate-300 italic text-slate-400 hover:bg-slate-50")}>{cond.op ? opLabel(cond.op) : "choose"} ▾</span>}>
+            {close => <div className="-m-1 overflow-hidden rounded-lg"><GuidedPanel options={fieldOps(cond.fieldId).map(opGuide2)} value={cond.op} onPick={v=>{onOp(v);close();}} /></div>}
+          </Dropdown>
+        )}
         <ValueControl cond={cond} onChange={onValue} />
       </div>
-      <button onClick={onRemove} title="Remove condition" className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-red-500 text-base leading-none text-white hover:bg-red-600">×</button>
+      <button onClick={onRemove} title="Remove condition" className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-red-500 text-base leading-none text-white transition-colors hover:bg-red-600">✕</button>
     </div>
   );
 }
@@ -999,17 +1206,54 @@ function MatchToggle({ match, onChange }){
     </div>
   );
 }
+/* ONE logic control at TWO coexisting levels: "groups" → divider BETWEEN group cards (block.match);
+   "groupConditions"/"conditions" → inline at the BOTTOM of a card (group.match) */
+function LogicConnector({ match, onChange, level, divider }){
+  const L = level==="groups"
+    ? { all:"Match ALL Groups", any:"Match ANY Group", allHelp:"Every condition group must match.", anyHelp:"At least one condition group must match." }
+    : level==="groupConditions"
+      ? { all:"Match ALL Conditions", any:"Match ANY Condition", allHelp:"All conditions inside this group must be true.", anyHelp:"At least one condition inside this group must be true." }
+      : { all:"Match ALL Conditions", any:"Match ANY Condition", allHelp:"All conditions must be true.", anyHelp:"At least one condition must be true." };
+  const toggle = (
+    <div className="inline-flex items-center gap-0.5 rounded-md border border-slate-200 bg-white p-0.5 text-xs">
+      {[["ALL",L.all],["ANY",L.any]].map(([m,label])=>(
+        <button key={m} onClick={()=>onChange(m)}
+          className={cx("rounded px-2.5 py-1 font-medium transition-colors", match===m ? "bg-sky-50 text-sky-700 shadow-sm ring-1 ring-sky-100" : "text-slate-500 hover:text-slate-700")}>{label}</button>
+      ))}
+    </div>
+  );
+  const help = <p className="text-[11px] italic text-slate-400">{match==="ALL" ? L.allHelp : L.anyHelp}</p>;
+  if(divider) return (
+    <div className="v7in my-1.5 flex flex-col items-center gap-1.5">
+      <div className="flex w-full items-center gap-3"><span className="h-px flex-1 bg-slate-200" />{toggle}<span className="h-px flex-1 bg-slate-200" /></div>
+      {help}
+    </div>
+  );
+  return <div className="mt-2.5 flex flex-col gap-1">{toggle}{help}</div>;
+}
 function ConditionsEditor({ block, mutate }){
   const items = block.conditions || [];
-  const setField = idx => v => mutate(b=>{ const c=b.conditions[idx]; c.fieldId=v; c.op=fieldOps(v)[0]; c.value=defaultVal(c.op); });
+  const hasGroups = items.some(it => it && it.kind==="GROUP");
+  const setField = idx => v => mutate(b=>{ const c=b.conditions[idx]; c.fieldId=v; c.op=""; c.value=""; });   // pick a field; operator stays empty until chosen
   const setOp    = idx => v => mutate(b=>{ const c=b.conditions[idx]; c.op=v; c.value=defaultVal(v); });
   const setVal   = idx => v => mutate(b=>{ b.conditions[idx].value=v; });
   const rmItem   = idx => mutate(b=>{ b.conditions.splice(idx,1); });
-  const addCond  = () => mutate(b=>{ b.conditions.push(newCondition()); });
-  const addGroup = () => mutate(b=>{ b.conditions.push(newGroup()); });
+  const addCond  = () => mutate(b=>{ b.conditions.push(newCondition()); });   // flat list (button only shown when there are no groups)
+  const addGroup = () => mutate(b=>{
+    const its = b.conditions || [];
+    const bare = its.filter(x=>x && x.kind!=="GROUP");
+    if(bare.length){
+      // wrap the existing flat conditions into their own group, so condition-logic and group-logic get separate state
+      const groups = its.filter(x=>x && x.kind==="GROUP");
+      b.conditions = [{ id:uid("g"), kind:"GROUP", match:(b.match||"ALL"), conditions:bare }, ...groups, newGroup()];
+      b.match = "ALL";   // block.match now carries GROUP-level logic
+    } else {
+      b.conditions = [...its, newGroup()];
+    }
+  });
   const clearAll = () => mutate(b=>{ b.conditions=[]; });
   const gSetMatch= gi => v => mutate(b=>{ b.conditions[gi].match=v; });
-  const gSetField= (gi,ci) => v => mutate(b=>{ const c=b.conditions[gi].conditions[ci]; c.fieldId=v; c.op=fieldOps(v)[0]; c.value=defaultVal(c.op); });
+  const gSetField= (gi,ci) => v => mutate(b=>{ const c=b.conditions[gi].conditions[ci]; c.fieldId=v; c.op=""; c.value=""; });   // operator stays empty until chosen
   const gSetOp   = (gi,ci) => v => mutate(b=>{ const c=b.conditions[gi].conditions[ci]; c.op=v; c.value=defaultVal(v); });
   const gSetVal  = (gi,ci) => v => mutate(b=>{ b.conditions[gi].conditions[ci].value=v; });
   const gRm      = (gi,ci) => mutate(b=>{ b.conditions[gi].conditions.splice(ci,1); });
@@ -1019,41 +1263,52 @@ function ConditionsEditor({ block, mutate }){
     <div>
       <div className="flex items-center gap-3">
         <span className="text-xs text-slate-500">When the rule runs, check:</span>
-        {items.length>1 && <MatchToggle match={block.match} onChange={v=>mutate(b=>{ b.match=v; })} />}
       </div>
       <div className="mt-3 space-y-2">
         {items.length===0 && <p className="text-sm italic text-slate-400">No conditions — this rule always runs.</p>}
-        {items.map((it,idx)=> (it && it.kind==="GROUP") ? (
-          <div key={it.id} className="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Condition group</span>
-              <div className="flex items-center gap-2">
-                {it.conditions.length>1 && <MatchToggle match={it.match} onChange={gSetMatch(idx)} />}
+        {items.map((it,idx)=>{
+          const isGroup = it && it.kind==="GROUP";
+          const prevIsGroup = idx>0 && items[idx-1] && items[idx-1].kind==="GROUP";
+          const gNo = items.slice(0,idx+1).filter(x=>x&&x.kind==="GROUP").length;   // this group's position among groups
+          return (
+          <React.Fragment key={it.id}>
+            {/* GROUP-level logic — lives BETWEEN group cards, never inside one */}
+            {isGroup && prevIsGroup && <LogicConnector level="groups" divider match={block.match} onChange={v=>mutate(b=>{ b.match=v; })} />}
+            {isGroup ? (
+            <div className="v7in rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Condition group {gNo}</span>
                 <button onClick={()=>rmItem(idx)} className="text-xs font-medium text-red-500 hover:underline">Remove group</button>
               </div>
+              <div className="space-y-2">
+                {it.conditions.map((c,ci)=>(
+                  <ConditionRow key={c.id} cond={c} onField={gSetField(idx,ci)} onOp={gSetOp(idx,ci)} onValue={gSetVal(idx,ci)} onRemove={()=>gRm(idx,ci)} />
+                ))}
+              </div>
+              {/* CONDITION-level logic — lives at the BOTTOM of this group; always shown when it has 2+ conditions */}
+              {it.conditions.length>1 && <LogicConnector level="groupConditions" match={it.match} onChange={gSetMatch(idx)} />}
+              <button onClick={()=>gAdd(idx)} className="mt-2.5 flex items-center gap-1.5 text-xs font-medium text-sky-600 hover:underline">
+                <span className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 text-[11px] leading-none text-white">+</span> Add condition to group
+              </button>
             </div>
-            <div className="space-y-2">
-              {it.conditions.map((c,ci)=>(
-                <ConditionRow key={c.id} cond={c} onField={gSetField(idx,ci)} onOp={gSetOp(idx,ci)} onValue={gSetVal(idx,ci)} onRemove={()=>gRm(idx,ci)} />
-              ))}
-            </div>
-            <button onClick={()=>gAdd(idx)} className="mt-2 flex items-center gap-1.5 text-xs font-medium text-sky-600 hover:underline">
-              <span className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 text-[11px] leading-none text-white">+</span> Add condition to group
-            </button>
-          </div>
-        ) : (
-          <ConditionRow key={it.id} cond={it} onField={setField(idx)} onOp={setOp(idx)} onValue={setVal(idx)} onRemove={()=>rmItem(idx)} />
-        ))}
+            ) : (
+              <ConditionRow cond={it} onField={setField(idx)} onOp={setOp(idx)} onValue={setVal(idx)} onRemove={()=>rmItem(idx)} />
+            )}
+          </React.Fragment>
+          );
+        })}
+        {/* CONDITION-level logic for a flat list (no groups yet) — bottom of the list */}
+        {!hasGroups && items.length>1 && <LogicConnector level="conditions" match={block.match} onChange={v=>mutate(b=>{ b.match=v; })} />}
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <button onClick={addCond} className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-sky-600 hover:bg-sky-50">
+        {!hasGroups && <button onClick={addCond} className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-sky-600 transition-colors hover:bg-sky-50">
           <span className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 text-[11px] leading-none text-white">+</span> Add Condition
-        </button>
-        <button onClick={addGroup} className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50">
+        </button>}
+        <button onClick={addGroup} className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50">
           <span className="text-sky-500">⊕</span> Add Condition Group
         </button>
         {items.length>0 && (
-          <button onClick={clearAll} className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-red-500 hover:bg-red-50">
+          <button onClick={clearAll} className="ml-auto inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-red-500 transition-colors hover:bg-red-50">
             <span>⊘</span> Remove All Condition
           </button>
         )}
@@ -1248,44 +1503,50 @@ function V9Actions({ block, conflictFields, update }){
   const setAct = (ai,k,v) => update(b=>{ b.actions[ai][k]=v; });
   const rmAct  = (ai)     => update(b=>{ b.actions.splice(ai,1); });
   const addAct = ()       => update(b=>{ b.actions.push(newAction()); });
+  // one action can target many fields — fieldIds is the source of truth, fieldId stays = first field
+  const addActField = (ai,fid) => update(b=>{ const a=b.actions[ai]; const cur=(a.fieldIds&&a.fieldIds.length)?a.fieldIds:(a.fieldId?[a.fieldId]:[]); if(!cur.includes(fid)) cur.push(fid); a.fieldIds=cur; a.fieldId=cur[0]; });
+  const rmActField  = (ai,fid) => update(b=>{ const a=b.actions[ai]; const cur=((a.fieldIds&&a.fieldIds.length)?a.fieldIds:(a.fieldId?[a.fieldId]:[])).filter(x=>x!==fid); a.fieldIds=cur; a.fieldId=cur[0]||""; });
   return (
-    <div className="space-y-2">
-      {block.actions.length===0 && (
-        <p className="text-sm text-slate-400">No behavior yet — pick an action from the library, or
-          <button onClick={addAct} className="ml-1 font-medium text-sky-600 hover:underline">add one here</button>.</p>
-      )}
-      {block.actions.map((a,ai)=>(
-        <div key={a.id} className="flex items-center gap-2">
-          <button onClick={()=>rmAct(ai)} title="Remove" className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-200 text-slate-500 hover:bg-red-500 hover:text-white">−</button>
-          <div className={cx("flex flex-1 flex-wrap items-center gap-2 rounded-lg border p-1.5", conflictFields.has(a.fieldId)?"border-amber-300 bg-amber-50/50":"border-slate-200 bg-white")}>
-            <Dropdown trigger={<span className="cursor-pointer rounded-md bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-200">{(ACTION_TYPES.find(t=>t.id===a.type)||{}).label||"Choose action"} ▾</span>}>
-              {close => <PickList items={ACTION_TYPES.map(t=>({value:t.id,label:t.label}))} onPick={v=>{setAct(ai,"type",v);close();}} />}
-            </Dropdown>
-            <Dropdown trigger={<span className="cursor-pointer px-2 text-sm text-slate-700 hover:text-slate-900">{fieldOf(a.fieldId).name||"choose field"} ▾</span>}>
-              {close => <PickList search items={ACTION_FIELDS.map(f=>({value:f.id,label:f.name}))} onPick={v=>{setAct(ai,"fieldId",v);close();}} />}
-            </Dropdown>
-            {a.type==="SET_VALUE" && <span className="text-sm text-slate-400">to</span>}
-            {a.type==="SET_VALUE" && (
-              fieldOf(a.fieldId).options
-                ? <Dropdown trigger={<span className="cursor-pointer rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700">{a.value||"choose"} ▾</span>}>
-                    {close => <PickList items={fieldOf(a.fieldId).options.map(o=>({value:o,label:o}))} onPick={v=>{setAct(ai,"value",v);close();}} />}
-                  </Dropdown>
-                : <input value={a.value} onChange={e=>setAct(ai,"value",e.target.value)} placeholder="value" className="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-sky-400 focus:outline-none" />
-            )}
+    <div>
+      <div className="flex items-center gap-3">
+        <span className="text-xs text-slate-500">Then do this to the form:</span>
+      </div>
+      <div className="mt-3 space-y-2">
+        {block.actions.length===0 && <p className="text-sm italic text-slate-400">No actions yet — add one to define what happens.</p>}
+        {block.actions.map((a,ai)=>(
+          <div key={a.id} className="v7in flex items-center gap-2">
+            <div className={cx("flex flex-1 flex-wrap items-center gap-2 rounded-md border p-1.5", actFields(a).some(fid=>conflictFields.has(fid))?"border-amber-300 ring-1 ring-amber-200":"border-slate-200 bg-white")}>
+              <Dropdown trigger={<span className={cx("cursor-pointer rounded-md px-3 py-1.5 text-sm font-medium transition-colors", a.type ? "bg-slate-100 text-slate-700 hover:bg-slate-200" : "border border-dashed border-slate-300 italic text-slate-400 hover:bg-slate-50")}>{a.type ? (ACTION_TYPES.find(t=>t.id===a.type)||{}).label : "choose action"} ▾</span>}>
+                {close => <div className="-m-1 overflow-hidden rounded-lg"><GuidedPanel options={ACTION_GUIDE2} value={a.type} onPick={v=>{setAct(ai,"type",v);close();}} /></div>}
+              </Dropdown>
+              {a.type && <ValueMultiSelect search addLabel="field"
+                options={ACTION_FIELDS.map(f=>({value:f.id,label:f.name}))}
+                selected={actFields(a)}
+                onToggle={fid=> actFields(a).includes(fid) ? rmActField(ai,fid) : addActField(ai,fid)} />}
+              {a.type==="SET_VALUE" && a.fieldId && <span className="text-sm text-slate-400">to</span>}
+              {a.type==="SET_VALUE" && a.fieldId && (
+                (fieldOf(a.fieldId)||{}).options
+                  ? <Dropdown trigger={<span className="cursor-pointer rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700">{a.value||"choose"} ▾</span>}>
+                      {close => <PickList items={fieldOf(a.fieldId).options.map(o=>({value:o,label:o}))} onPick={v=>{setAct(ai,"value",v);close();}} />}
+                    </Dropdown>
+                  : <input value={a.value} onChange={e=>setAct(ai,"value",e.target.value)} placeholder="value" className="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-sky-400 focus:outline-none" />
+              )}
+            </div>
+            <button onClick={()=>rmAct(ai)} title="Remove action" className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-red-500 text-base leading-none text-white transition-colors hover:bg-red-600">✕</button>
           </div>
-        </div>
-      ))}
-      {block.actions.length>0 && (
-        <button onClick={addAct} className="flex items-center gap-2 text-sm font-medium text-sky-600 hover:underline">
-          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white">+</span> Add action
+        ))}
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <button onClick={addAct} className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-sky-600 transition-colors hover:bg-sky-50">
+          <span className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 text-[11px] leading-none text-white">+</span> Add Action
         </button>
-      )}
+      </div>
     </div>
   );
 }
 
 function V9Block({ b, bi, active, onActivate, mutateBlock, onDuplicate, onRemove, canRemove, collapsed, onToggleCollapse, conflicts, conflictFields, ifRef, thenRef, flashIf, flashThen }){
-  const blockConflicts = conflicts.filter(c => b.actions.some(a=>a.fieldId===c.field) || flatConds(b).some(cd=>cd.fieldId===c.field));
+  const blockConflicts = conflicts.filter(c => b.actions.some(a=>actFields(a).includes(c.field)) || flatConds(b).some(cd=>cd.fieldId===c.field));
   const line = v9BlockLine(b);
   return (
     <div onClick={onActivate}
@@ -1359,6 +1620,89 @@ function V9Assistant({ draft, conflicts, affectedFields, hasBehavior, conflictRe
   );
 }
 
+/* a compact labelled card for the left Rule-Intelligence sidebar */
+function V9IntelCard({ label, tone, children }){
+  return (
+    <div className={cx("v9in rounded-xl border p-3", tone==="warn"?"border-amber-200 bg-amber-50":tone==="ok"?"border-emerald-200 bg-emerald-50":"border-slate-200 bg-white")}>
+      <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">{label}</p>
+      <div className="mt-1">{children}</div>
+    </div>
+  );
+}
+/* LEFT PANEL — live Rule Intelligence: a structured, decision-making overview of the current rule (read-only) */
+function V9Intelligence({ draft, conflicts, affectedFields, hasBehavior }){
+  const blocks = draft.blocks || [];
+  const filledConds = blocks.flatMap(b=>flatConds(b)).filter(c=>c.fieldId && c.op);
+  const groups = blocks.flatMap(b=>(b.conditions||[]).filter(it=>it&&it.kind==="GROUP"));
+  const acts = blocks.flatMap(b=>(b.actions||[]).filter(a=>a.type && actFields(a).length));
+  const moment = draft.trigger.moment, lifecycle = draft.trigger.lifecycle, audience = draft.scope.audience;
+  const lifeLabel = (EXEC_GUIDE.find(e=>e.value===lifecycle)||{}).label;
+  const summary = hasBehavior ? (summarize(draft)||"") : "";
+  const blockMatch = (blocks[0]||{}).match || "ALL";
+  const condCount = filledConds.length;
+
+  const missing = [];
+  if(!(draft.name||"").trim()) missing.push("Give the rule a name");
+  if(!moment)   missing.push("Choose when it runs");
+  if(!audience) missing.push("Choose who it affects");
+  if(!acts.length) missing.push("Add at least one behavior");
+  const hasConflicts = conflicts && conflicts.length>0;
+
+  let status, statusText, tone;
+  if(missing.length){ status="todo"; tone=""; statusText="Incomplete setup"; }
+  else if(hasConflicts){ status="warn"; tone="warn"; statusText=conflicts.length+" conflict"+(conflicts.length>1?"s":"")+" to review"; }
+  else { status="ok"; tone="ok"; statusText="Ready to save"; }
+
+  return (
+    <div className="flex h-full flex-col gap-3 overflow-y-auto p-4">
+      <div>
+        <h2 className="text-sm font-bold text-slate-800">Rule Intelligence</h2>
+        <p className="mt-0.5 text-[11px] leading-relaxed text-slate-400">A live overview of what this rule does.</p>
+      </div>
+
+      <div className="v9in rounded-xl border border-sky-100 bg-sky-50/60 p-3">
+        <p className="text-[10px] font-bold uppercase tracking-wide text-sky-500">Summary</p>
+        <p className="mt-1 text-[13px] leading-relaxed text-slate-700">{summary || "Add a behavior to see what this rule will do."}</p>
+      </div>
+
+      <V9IntelCard label="When it runs">
+        {moment ? <p className="text-[13px] font-medium text-slate-700">{v9WhenPhrase(moment)}</p> : <p className="text-[13px] text-slate-400">Not set yet</p>}
+        {lifeLabel && <p className="mt-0.5 text-[11px] text-slate-400">{lifeLabel}</p>}
+      </V9IntelCard>
+
+      <V9IntelCard label="Who it affects">
+        {audience ? <p className="text-[13px] font-medium text-slate-700">{audFriendly(audience)}</p> : <p className="text-[13px] text-slate-400">Not set yet</p>}
+      </V9IntelCard>
+
+      <V9IntelCard label="Condition logic">
+        {condCount===0
+          ? <p className="text-[13px] text-slate-400">Runs every time (no conditions)</p>
+          : <p className="text-[13px] text-slate-700"><span className="font-medium">{condCount}</span> condition{condCount>1?"s":""}{groups.length>0 ? <React.Fragment> · <span className="font-medium">{groups.length}</span> group{groups.length>1?"s":""}</React.Fragment> : null} · match <span className="font-semibold text-sky-700">{blockMatch==="ALL"?"all":"any"}</span></p>}
+      </V9IntelCard>
+
+      <V9IntelCard label="Fields affected">
+        {affectedFields.length===0
+          ? <p className="text-[13px] text-slate-400">No fields yet</p>
+          : <div className="flex flex-wrap gap-1.5">{affectedFields.map(f=><span key={f} className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">{fieldOf(f).name||fLabel(f)}</span>)}</div>}
+      </V9IntelCard>
+
+      <V9IntelCard label="Status" tone={tone}>
+        <p className={cx("flex items-center gap-1.5 text-[13px] font-semibold", status==="ok"?"text-emerald-700":status==="warn"?"text-amber-700":"text-slate-600")}>
+          <span>{status==="ok"?"✓":status==="warn"?"⚠":"○"}</span>{statusText}
+        </p>
+        {missing.length>0 && (
+          <ul className="mt-1.5 space-y-1">
+            {missing.map((m,i)=><li key={i} className="flex items-start gap-1.5 text-[12px] text-slate-500"><span className="text-slate-300">•</span>{m}</li>)}
+          </ul>
+        )}
+        {!missing.length && hasConflicts && (
+          <p className="mt-1 text-[11px] leading-snug text-amber-700/80">{fieldOf(conflicts[0].field).name||fLabel(conflicts[0].field)} is also changed by another rule.</p>
+        )}
+      </V9IntelCard>
+    </div>
+  );
+}
+
 function RuleStudioV9({ initial, isNew, allRules, onCancel, onSave }){
   const [draft, setDraft] = useState(()=>{
     const d = JSON.parse(JSON.stringify(initial));
@@ -1369,11 +1713,12 @@ function RuleStudioV9({ initial, isNew, allRules, onCancel, onSave }){
   const [tab, setTab] = useState("build");          // build | try
   const [active, setActive] = useState(0);
   const [collapsed, setCollapsed] = useState(()=>new Set());
+  const [advOpen, setAdvOpen] = useState(false);   // Advanced is an optional section — collapsed by default
 
   const mutateBlock = bi => (fn => update(d => fn(d.blocks[bi])));
   const conflicts = useMemo(()=>detectConflicts(draft, allRules), [draft, allRules]);
   const conflictFields = useMemo(()=>new Set(conflicts.map(c=>c.field)), [conflicts]);
-  const affectedFields = useMemo(()=>{ const s=new Set(); draft.blocks.forEach(b=>b.actions.forEach(a=>{ if(a.type && a.fieldId) s.add(a.fieldId); })); return [...s]; }, [draft]);
+  const affectedFields = useMemo(()=>{ const s=new Set(); draft.blocks.forEach(b=>b.actions.forEach(a=>{ if(a.type) actFields(a).forEach(fid=>s.add(fid)); })); return [...s]; }, [draft]);
   const hasBehavior = draft.blocks.some(b=>b.actions.some(a=>a.type && a.fieldId));
   const valid = (draft.name||"").trim().length>0 && hasBehavior;
 
@@ -1383,7 +1728,7 @@ function RuleStudioV9({ initial, isNew, allRules, onCancel, onSave }){
   const addGroup  = () => update(d=>{ (d.blocks[active]||d.blocks[0]).conditions.push(newGroup()); });
   const toggleMatch = () => update(d=>{ const b=d.blocks[active]||d.blocks[0]; b.match = b.match==="ALL"?"ANY":"ALL"; });
   const setMatch = v => update(d=>{ const b=d.blocks[active]||d.blocks[0]; b.match = v; });
-  const addAction = type => update(d=>{ (d.blocks[active]||d.blocks[0]).actions.push({ id:uid("a"), type, fieldId:"request__assignee", value:"" }); });
+  const addAction = type => update(d=>{ (d.blocks[active]||d.blocks[0]).actions.push({ id:uid("a"), type, fieldId:"", fieldIds:[], value:"" }); });
   const onAdvanced = k => update(d=>{ if(k==="reverse") d.advanced.reverseOnFalse=!d.advanced.reverseOnFalse; else if(k==="system") d.advanced.enforceSystemWide=!d.advanced.enforceSystemWide; });
   const onTemplate = t => update(d=>{ const cfg=t.build(); d.trigger.moment=cfg.moment; d.scope.audience=cfg.audience; const b=d.blocks[active]||d.blocks[0]; b.conditions=cfg.conditions; b.actions=cfg.actions; });
 
@@ -1439,8 +1784,8 @@ function RuleStudioV9({ initial, isNew, allRules, onCancel, onSave }){
       {/* three panels */}
       <div className="flex min-h-0 flex-1">
         {/* LEFT — read-only Rule Overview (progress · summaries · conflicts · navigation) */}
-        <aside className="hidden w-64 shrink-0 border-r border-slate-200 bg-white lg:block">
-          <V9Overview draft={draft} conflicts={conflicts} onNavigate={focusSection} />
+        <aside className="hidden w-80 shrink-0 border-r border-slate-200 bg-slate-50 lg:block">
+          <V9Intelligence draft={draft} conflicts={conflicts} affectedFields={affectedFields} hasBehavior={hasBehavior} />
         </aside>
 
         {/* CENTER — sequence builder / try */}
@@ -1459,10 +1804,10 @@ function RuleStudioV9({ initial, isNew, allRules, onCancel, onSave }){
                 <p className="mt-0.5 text-xs text-slate-500">Choose when this behavior should take effect.</p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Dropdown trigger={<span className={cx("inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100", isNew && !hasBehavior && "v9beckon")}>{(V9_WHEN.find(w=>w.id===draft.trigger.moment)||{label:"Choose a time"}).label}<span className="text-slate-400">▾</span></span>}>
-                    {close=><PickList items={V9_WHEN.map(w=>({value:w.id,label:w.label}))} onPick={v=>{setWhen(v);close();}} />}
+                    {close=><div className="-m-1 overflow-hidden rounded-lg"><GuidedPanel options={MOMENT_GUIDE} value={draft.trigger.moment} onPick={v=>{setWhen(v);close();}} /></div>}
                   </Dropdown>
                   <Dropdown trigger={<span className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">{(V9_LIFE.find(l=>l.id===draft.trigger.lifecycle)||{label:"Which requests"}).label}<span className="text-slate-400">▾</span></span>}>
-                    {close=><PickList items={V9_LIFE.map(l=>({value:l.id,label:l.label}))} onPick={v=>{update(d=>d.trigger.lifecycle=v);close();}} />}
+                    {close=><div className="-m-1 overflow-hidden rounded-lg"><GuidedPanel options={EXEC_GUIDE} value={draft.trigger.lifecycle} onPick={v=>{update(d=>d.trigger.lifecycle=v);close();}} /></div>}
                   </Dropdown>
                 </div>
 
@@ -1472,7 +1817,7 @@ function RuleStudioV9({ initial, isNew, allRules, onCancel, onSave }){
                 <p className="mt-0.5 text-xs text-slate-500">Pick who this rule applies to.</p>
                 <div className="mt-3">
                   <Dropdown trigger={<span className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">{(AUD_FRIENDLY.find(a=>a.id===draft.scope.audience)||{label:"Choose people"}).label}<span className="text-slate-400">▾</span></span>}>
-                    {close=><PickList items={AUD_FRIENDLY.map(a=>({value:a.id,label:a.label}))} onPick={v=>{update(d=>d.scope.audience=v);close();}} />}
+                    {close=><div className="-m-1 overflow-hidden rounded-lg"><GuidedPanel options={AUD_GUIDE} value={draft.scope.audience} onPick={v=>{update(d=>d.scope.audience=v);close();}} /></div>}
                   </Dropdown>
                 </div>
               </div>
@@ -1493,17 +1838,33 @@ function RuleStudioV9({ initial, isNew, allRules, onCancel, onSave }){
                 + Add another rule block
               </button>
 
-              {/* Advanced section (lives in the canvas now that the sidebar is read-only) */}
-              <div ref={advRef} className={cx("v9in rounded-xl border bg-white p-4 shadow-sm transition-shadow", flash==="advanced" ? "border-sky-300 v9flash" : "border-slate-200")}>
-                <h3 className="text-sm font-semibold text-slate-800">Advanced options</h3>
-                <p className="mt-0.5 text-xs text-slate-500">Optional fine-tuning for how this rule behaves.</p>
-                <div className="mt-3 space-y-2">
-                  <V9Toggle on={draft.advanced.reverseOnFalse} onClick={()=>onAdvanced("reverse")}
-                    label="Reverse when the condition is no longer true" sub="Undo the action automatically when the rule stops matching" />
-                  <V9Toggle on={draft.advanced.enforceSystemWide} onClick={()=>onAdvanced("system")}
-                    label="Apply this rule to every form" sub="Enforce system-wide, overriding “Who should this affect”" />
-                </div>
+              {/* Advanced section — optional, collapsed by default (progressive disclosure) */}
+              {(()=>{ const advCount = (draft.advanced.reverseOnFalse?1:0) + (draft.advanced.enforceSystemWide?1:0); return (
+              <div ref={advRef} className={cx("v9in overflow-hidden rounded-xl border bg-white shadow-sm transition-shadow", flash==="advanced" ? "border-sky-300 v9flash" : "border-slate-200")}>
+                <button onClick={()=>setAdvOpen(o=>!o)} className="flex w-full items-center justify-between gap-3 p-4 text-left transition-colors hover:bg-slate-50">
+                  <div className="min-w-0">
+                    <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                      Advanced Conditions
+                      {advCount>0
+                        ? <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-700">Configured</span>
+                        : <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-400">Optional</span>}
+                    </h3>
+                    <p className="mt-0.5 text-xs text-slate-500">{advCount>0
+                      ? advCount+" advanced option"+(advCount>1?"s":"")+" applied"
+                      : "For complex logic, nested groups, custom evaluation, and advanced matching behavior."}</p>
+                  </div>
+                  <span className="shrink-0 text-sm font-medium text-sky-600">{advOpen ? "Collapse" : "Expand"}</span>
+                </button>
+                {advOpen && (
+                  <div className="space-y-2 border-t border-slate-100 p-4 pt-3">
+                    <V9Toggle on={draft.advanced.reverseOnFalse} onClick={()=>onAdvanced("reverse")}
+                      label="Reverse when the condition is no longer true" sub="Undo the action automatically when the rule stops matching" />
+                    <V9Toggle on={draft.advanced.enforceSystemWide} onClick={()=>onAdvanced("system")}
+                      label="Apply this rule to every form" sub="Enforce system-wide, overriding “Who should this affect”" />
+                  </div>
+                )}
               </div>
+              ); })()}
             </div>
           ) : (
             <div className="mx-auto max-w-2xl">
@@ -1518,9 +1879,6 @@ function RuleStudioV9({ initial, isNew, allRules, onCancel, onSave }){
         </main>
 
         {/* RIGHT — assistant (summary · impact · conflicts · test) */}
-        <aside className="hidden w-80 shrink-0 border-l border-slate-200 bg-slate-50 xl:block">
-          <V9Assistant draft={draft} conflicts={conflicts} affectedFields={affectedFields} hasBehavior={hasBehavior} conflictRef={conflictRef} flash={flash==="conflicts"} />
-        </aside>
       </div>
     </div>
   );
@@ -1611,7 +1969,7 @@ function RuleStudio({ initial, isNew, allRules, onCancel, onSave }){
             </div>
             <div>
               <label className="block text-sm font-semibold text-slate-700">Execute On</label>
-              <Select value={draft.trigger.lifecycle} onChange={v=>update(d=>d.trigger.lifecycle=v)} options={EXECUTE_ON.map(l=>({value:l.id,label:l.label}))} className="mt-1.5 h-10 w-full" />
+              <GuidedSelect value={draft.trigger.lifecycle} onChange={v=>update(d=>d.trigger.lifecycle=v)} options={EXEC_GUIDE} className="mt-1.5 w-full" />
             </div>
           </div>
 
@@ -1623,7 +1981,7 @@ function RuleStudio({ initial, isNew, allRules, onCancel, onSave }){
             <div className="mt-3 space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm">
               <div className="flex items-center gap-3">
                 <span className="w-28 text-slate-600">Rule Event</span>
-                <Select value={draft.trigger.moment} onChange={v=>update(d=>d.trigger.moment=v)} options={MOMENTS.map(m=>({value:m.id,label:eventLabel(m.id)}))} className="h-9" />
+                <GuidedSelect value={draft.trigger.moment} onChange={v=>update(d=>d.trigger.moment=v)} options={MOMENT_GUIDE} className="flex-1" />
               </div>
               <label className={cx("flex items-start gap-2", !allActionsReversible && "opacity-40")}>
                 <input type="checkbox" disabled={!allActionsReversible} checked={draft.advanced.reverseOnFalse} onChange={e=>setAdv("reverseOnFalse",e.target.checked)} className="mt-0.5" />
@@ -1812,15 +2170,15 @@ function PreviewPanel({ draft, allRules }){
 
 /* ============================================================ VERSION SWITCHER */
 const VERSIONS = [
-  { id:"v1", label:"Version 1", note:"Sentence-first builder", href:"rule-studio-v1.html" },
-  { id:"v2", label:"Version 2", note:"Structured form",        href:"rule-studio-demo.html" },
-  { id:"v3", label:"Version 3", note:"Block workspace",        href:"rule-studio-v3.html" },
-  { id:"v4", label:"Version 4", note:"Starter cards",          href:"rule-studio-v4.html" },
-  { id:"v6", label:"Version 6", note:"Refined classic form",   href:"rule-studio-v6.html" },
-  { id:"v7", label:"Version 7", note:"Progressive workspace",  href:"rule-studio-v7.html" },
-  { id:"v8", label:"Version 8", note:"Guided form canvas",     href:"rule-studio-v8.html" },
-  { id:"v9", label:"Version 9", note:"Rule sequence workspace", href:"rule-studio-v9.html" },
-  { id:"v92", label:"Version 9.2", note:"Guided sequence editor", href:"rule-studio-v9-2.html" },
+  { id:"v1",  label:"Sentence-First Builder",  note:"V1",   href:"rule-studio-v1.html" },
+  { id:"v2",  label:"Structured Form",         note:"V2",   href:"rule-studio-demo.html" },
+  { id:"v3",  label:"Block Workspace",         note:"V3",   href:"rule-studio-v3.html" },
+  { id:"v4",  label:"Starter Cards",           note:"V4",   href:"rule-studio-v4.html" },
+  { id:"v6",  label:"Refined Classic Form",    note:"V6",   href:"rule-studio-v6.html" },
+  { id:"v7",  label:"Progressive Workspace",   note:"V7",   href:"rule-studio-v7.html" },
+  { id:"v8",  label:"Guided Form Canvas",      note:"V8",   href:"rule-studio-v8.html" },
+  { id:"v9",  label:"Rule Sequence Workspace", note:"V9",   href:"rule-studio-v9.html" },
+  { id:"v92", label:"Guided Sequence Editor",  note:"V9.2", href:"rule-studio-v9-2.html" },
 ];
 const currentVersionId = () => {
   const p = (typeof window!=="undefined" && window.location.pathname) || "";

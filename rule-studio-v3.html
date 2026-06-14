@@ -140,6 +140,28 @@ const MOMENTS = [
   { id:"ON_FIELD_CHANGE", label:"While the form is being filled" },
   { id:"ON_SUBMIT",       label:"When the form is submitted" },
 ];
+// Timing options with contextual guidance — shared decision-aid copy (source of truth = V6)
+const MOMENT_GUIDE = [
+  { value:"ON_LOAD", label:"When the form opens",
+    desc:"Reacts once, as soon as the form loads.",
+    when:"Use this when the rule should prepare the form before the user starts filling it.",
+    how:"The rule checks once when the form first loads.",
+    output:"Fields can be shown, hidden, or preset immediately.",
+    example:"Show the Priority field immediately when a new request form loads." },
+  { value:"ON_FIELD_CHANGE", label:"While the form is being filled",
+    desc:"Reacts as the user changes values.",
+    when:"Use this when the rule should react as the user changes fields.",
+    how:"The rule checks again whenever a watched field changes.",
+    output:"The action happens immediately after the condition becomes true.",
+    example:"Recalculate the rule as the user changes the Department field." },
+  { value:"ON_SUBMIT", label:"When the form is submitted",
+    desc:"Runs just before the request is saved.",
+    when:"Use this for final checks before the request is saved.",
+    how:"The rule runs only at the point of submission.",
+    output:"The form can be validated or blocked if conditions are not met.",
+    example:"Validate the rule just before the request is saved." },
+];
+const momentGuideLabel = id => (MOMENT_GUIDE.find(m=>m.value===id)||{}).label || id;
 const momentLabel = id => (MOMENTS.find(m=>m.id===id)||{}).label || id;
 const lcVerb = id => (LIFECYCLES.find(l=>l.id===id)||{}).verb || "uses a request";
 const LIFECYCLES_FRIENDLY = [
@@ -766,33 +788,46 @@ function Dropdown({ trigger, children, align }){
   const [open,setOpen]=useState(false);
   const ref = React.useRef(null);
   const [pos,setPos]=useState(null);
-  const measure = () => {
-    const el = ref.current; if(!el) return null;
-    const r = el.getBoundingClientRect();
-    const vw = (typeof window!=="undefined"?window.innerWidth:1280), vh = (typeof window!=="undefined"?window.innerHeight:800);
-    let left = align==="right" ? r.right - 224 : r.left;
-    left = Math.max(8, Math.min(left, vw - 232));
-    return { top: Math.max(8, Math.min(r.bottom + 4, vh - 16)), left };
-  };
   const menuRef = React.useRef(null);
-  const toggle = () => { if(!open){ setPos(measure()); setOpen(true); } else setOpen(false); };
+  // Open the menu inside the nearest scrollable ancestor (the form's middle area) so a tall menu extends THAT
+  // container's scroll height — the middle scrolls to reveal it, the page + sticky footer stay put, and the menu
+  // itself never needs a scrollbar. Falls back to a viewport-fixed menu when there is no scroll container.
+  const place = () => {
+    const el = ref.current; if(!el) return;
+    let sc = el.parentElement;
+    while (sc && sc !== document.body) { const oy = getComputedStyle(sc).overflowY; if (oy==="auto"||oy==="scroll") break; sc = sc.parentElement; }
+    const r = el.getBoundingClientRect();
+    if (sc && sc !== document.body) {
+      if (getComputedStyle(sc).position==="static") sc.style.position = "relative";
+      const cr = sc.getBoundingClientRect();
+      setPos({ host:sc, abs:true, top: r.bottom - cr.top + sc.scrollTop + 4, left: r.left - cr.left + sc.scrollLeft });
+    } else {
+      const vw = (typeof window!=="undefined"?window.innerWidth:1280);
+      let left = align==="right" ? r.right - 224 : r.left;
+      left = Math.max(8, Math.min(left, vw - 232));
+      setPos({ host:(typeof document!=="undefined"?document.body:null), abs:false, top: r.bottom + 4, left });
+    }
+  };
+  const toggle = () => { if(!open){ place(); setOpen(true); } else setOpen(false); };
+  React.useLayoutEffect(()=>{
+    if(!open || !menuRef.current || !pos) return;
+    const m = menuRef.current;
+    if (pos.abs && pos.host){ const sc=pos.host; const L=Math.max(sc.scrollLeft+8, Math.min(pos.left, sc.scrollLeft+sc.clientWidth-m.offsetWidth-8)); if (L!==pos.left) setPos(p=>p?{...p,left:L}:p); }
+    m.scrollIntoView({ block:"nearest", behavior:"smooth" });
+  }, [open]);
   React.useEffect(()=>{
     if(!open) return;
-    const onScroll = (e)=>{ if(menuRef.current && menuRef.current.contains(e.target)) return; setOpen(false); }; // ignore scrolling inside the menu
+    const onDown = (e)=>{ if(ref.current && ref.current.contains(e.target)) return; if(menuRef.current && menuRef.current.contains(e.target)) return; setOpen(false); };
     const onResize = ()=>setOpen(false);
-    window.addEventListener("scroll", onScroll, true);
+    document.addEventListener("mousedown", onDown, true);
     window.addEventListener("resize", onResize);
-    return ()=>{ window.removeEventListener("scroll", onScroll, true); window.removeEventListener("resize", onResize); };
+    return ()=>{ document.removeEventListener("mousedown", onDown, true); window.removeEventListener("resize", onResize); };
   }, [open]);
-  // rendered in a body portal so the menu escapes every ancestor's clipping / stacking / transform context
-  const menu = (open && pos && typeof document!=="undefined") ? ReactDOM.createPortal(
-    <React.Fragment>
-      <div className="fixed inset-0" style={{zIndex:9998}} onClick={()=>setOpen(false)} />
-      <div ref={menuRef} className="min-w-[190px] rounded-lg border border-slate-200 bg-white p-1 shadow-xl"
-        style={{ position:"fixed", top:pos.top, left:pos.left, zIndex:9999, maxHeight:"60vh", overflowY:"auto" }}>
-        {typeof children==="function" ? children(()=>setOpen(false)) : children}
-      </div>
-    </React.Fragment>, document.body) : null;
+  const menu = (open && pos && pos.host) ? ReactDOM.createPortal(
+    <div ref={menuRef} className="min-w-[190px] rounded-lg border border-slate-200 bg-white p-1 shadow-xl"
+      style={{ position: pos.abs?"absolute":"fixed", top:pos.top, left:pos.left, zIndex:9999 }}>
+      {typeof children==="function" ? children(()=>setOpen(false)) : children}
+    </div>, pos.host) : null;
   return (
     <span ref={ref} className="relative inline-block align-middle">
       <span onClick={toggle}>{trigger}</span>
@@ -815,6 +850,84 @@ function TokenBtn({ label, kind, warn, placeholder }){
     </button>
   );
 }
+/* ============================================================ SHARED CONTEXTUAL DROPDOWN PANEL (source of truth = V6) */
+function GuidedPanel({ options, value, onPick }){
+  const [q, setQ] = useState("");
+  const [hover, setHover] = useState(null);
+  const ql = q.trim().toLowerCase();
+  const filtered = options.filter(o => !ql || o.label.toLowerCase().includes(ql));
+  const cur = options.find(o=>o.value===value) || options[0];
+  const info = options.find(o=>o.value===(hover||value)) || cur || options[0] || {};
+  const showSearch = options.length > 6;
+  return (
+    <div className="flex w-[540px] max-w-[92vw]">
+      <div className="w-60 shrink-0 border-r border-slate-100 p-2.5">
+        {showSearch && <input autoFocus value={q} onChange={e=>setQ(e.target.value)} placeholder="Search…"
+          className="mb-2.5 w-full rounded-md border border-slate-200 px-2.5 py-1.5 text-sm focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-100" />}
+        <div className="max-h-72 space-y-1 overflow-y-auto pr-0.5">
+          {filtered.map(o=>{
+            const sel = o.value===value;
+            return (
+              <button key={o.value} type="button" onMouseEnter={()=>setHover(o.value)} onFocus={()=>setHover(o.value)} onClick={()=>onPick(o.value)}
+                className={cx("w-full rounded-lg px-3 py-2.5 text-left text-sm leading-snug transition-colors", sel ? "bg-sky-50 ring-1 ring-sky-100" : "hover:bg-slate-50")}>
+                <span className={cx("flex items-center justify-between gap-2", sel ? "font-semibold text-sky-700" : "text-slate-700")}>
+                  <span>{o.label}</span>{sel && <span className="shrink-0 text-sky-500">✓</span>}
+                </span>
+                {o.desc && <span className={cx("mt-0.5 block text-xs leading-snug", sel ? "text-sky-600" : "text-slate-400")}>{o.desc}</span>}
+              </button>
+            );
+          })}
+          {filtered.length===0 && <p className="px-3 py-2 text-xs text-slate-400">No matches</p>}
+        </div>
+      </div>
+      <div className="flex-1 bg-slate-50/60 p-4 text-xs leading-relaxed">
+        <p className="mb-3 text-sm font-semibold text-slate-800">{info.label}</p>
+        <div className="space-y-3">
+          <div><span className="block text-[10px] font-semibold uppercase tracking-wide text-slate-400">When to use</span><span className="mt-0.5 block text-slate-600">{info.when}</span></div>
+          <div><span className="block text-[10px] font-semibold uppercase tracking-wide text-slate-400">How it works</span><span className="mt-0.5 block text-slate-600">{info.how}</span></div>
+          <div><span className="block text-[10px] font-semibold uppercase tracking-wide text-slate-400">Output</span><span className="mt-0.5 block text-slate-600">{info.output}</span></div>
+        </div>
+        {info.example && (
+          <div className="mt-3 border-t border-slate-200/70 pt-2.5">
+            <span className="block text-[10px] font-semibold uppercase tracking-wide text-slate-400">Example</span>
+            <span className="mt-0.5 block italic text-slate-500">{info.example}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+const ACTION_INFO = {
+  SHOW:        { when:"Reveal a field that should appear only in certain cases.", how:"The field becomes visible when the condition is met.", output:"The field appears on the form." },
+  HIDE:        { when:"Keep a field off the form unless it's relevant.", how:"The field is removed from view when the condition is met.", output:"The field is hidden from the user." },
+  MANDATE:     { when:"Require a field to be filled before submitting.", how:"The field is marked required when the condition is met.", output:"The form can't be submitted until it's filled." },
+  OPTIONAL:    { when:"Relax a field that is normally required.", how:"The required flag is removed when the condition is met.", output:"The field can be left blank." },
+  ENABLE:      { when:"Allow editing of a field that is otherwise locked.", how:"The field becomes editable when the condition is met.", output:"The user can change the field's value." },
+  DISABLE:     { when:"Lock a field so it can't be edited.", how:"The field is made read-only when the condition is met.", output:"The user can see but not change it." },
+  SET_VALUE:   { when:"Auto-fill a field with a chosen value.", how:"The field's value is set when the condition is met.", output:"The field is pre-filled for the user." },
+  CLEAR_VALUE: { when:"Reset a field back to empty.", how:"The field's value is removed when the condition is met.", output:"The field becomes blank." },
+  SHOW_OPTIONS:{ when:"Reveal specific choices within a dropdown field.", how:"Selected options are added when the condition is met.", output:"Only the relevant choices are available." },
+  HIDE_OPTIONS:{ when:"Remove specific choices from a dropdown field.", how:"Selected options are taken out when the condition is met.", output:"Those choices can no longer be picked." },
+  RUN_SCRIPT:  { when:"Handle advanced logic the standard actions can't.", how:"A custom script runs when the condition is met.", output:"Behaviour defined by your script is applied." },
+  FILTER_DATA: { when:"Limit the records a field can show.", how:"The field's data is filtered when the condition is met.", output:"Only matching data appears in the field." },
+};
+const ACTION_GUIDE2 = ACTION_TYPES.map(t => ({ value:t.id, label:t.label, ...(ACTION_INFO[t.id] || { when:"Apply this behaviour to a form field.", how:"Applied when the condition is met.", output:"The form behaviour changes accordingly." }) }));
+const OP_INFO = {
+  EQUALS:      { when:"Match one exact value.", how:"Checks the field equals exactly what you choose.", output:"True only for that single value." },
+  NOT_EQUALS:  { when:"Match anything except one value.", how:"Checks the field is different from what you choose.", output:"True for every value but that one." },
+  STARTS_WITH: { when:"Match text that begins a certain way.", how:"Checks the start of the text against what you type.", output:"True when the text begins with it." },
+  ENDS_WITH:   { when:"Match text that ends a certain way.", how:"Checks the end of the text against what you type.", output:"True when the text ends with it." },
+  CONTAINS:    { when:"Match text that includes something.", how:"Checks whether the text contains what you type.", output:"True when the text includes it." },
+  IS_NOT_BLANK:{ when:"Check that a field has been filled.", how:"Checks the field holds any value at all.", output:"True whenever the field isn't empty." },
+  IS_BLANK:    { when:"Check that a field is empty.", how:"Checks the field holds no value.", output:"True whenever the field is empty." },
+  MATCH_ANY:   { when:"Match any one of several choices.", how:"Checks the field equals any value you select.", output:"True if it matches at least one." },
+  MATCH_ALL:   { when:"Require every selected choice.", how:"Checks the field equals every value you select.", output:"True only if all of them match." },
+  IS_EMPTY:    { when:"Check that nothing is selected.", how:"Checks the choice field has no selection.", output:"True when nothing is chosen." },
+  IS_NOT_EMPTY:{ when:"Check that something is selected.", how:"Checks the choice field has at least one selection.", output:"True when one or more are chosen." },
+  IN:          { when:"Match one of a list of items.", how:"Checks the value is among the items you pick.", output:"True when it's one of them." },
+  NOT_IN:      { when:"Exclude a list of items.", how:"Checks the value is none of the items you pick.", output:"True when it's none of them." },
+};
+const opGuide2 = id => ({ value:id, label:opLabel(id), ...(OP_INFO[id] || { when:opLabel(id), how:"Compares the field using this operator.", output:"True when the comparison holds." }) });
 function PickList({ items, onPick, search }){
   const [q,setQ]=useState("");
   const filtered = search ? items.filter(i=>i.label.toLowerCase().includes(q.toLowerCase())) : items;
@@ -859,7 +972,7 @@ function ValueToken({ field, value, onChange }){
 function VerbToken({ value, onChange }){
   const label = (ACTION_TYPES.find(t=>t.id===value)||{}).label || value;
   return <Dropdown trigger={<TokenBtn label={label} kind="verb" />}>
-    {close => <PickList items={ACTION_TYPES.map(t=>({value:t.id,label:t.label}))} onPick={v=>{onChange(v);close();}} />}
+    {close => <div className="-m-1 overflow-hidden rounded-lg"><GuidedPanel options={ACTION_GUIDE2} value={value} onPick={v=>{onChange(v);close();}} /></div>}
   </Dropdown>;
 }
 function Pill({ labelPrefix, value, items, onChange }){
@@ -1017,7 +1130,7 @@ function ConditionRow({ cond, onField, onOp, onValue, onRemove }){
           {close => <GroupedFieldPicker value={cond.fieldId} onPick={v=>{onField(v);close();}} />}
         </Dropdown>
         <Dropdown trigger={<span className="cursor-pointer rounded-md border border-slate-200 px-2.5 py-1.5 text-sm text-slate-600 hover:bg-slate-50">{opLabel(cond.op)} ▾</span>}>
-          {close => <PickList items={fieldOps(cond.fieldId).map(id=>({value:id,label:opLabel(id)}))} onPick={v=>{onOp(v);close();}} />}
+          {close => <div className="-m-1 overflow-hidden rounded-lg"><GuidedPanel options={fieldOps(cond.fieldId).map(opGuide2)} value={cond.op} onPick={v=>{onOp(v);close();}} /></div>}
         </Dropdown>
         <ValueControl cond={cond} onChange={onValue} />
       </div>
@@ -1220,8 +1333,8 @@ function RuleStudio({ initial, isNew, allRules, onCancel, onSave }){
                     <div className="border-t border-slate-100 px-4 py-4">
                       {/* context chips: when / who */}
                       <div className="mb-4 flex flex-wrap items-center gap-2">
-                        <Dropdown trigger={<span className="cursor-pointer rounded-full border border-slate-200 bg-white px-3 py-1 text-sm hover:bg-slate-50"><span className="text-slate-400">Runs </span><span className="font-medium text-slate-700">{eventLabel(blockWhen(draft,b))}</span> <span className="text-[9px] opacity-50">▼</span></span>}>
-                          {close => <PickList items={MOMENTS.map(m=>({value:m.id,label:eventLabel(m.id)}))} onPick={v=>{setBlockWhen(bi,v);close();}} />}
+                        <Dropdown trigger={<span className="cursor-pointer rounded-full border border-slate-200 bg-white px-3 py-1 text-sm hover:bg-slate-50"><span className="text-slate-400">Runs </span><span className="font-medium text-slate-700">{momentGuideLabel(blockWhen(draft,b)).toLowerCase()}</span> <span className="text-[9px] opacity-50">▼</span></span>}>
+                          {close => <div className="-m-1 overflow-hidden rounded-lg"><GuidedPanel options={MOMENT_GUIDE} value={blockWhen(draft,b)} onPick={v=>{setBlockWhen(bi,v);close();}} /></div>}
                         </Dropdown>
                         <Dropdown trigger={<span className="cursor-pointer rounded-full border border-slate-200 bg-white px-3 py-1 text-sm hover:bg-slate-50"><span className="text-slate-400">for </span><span className="font-medium text-slate-700">{audFriendly(blockWho(draft,b))}</span> <span className="text-[9px] opacity-50">▼</span></span>}>
                           {close => <PickList items={AUD_FRIENDLY.map(a=>({value:a.id,label:a.label}))} onPick={v=>{setBlockWho(bi,v);close();}} />}
@@ -1243,7 +1356,7 @@ function RuleStudio({ initial, isNew, allRules, onCancel, onSave }){
                               <button onClick={()=>rmAct(bi,ai)} className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-red-500 text-sm leading-none text-white hover:bg-red-600">−</button>
                               <div className={cx("flex flex-1 flex-wrap items-center gap-2 rounded-md border p-1.5", bConfFields.has(a.fieldId)?"border-amber-300 ring-1 ring-amber-200":"border-slate-200 bg-white")}>
                                 <Dropdown trigger={<span className="cursor-pointer rounded-md bg-slate-100 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-200">{(ACTION_TYPES.find(t=>t.id===a.type)||{}).label} ▾</span>}>
-                                  {close => <PickList items={ACTION_TYPES.map(t=>({value:t.id,label:t.label}))} onPick={v=>{setAct(bi,ai,"type",v);close();}} />}
+                                  {close => <div className="-m-1 overflow-hidden rounded-lg"><GuidedPanel options={ACTION_GUIDE2} value={a.type} onPick={v=>{setAct(bi,ai,"type",v);close();}} /></div>}
                                 </Dropdown>
                                 <Dropdown trigger={<span className="cursor-pointer px-2 text-sm text-slate-700 hover:text-slate-900">{fieldOf(a.fieldId).name} ▾</span>}>
                                   {close => <PickList search items={ACTION_FIELDS.map(f=>({value:f.id,label:f.name}))} onPick={v=>{setAct(bi,ai,"fieldId",v);close();}} />}

@@ -38,15 +38,9 @@
 
 <script>
   var VERSIONS = [
-    { id:"v1", label:"V1", sub:"Sentence-first",  src:"rule-studio-v1.html" },
-    { id:"v2", label:"V2", sub:"Structured form", src:"rule-studio-demo.html" },
-    { id:"v3", label:"V3", sub:"Block workspace", src:"rule-studio-v3.html" },
-    { id:"v4", label:"V4", sub:"Starter cards",   src:"rule-studio-v4.html" },
-    { id:"v6", label:"V6", sub:"Refined classic", src:"rule-studio-v6.html" },
-    { id:"v7", label:"V7", sub:"Progressive workspace", src:"rule-studio-v7.html" },
-    { id:"v8", label:"V8", sub:"Guided form canvas", src:"rule-studio-v8.html" },
-    { id:"v9", label:"V9", sub:"Rule sequence workspace", src:"rule-studio-v9.html" },
-    { id:"v92", label:"V9.2", sub:"Guided sequence editor", src:"rule-studio-v9-2.html" },
+    { id:"v7", label:"Progressive Workspace",   sub:"V7", src:"rule-studio-v7.html" },
+    { id:"v8", label:"Guided Form Canvas",      sub:"V8", src:"rule-studio-v8.html" },
+    { id:"v9", label:"Rule Sequence Workspace", sub:"V9", src:"rule-studio-v9.html" },
   ];
 
   var tabsEl = document.getElementById("tabs");
@@ -74,9 +68,9 @@
     tabsEl.appendChild(b);
   });
 
-  // honor #v3 deep-links; default to V1
+  // honor #v7/#v8/#v9 deep-links; default to V7
   var start = (location.hash || "").replace("#", "");
-  select(VERSIONS.some(function(v){ return v.id === start; }) ? start : "v1", false);
+  select(VERSIONS.some(function(v){ return v.id === start; }) ? start : "v7", false);
   window.addEventListener("hashchange", function(){
     var id = (location.hash || "").replace("#", "");
     if (VERSIONS.some(function(v){ return v.id === id; })) select(id, false);
