@@ -75,6 +75,18 @@ const FIELD_GROUPS = [
   { id:"GLOBAL",    label:"Global Fields",         short:"Global" },
 ];
 const groupShort = id => (FIELD_GROUPS.find(g=>g.id===id)||{}).short || id;
+// ---- Filter Data path (per ServiceOps screenshots): person → user attribute → target Request field ----
+const FD_PERSONS = [
+  { value:"request__assignee",  label:"Assignee" },
+  { value:"request__requester", label:"Requester" },
+];
+const FD_USER_FIELDS = [
+  { value:"requester__location",   label:"Location" },
+  { value:"requester__department", label:"Department" },
+];
+const fdUserFields = person => FD_USER_FIELDS;   // Assignee and Requester both expose these user attributes
+// The last dropdown lists the chosen user field's own values — Location → its 5 locations, Department → its 5 departments
+const fdTargets = srcFieldId => { const f=fieldOf(srcFieldId); return (f && f.options) ? f.options.map(o=>({ value:o, label:o })) : []; };
 
 // Operator sets by field kind (DD2 depends on the field chosen in DD1)
 const OP_SETS = {
@@ -244,7 +256,7 @@ const ACTION_TYPES = [
   { id:"SHOW_OPTIONS", label:"Show Options",      phrase:(f)=>`show options for ${f}` },
   { id:"HIDE_OPTIONS", label:"Hide Options",      phrase:(f)=>`hide options for ${f}` },
   { id:"RUN_SCRIPT",   label:"Run Custom Script", phrase:(f)=>`run a custom script` },
-  { id:"FILTER_DATA",  label:"Filter Data",       phrase:(f)=>`filter the data in ${f}` },
+  { id:"FILTER_DATA",  label:"Filter Data",       phrase:(f,v)=>`filter the data in ${f}${v?` to ${v}`:""}` },
 ];
 const REVERSIBLE = ["SHOW","HIDE","MANDATE","OPTIONAL","ENABLE","DISABLE","SHOW_OPTIONS","HIDE_OPTIONS"];
 const OPPOSITE = { SHOW:"HIDE", HIDE:"SHOW", MANDATE:"OPTIONAL", OPTIONAL:"MANDATE", ENABLE:"DISABLE", DISABLE:"ENABLE", SHOW_OPTIONS:"HIDE_OPTIONS", HIDE_OPTIONS:"SHOW_OPTIONS" };
@@ -1620,6 +1632,7 @@ function RuleStudioV8({ initial, isNew, allRules, onCancel, onSave }){
   const [refOpen,setRefOpen]=useState(false);
   const [testOpen,setTestOpen]=useState(false);
   const [conflictNote,setConflictNote]=useState("");
+  const [advOpen,setAdvOpen]=useState(false);   // optional Advanced conditions — opened from the link under "For"
 
   const block=draft.blocks[0];
   const leafConds = block.conditions.filter(c=>!(c && c.kind==="GROUP"));
@@ -1670,7 +1683,10 @@ function RuleStudioV8({ initial, isNew, allRules, onCancel, onSave }){
   const affected=[]; { const s={}; cc.actions.forEach(a=>{ if(!s[a.fieldId]){s[a.fieldId]=1;affected.push(a.fieldId);} }); }
   const valid=(draft.name||"").trim().length>0 && hasDo;
 
-  const setActType=(ai,v)=>update(d=>{ d.blocks[0].actions[ai].type=v; if(v!=="SET_VALUE") d.blocks[0].actions[ai].value=""; });
+  const setActType=(ai,v)=>update(d=>{ const a=d.blocks[0].actions[ai]; const wasFilter=a.type==="FILTER_DATA"; a.type=v; if(v!=="SET_VALUE") a.value=""; if(v==="FILTER_DATA"||wasFilter){ a.entity=""; a.srcField=""; a.fieldId=""; a.fieldIds=[]; a.value=""; } });
+  const setFDEntity=(ai,v)=>update(d=>{ const a=d.blocks[0].actions[ai]; a.entity=v; a.srcField=""; a.fieldId=""; a.fieldIds=[]; a.value=""; });   // new source resets the whole path
+  const setFDField =(ai,v)=>update(d=>{ const a=d.blocks[0].actions[ai]; a.srcField=v; a.fieldId=""; a.fieldIds=[]; a.value=""; });                // new source field resets the target
+  const setFDTarget=(ai,v)=>update(d=>{ const a=d.blocks[0].actions[ai]; a.fieldId=v; a.fieldIds=[v]; });                                          // target Request field the rule filters
   const setActField=(ai,v)=>update(d=>{ d.blocks[0].actions[ai].fieldId=v; });
   const setActValue=(ai,v)=>update(d=>{ d.blocks[0].actions[ai].value=v; });
   const addAction=()=>update(d=>{ d.blocks[0].actions.push({id:uid("a"),type:"",fieldId:"",value:""}); });
@@ -1687,7 +1703,7 @@ function RuleStudioV8({ initial, isNew, allRules, onCancel, onSave }){
   const setMatch=v=>update(d=>{ d.blocks[0].match=v; });
   const resetCanvas=()=>{ update(d=>{ d.name=""; d.trigger.moment=""; d.trigger.lifecycle=""; d.scope.audience="";
       d.blocks=[{ ...d.blocks[0], match:"ALL", conditions:[], actions:[] }]; });
-    setRev({if:false,then:false,for:false}); setIfSkipped(false); setConflictNote(""); };
+    setRev({if:false,then:false,for:false}); setIfSkipped(false); setConflictNote(""); setAdvOpen(false); };
 
   const finalize=()=>{ const d=JSON.parse(JSON.stringify(draft));
     if(!d.trigger.moment) d.trigger.moment="ON_FIELD_CHANGE";
@@ -1738,8 +1754,6 @@ function RuleStudioV8({ initial, isNew, allRules, onCancel, onSave }){
           <button onClick={()=>setTheme(theme==="dark"?"light":"dark")} title="Toggle theme" className="flex h-8 w-8 items-center justify-center rounded-lg" style={tbtn}>{theme==="dark"?"☾":"☀"}</button>
           <button onClick={undo} title="Undo" className="flex h-8 w-8 items-center justify-center rounded-lg" style={tbtn}>↶</button>
           <button onClick={redo} title="Redo" className="flex h-8 w-8 items-center justify-center rounded-lg" style={tbtn}>↷</button>
-          <button onClick={()=>setHowOpen(true)} title="How it works" className="flex h-8 w-8 items-center justify-center rounded-lg" style={tbtn}>{VI.bulb}</button>
-          <button onClick={()=>setRefOpen(true)} title="Behavior reference" className="flex h-8 w-8 items-center justify-center rounded-lg" style={tbtn}>{VI.book}</button>
           <button onClick={resetCanvas} title="Clear the canvas and start over" className="rounded-lg px-3 py-1.5 text-sm font-medium" style={tbtn}>Reset</button>
           <button onClick={()=>setTestOpen(true)} className="rounded-lg px-3 py-1.5 text-sm font-medium" style={{ background:"var(--v8-panel2)", border:"1px solid var(--v8-border2)", color:"var(--v8-text)" }}>Test</button>
           <button onClick={onCancel} className="rounded-lg px-3 py-1.5 text-sm font-medium" style={{ border:"1px solid var(--v8-border2)", color:"var(--v8-muted)" }}>Cancel</button>
@@ -1806,17 +1820,67 @@ function RuleStudioV8({ initial, isNew, allRules, onCancel, onSave }){
                 <V8Slot value={bverb(a.type)} placeholder="do something" width={520} onPick={v=>setActType(ai,v)} beckon={!a.type}
                   guide={{ title:"Behavior", support:"What this rule does to a field on the form.", options:V8_ACTION_GUIDE, value:a.type }} />
                 {" "}
-                <V8Slot value={fieldShort(a.fieldId)} placeholder="a field" search items={ACTION_FIELDS.map(f=>({value:f.id,label:f.name}))} onPick={v=>setActField(ai,v)} help={V8_HELP.field} beckon={!!a.type && !a.fieldId} />
-                {a.type==="SET_VALUE" && <> <Conn>to</Conn> {actValueSlot(a,ai)}</>}
+                {a.type==="FILTER_DATA" ? (
+                  <>
+                    <V8Slot value={fieldShort(a.entity)} placeholder="a person" search items={FD_PERSONS} onPick={v=>setFDEntity(ai,v)} help={V8_HELP.field} beckon={!!a.type && !a.entity} />
+                    {a.entity && <> <Conn>›</Conn> <V8Slot value={fieldShort(a.srcField)} placeholder="a user field" search items={fdUserFields(a.entity)} onPick={v=>setFDField(ai,v)} help={V8_HELP.field} beckon={!a.srcField} /></>}
+                    {a.srcField && <> <Conn>›</Conn> <V8Slot value={a.fieldId||null} placeholder={"a "+fieldOf(a.srcField).name.toLowerCase()} search items={fdTargets(a.srcField)} onPick={v=>setFDTarget(ai,v)} help={V8_HELP.field} beckon={!a.fieldId} /></>}
+                  </>
+                ) : (
+                  <>
+                    <V8Slot value={fieldShort(a.fieldId)} placeholder="a field" search items={ACTION_FIELDS.map(f=>({value:f.id,label:f.name}))} onPick={v=>setActField(ai,v)} help={V8_HELP.field} beckon={!!a.type && !a.fieldId} />
+                    {a.type==="SET_VALUE" && <> <Conn>to</Conn> {actValueSlot(a,ai)}</>}
+                  </>
+                )}
               </V8Node>
             ))}
 
             {/* FOR */}
             {showFor && (
-              <V8Node role="for" head="For" last done={!!draft.scope.audience}>
+              <V8Node role="for" head="For" last done={!!draft.scope.audience}
+                footer={ draft.scope.audience && !advOpen
+                  ? <button onClick={()=>setAdvOpen(true)} title="Optional advanced settings"
+                      className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[12.5px] font-medium transition-colors"
+                      style={{ color:"var(--v8-muted)" }}
+                      onMouseEnter={e=>{ e.currentTarget.style.background="var(--v8-panel2)"; e.currentTarget.style.color="var(--v8-accent2)"; }}
+                      onMouseLeave={e=>{ e.currentTarget.style.background="transparent"; e.currentTarget.style.color="var(--v8-muted)"; }}>
+                      <span className="flex h-4 w-4 items-center justify-center rounded-full text-[12px] leading-none" style={{ border:"1px solid var(--v8-border2)" }}>+</span>
+                      Advanced conditions
+                    </button>
+                  : null }>
                 <V8Slot value={audFriendly(draft.scope.audience)||null} placeholder="everyone" beckon width={520} onPick={setAudience}
                   guide={{ title:"Audience", support:"Who experiences this rule while filling the form.", options:V8_AUD_GUIDE, value:draft.scope.audience }} />
               </V8Node>
+            )}
+
+            {/* Advanced conditions — optional, opened from the subtle link under For; styled as a quiet V8 block */}
+            {showFor && draft.scope.audience && advOpen && (
+              <div className="v8in relative" style={{ paddingLeft:"58px", paddingTop:"6px", paddingBottom:"30px" }}>
+                {/* quiet marker — same scale as a node icon, muted tone (signals optional, not a core step) */}
+                <span className="absolute flex h-10 w-10 items-center justify-center rounded-xl" style={{ left:"0", top:"22px", transform:"translateY(-50%)", background:"var(--v8-panel2)", color:"var(--v8-muted)", boxShadow:"0 0 0 5px var(--v8-bg)" }}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><line x1="4" y1="8" x2="20" y2="8" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/><circle cx="9" cy="8" r="2.3" fill="var(--v8-panel2)" stroke="currentColor" strokeWidth="1.7"/><line x1="4" y1="16" x2="20" y2="16" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/><circle cx="15" cy="16" r="2.3" fill="var(--v8-panel2)" stroke="currentColor" strokeWidth="1.7"/></svg>
+                </span>
+                {/* quiet header — calmer + smaller than a node headword */}
+                <div className="flex items-center gap-2">
+                  <span className="text-[15px] font-semibold" style={{ color:"var(--v8-muted)" }}>Advanced</span>
+                  <span className="rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.12em]" style={{ background:"var(--v8-panel2)", color:"var(--v8-faint)" }}>Optional</span>
+                  <button onClick={()=>setAdvOpen(false)} className="ml-auto text-[12px] font-medium" style={{ color:"var(--v8-faint)" }}
+                    onMouseEnter={e=>e.currentTarget.style.color="var(--v8-accent2)"} onMouseLeave={e=>e.currentTarget.style.color="var(--v8-faint)"}>Hide</button>
+                </div>
+                <div className="mt-1 text-[12.5px] leading-snug" style={{ color:"var(--v8-faint)" }}>For advanced evaluation and automatic rule behavior.</div>
+                {/* single compact toggle card */}
+                <button onClick={()=>update(d=>{ d.advanced.reverseOnFalse=!d.advanced.reverseOnFalse; })}
+                  className="mt-3 flex w-full items-start gap-3 rounded-xl px-3 py-2.5 text-left transition-colors"
+                  style={ draft.advanced.reverseOnFalse ? { border:"1px solid var(--v8-accent)", background:"color-mix(in srgb, var(--v8-accent) 9%, transparent)" } : { border:"1px solid var(--v8-border)", background:"var(--v8-panel2)" } }>
+                  <span className="mt-0.5 flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors" style={{ background: draft.advanced.reverseOnFalse?"var(--v8-accent)":"var(--v8-border2)" }}>
+                    <span className={cx("h-4 w-4 rounded-full transition-transform", draft.advanced.reverseOnFalse&&"translate-x-4")} style={{ background:"#fff" }} />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-[13px] font-medium" style={{ color:"var(--v8-text)" }}>Reverse when the condition is no longer true</span>
+                    <span className="mt-0.5 block text-[11.5px] leading-snug" style={{ color:"var(--v8-faint)" }}>Undo the action automatically when the rule stops matching</span>
+                  </span>
+                </button>
+              </div>
             )}
           </div>
         </div>

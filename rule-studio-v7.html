@@ -34,6 +34,18 @@ const FIELD_GROUPS = [
   { id:"GLOBAL",    label:"Global Fields",         short:"Global" },
 ];
 const groupShort = id => (FIELD_GROUPS.find(g=>g.id===id)||{}).short || id;
+// ---- Filter Data path (per ServiceOps screenshots): person → user attribute → target Request field ----
+const FD_PERSONS = [
+  { value:"request__assignee",  label:"Assignee" },
+  { value:"request__requester", label:"Requester" },
+];
+const FD_USER_FIELDS = [
+  { value:"requester__location",   label:"Location" },
+  { value:"requester__department", label:"Department" },
+];
+const fdUserFields = person => FD_USER_FIELDS;   // Assignee and Requester both expose these user attributes
+// The last dropdown lists the chosen user field's own values — Location → its 5 locations, Department → its 5 departments
+const fdTargets = srcFieldId => { const f=fieldOf(srcFieldId); return (f && f.options) ? f.options.map(o=>({ value:o, label:o })) : []; };
 
 // Operator sets by field kind (DD2 depends on the field chosen in DD1)
 const OP_SETS = {
@@ -279,7 +291,7 @@ const ACTION_TYPES = [
   { id:"SHOW_OPTIONS", label:"Show Options",      phrase:(f)=>`show options for ${f}` },
   { id:"HIDE_OPTIONS", label:"Hide Options",      phrase:(f)=>`hide options for ${f}` },
   { id:"RUN_SCRIPT",   label:"Run Custom Script", phrase:(f)=>`run a custom script` },
-  { id:"FILTER_DATA",  label:"Filter Data",       phrase:(f)=>`filter the data in ${f}` },
+  { id:"FILTER_DATA",  label:"Filter Data",       phrase:(f,v)=>`filter the data in ${f}${v?` to ${v}`:""}` },
 ];
 const REVERSIBLE = ["SHOW","HIDE","MANDATE","OPTIONAL","ENABLE","DISABLE","SHOW_OPTIONS","HIDE_OPTIONS"];
 const OPPOSITE = { SHOW:"HIDE", HIDE:"SHOW", MANDATE:"OPTIONAL", OPTIONAL:"MANDATE", ENABLE:"DISABLE", DISABLE:"ENABLE", SHOW_OPTIONS:"HIDE_OPTIONS", HIDE_OPTIONS:"SHOW_OPTIONS" };
@@ -1362,6 +1374,28 @@ function ConditionsEditor({ block, mutate }){
   );
 }
 
+/* ============================================================ STEP IDENTITY (numbered badge + semantic tag)
+   Subtle block-identity header reused by each step inside an expanded rule block — gives the builder a
+   guided When → If → Then → Review progression without changing any behavior. */
+const V7_STEP_TONE = {
+  when:   { badge:"bg-sky-50 text-sky-600 ring-sky-100",         tag:"bg-sky-50 text-sky-600 ring-sky-100",         bar:"before:bg-sky-200" },
+  if:     { badge:"bg-amber-50 text-amber-600 ring-amber-100",   tag:"bg-amber-50 text-amber-600 ring-amber-100",   bar:"before:bg-amber-200" },
+  then:   { badge:"bg-emerald-50 text-emerald-600 ring-emerald-100", tag:"bg-emerald-50 text-emerald-600 ring-emerald-100", bar:"before:bg-emerald-200" },
+  review: { badge:"bg-slate-100 text-slate-500 ring-slate-200",  tag:"bg-slate-100 text-slate-500 ring-slate-200",  bar:"before:bg-slate-200" },
+};
+function V7StepHead({ n, tone, tag, title, hint }){
+  const t = V7_STEP_TONE[tone] || V7_STEP_TONE.review;
+  return (
+    <div className="mb-3 flex items-center gap-2.5">
+      <span className={cx("flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ring-1", t.badge)}>{n}</span>
+      <span className={cx("rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ring-1", t.tag)}>{tag}</span>
+      <span className="text-sm font-semibold text-slate-800">{title}</span>
+      {hint && <span className="ml-auto text-xs text-slate-400">{hint}</span>}
+    </div>
+  );
+}
+const V7_STEP_CARD = "relative overflow-hidden rounded-xl border border-slate-200 bg-slate-50/50 p-4 pl-5 shadow-sm before:absolute before:left-0 before:top-0 before:h-full before:w-1 before:content-['']";
+
 /* ============================================================ RULE STUDIO (V3 BLOCK WORKSPACE) */
 function RuleStudio({ initial, isNew, allRules, onCancel, onSave }){
   const [draft, setDraft] = useState(() => {
@@ -1388,6 +1422,7 @@ function RuleStudio({ initial, isNew, allRules, onCancel, onSave }){
   const [dismissed, setDismissed] = useState(() => new Set());
   const [expandedId, setExpandedId] = useState(() => (initial.blocks[0] && initial.blocks[0].id) || null);
   const [previewOpen, setPreviewOpen] = useState({});
+  const [advOpen, setAdvOpen] = useState(false);   // Advanced Conditions — collapsed by default
   const [samples, setSamples] = useState({});
 
   const confMap = useMemo(() => workspaceConflicts(draft, allRules), [draft, allRules]);
@@ -1400,7 +1435,13 @@ function RuleStudio({ initial, isNew, allRules, onCancel, onSave }){
   const setCond  = (bi,ci,k,v)=>update(d=>{d.blocks[bi].conditions[ci][k]=v;});
   const rmCond   = (bi,ci)=>update(d=>d.blocks[bi].conditions.splice(ci,1));
   const addAct   = bi=>update(d=>d.blocks[bi].actions.push(newAction()));
+  const clearAllActions = bi=>update(d=>{ d.blocks[bi].actions=[]; });   // bulk remove — mirrors clearAll for conditions
   const setAct   = (bi,ai,k,v)=>update(d=>{d.blocks[bi].actions[ai][k]=v;});
+  // Filter Data cascade — changing the type or an earlier step resets every step after it
+  const setActType = (bi,ai,v)=>update(d=>{ const a=d.blocks[bi].actions[ai]; const wasFilter=a.type==="FILTER_DATA"; a.type=v; if(v==="FILTER_DATA"||wasFilter){ a.entity=""; a.srcField=""; a.fieldId=""; a.fieldIds=[]; a.value=""; } });
+  const setFDEntity= (bi,ai,v)=>update(d=>{ const a=d.blocks[bi].actions[ai]; a.entity=v; a.srcField=""; a.fieldId=""; a.fieldIds=[]; a.value=""; });   // new source resets the whole path
+  const setFDField = (bi,ai,v)=>update(d=>{ const a=d.blocks[bi].actions[ai]; a.srcField=v; a.fieldId=""; a.fieldIds=[]; a.value=""; });                // new source field resets the target
+  const setFDTarget= (bi,ai,v)=>update(d=>{ const a=d.blocks[bi].actions[ai]; a.fieldId=v; a.fieldIds=[v]; });                                          // target Request field the rule filters
   const rmAct    = (bi,ai)=>update(d=>d.blocks[bi].actions.splice(ai,1));
   // one action can target many fields — fieldIds is the source of truth, fieldId stays = first field
   const addActField = (bi,ai,fid)=>update(d=>{ const a=d.blocks[bi].actions[ai]; const cur=(a.fieldIds&&a.fieldIds.length)?a.fieldIds:(a.fieldId?[a.fieldId]:[]); if(!cur.includes(fid)) cur.push(fid); a.fieldIds=cur; a.fieldId=cur[0]; });
@@ -1515,6 +1556,7 @@ function RuleStudio({ initial, isNew, allRules, onCancel, onSave }){
                   {/* card header (collapsed summary) */}
                   <div className="flex items-center gap-3 px-4 py-3">
                     <span className="cursor-grab text-slate-300">⠿</span>
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sm font-bold text-sky-600 ring-1 ring-sky-100">{bi+1}</span>
                     <button onClick={()=>setExpandedId(expanded?null:b.id)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
                       <span className={cx("h-2 w-2 shrink-0 rounded-full", b.actions.length?"bg-emerald-400":"bg-slate-300")} />
                       <span className="min-w-0">
@@ -1529,41 +1571,57 @@ function RuleStudio({ initial, isNew, allRules, onCancel, onSave }){
                   </div>
 
                   {expanded && (
-                    <div className="border-t border-slate-100 px-4 py-4">
+                    <div className="border-t border-slate-100 px-4 py-5">
                       {/* STEP 1 — context: when does this run, and who is it for (always shown first) */}
+                      <div className={cx(V7_STEP_CARD, V7_STEP_TONE.when.bar)}>
+                      <V7StepHead n={1} tone="when" tag="When" title="When this runs" hint="and who it’s for" />
                       <div className="flex flex-wrap items-center gap-2">
-                        <Dropdown trigger={<span className="cursor-pointer rounded-full border border-slate-200 bg-white px-3 py-1 text-sm hover:bg-slate-50"><span className="text-slate-400">Runs </span>{b.when ? <span className="font-medium text-slate-700">{momentGuideLabel(b.when).toLowerCase()}</span> : <span className="italic text-slate-400">choose when</span>} <span className="text-[9px] opacity-50">▼</span></span>}>
+                        <Dropdown trigger={<span className="cursor-pointer rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm shadow-sm transition hover:border-slate-400 hover:bg-slate-50 hover:shadow active:bg-slate-100"><span className="text-slate-400">Runs </span>{b.when ? <span className="font-semibold text-slate-800">{momentGuideLabel(b.when).toLowerCase()}</span> : <span className="text-slate-400">choose when</span>} <span className="text-[10px] text-slate-500">▾</span></span>}>
                           {close => <div className="-m-1 overflow-hidden rounded-lg"><GuidedPanel options={MOMENT_GUIDE} value={blockWhen(draft,b)} onPick={v=>{setBlockWhen(bi,v);close();}} /></div>}
                         </Dropdown>
-                        <Dropdown trigger={<span className="cursor-pointer rounded-full border border-slate-200 bg-white px-3 py-1 text-sm hover:bg-slate-50"><span className="text-slate-400">for </span>{b.who ? <span className="font-medium text-slate-700">{audFriendly(b.who)}</span> : <span className="italic text-slate-400">choose who</span>} <span className="text-[9px] opacity-50">▼</span></span>}>
+                        <Dropdown trigger={<span className="cursor-pointer rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm shadow-sm transition hover:border-slate-400 hover:bg-slate-50 hover:shadow active:bg-slate-100"><span className="text-slate-400">for </span>{b.who ? <span className="font-semibold text-slate-800">{audFriendly(b.who)}</span> : <span className="text-slate-400">choose who</span>} <span className="text-[10px] text-slate-500">▾</span></span>}>
                           {close => <div className="-m-1 overflow-hidden rounded-lg"><GuidedPanel options={AUD_GUIDE} value={b.who||""} onPick={v=>{setBlockWho(bi,v);close();}} /></div>}
                         </Dropdown>
                       </div>
                       {!ctxReady(b) && <p className="mt-2 text-xs text-slate-400">Start by choosing when this runs and who it’s for — the next steps appear as you go.</p>}
+                      </div>
 
                       {/* STEP 2 — condition (revealed once the context is set) */}
                       {ctxReady(b) && (
-                      <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
-                        <p className="mb-2 text-sm font-semibold text-slate-700">What needs to be true before this rule runs?</p>
+                      <div className={cx("mt-4", V7_STEP_CARD, V7_STEP_TONE.if.bar)}>
+                        <V7StepHead n={2} tone="if" tag="If" title="What needs to be true" hint="conditions" />
                         <ConditionsEditor block={b} mutate={fn=>update(d=>fn(d.blocks[bi]))} />
                       </div>
                       )}
 
                       {/* STEP 3 — outcome (revealed after the first condition is added) */}
                       {ctxReady(b) && b.conditions.length>0 && (
-                      <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
-                        <p className="mb-2 text-sm font-semibold text-slate-700">What should happen when these conditions are met?</p>
+                      <div className={cx("mt-4", V7_STEP_CARD, V7_STEP_TONE.then.bar)}>
+                        <V7StepHead n={3} tone="then" tag="Then" title="What should happen" hint="actions" />
                         <div className="mt-2 space-y-2">
                           {b.actions.map((a,ai)=>(
                             <div key={a.id} className="v7in flex items-center gap-2">
                               <div className={cx("flex flex-1 flex-wrap items-center gap-2 rounded-md border p-1.5", actFields(a).some(fid=>bConfFields.has(fid))?"border-amber-300 ring-1 ring-amber-200":"border-slate-200 bg-white")}>
                                 <Dropdown trigger={<span className={cx("cursor-pointer rounded-md px-3 py-1.5 text-sm font-medium transition-colors", a.type ? "bg-slate-100 text-slate-700 hover:bg-slate-200" : "border border-dashed border-slate-300 italic text-slate-400 hover:bg-slate-50")}>{a.type ? (ACTION_TYPES.find(t=>t.id===a.type)||{}).label : "choose action"} ▾</span>}>
-                                  {close => <div className="-m-1 overflow-hidden rounded-lg"><GuidedPanel options={ACTION_GUIDE2} value={a.type} onPick={v=>{setAct(bi,ai,"type",v);close();}} /></div>}
+                                  {close => <div className="-m-1 overflow-hidden rounded-lg"><GuidedPanel options={ACTION_GUIDE2} value={a.type} onPick={v=>{setActType(bi,ai,v);close();}} /></div>}
                                 </Dropdown>
-                                {a.type && <ValueMultiSelect search addLabel="field"
+                                {a.type && a.type!=="FILTER_DATA" && <ValueMultiSelect search addLabel="field"
                                   options={ACTION_FIELDS.map(f=>({value:f.id,label:f.name}))}
                                   selected={actFields(a)}
                                   onToggle={fid=> actFields(a).includes(fid) ? rmActField(bi,ai,fid) : addActField(bi,ai,fid)} />}
+                                {a.type==="FILTER_DATA" && (<React.Fragment>
+                                  <Dropdown trigger={<span className={cx("cursor-pointer rounded-md border px-3 py-1.5 text-sm transition-colors", a.entity ? "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100" : "border-dashed border-slate-300 italic text-slate-400 hover:bg-slate-50")}>{a.entity?fieldOf(a.entity).name:"Select"} ▾</span>}>
+                                    {close => <PickList search items={FD_PERSONS} onPick={v=>{setFDEntity(bi,ai,v);close();}} />}
+                                  </Dropdown>
+                                  {a.entity && <span className="text-sm text-slate-400">›</span>}
+                                  {a.entity && <Dropdown trigger={<span className={cx("cursor-pointer rounded-md border px-3 py-1.5 text-sm transition-colors", a.srcField ? "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100" : "border-dashed border-slate-300 italic text-slate-400 hover:bg-slate-50")}>{a.srcField?fieldOf(a.srcField).name:"Select User Field"} ▾</span>}>
+                                    {close => <PickList search items={fdUserFields(a.entity)} onPick={v=>{setFDField(bi,ai,v);close();}} />}
+                                  </Dropdown>}
+                                  {a.srcField && <span className="text-sm text-slate-400">›</span>}
+                                  {a.srcField && <Dropdown trigger={<span className={cx("cursor-pointer rounded-md border px-3 py-1.5 text-sm transition-colors", a.fieldId ? "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100" : "border-dashed border-slate-300 italic text-slate-400 hover:bg-slate-50")}>{a.fieldId || ("Select "+(fieldOf(a.srcField).name||"Value"))} ▾</span>}>
+                                    {close => <PickList search items={fdTargets(a.srcField)} onPick={v=>{setFDTarget(bi,ai,v);close();}} />}
+                                  </Dropdown>}
+                                </React.Fragment>)}
                                 {a.type==="SET_VALUE" && a.fieldId && <span className="text-sm text-slate-400">to</span>}
                                 {a.type==="SET_VALUE" && a.fieldId && (
                                   (fieldOf(a.fieldId)||{}).options
@@ -1577,9 +1635,16 @@ function RuleStudio({ initial, isNew, allRules, onCancel, onSave }){
                             </div>
                           ))}
                         </div>
-                        <button onClick={()=>addAct(bi)} className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-sky-600 transition-colors hover:bg-sky-50">
-                          <span className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 text-[11px] leading-none text-white">+</span> Add Action
-                        </button>
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          <button onClick={()=>addAct(bi)} className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-sky-600 transition-colors hover:bg-sky-50">
+                            <span className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 text-[11px] leading-none text-white">+</span> Add Action
+                          </button>
+                          {b.actions.length>0 && (
+                            <button onClick={()=>clearAllActions(bi)} className="ml-auto inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-red-500 transition-colors hover:bg-red-50">
+                              <span>⊘</span> Remove All Actions
+                            </button>
+                          )}
+                        </div>
                       </div>
                       )}
 
@@ -1597,8 +1662,9 @@ function RuleStudio({ initial, isNew, allRules, onCancel, onSave }){
 
                       {/* STEP 4 — preview (revealed after the first action is added) */}
                       {ctxReady(b) && b.actions.length>0 && (
-                      <div className="mt-3">
-                        <button onClick={()=>setPreviewOpen(s=>({...s,[b.id]:!s[b.id]}))} className="text-sm font-medium text-sky-600 hover:underline">{pOpen?"▾":"▸"} This rule will…</button>
+                      <div className="mt-4">
+                        <V7StepHead n={4} tone="review" tag="Review" title="This rule will…" />
+                        <button onClick={()=>setPreviewOpen(s=>({...s,[b.id]:!s[b.id]}))} className="text-sm font-medium text-sky-600 hover:underline">{pOpen?"▾ Hide preview":"▸ Show preview"}</button>
                         {pOpen && (
                           <div className="mt-2 rounded-lg border border-slate-200 bg-white p-3 text-sm">
                             {flatConds(b).length>0 ? (
@@ -1634,6 +1700,36 @@ function RuleStudio({ initial, isNew, allRules, onCancel, onSave }){
           <div className="mt-4 rounded-xl border border-dashed border-slate-300 bg-white p-4 text-center">
             <button onClick={addBlock} className="rounded-full bg-sky-500 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-sky-600">+ Add rule block</button>
             <p className="mt-2 text-xs text-slate-400">Each block is one independent IF → THEN business rule.</p>
+          </div>
+
+          {/* Advanced Conditions — optional, collapsed by default (placement mirrors V9: below the blocks) */}
+          <div className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+            <button onClick={()=>setAdvOpen(o=>!o)} className="flex w-full items-center justify-between gap-3 p-4 text-left transition-colors hover:bg-slate-50">
+              <div className="min-w-0">
+                <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                  Advanced Conditions
+                  {draft.advanced.reverseOnFalse
+                    ? <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-700">Configured</span>
+                    : <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-400">Optional</span>}
+                </h3>
+                <p className="mt-0.5 text-xs text-slate-500">For complex logic, nested groups, custom evaluation, and advanced matching behavior.</p>
+              </div>
+              <span className="shrink-0 text-sm font-medium text-sky-600">{advOpen ? "Collapse" : "Expand"}</span>
+            </button>
+            {advOpen && (
+              <div className="space-y-2 border-t border-slate-100 p-4 pt-3">
+                <button onClick={()=>update(d=>{ d.advanced.reverseOnFalse=!d.advanced.reverseOnFalse; })}
+                  className={cx("flex w-full items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors", draft.advanced.reverseOnFalse?"border-sky-200 bg-sky-50/60":"border-slate-200 bg-white hover:bg-slate-50")}>
+                  <span className={cx("mt-0.5 flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors", draft.advanced.reverseOnFalse?"bg-sky-500":"bg-slate-300")}>
+                    <span className={cx("h-4 w-4 rounded-full bg-white shadow-sm transition-transform", draft.advanced.reverseOnFalse&&"translate-x-4")} />
+                  </span>
+                  <span className="min-w-0">
+                    <span className={cx("block text-sm font-medium", draft.advanced.reverseOnFalse?"text-sky-900":"text-slate-700")}>Reverse when the condition is no longer true</span>
+                    <span className="mt-0.5 block text-[11px] leading-tight text-slate-400">Undo the action automatically when the rule stops matching</span>
+                  </span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>

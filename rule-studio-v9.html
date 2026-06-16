@@ -46,6 +46,18 @@ const FIELD_GROUPS = [
   { id:"GLOBAL",    label:"Global Fields",         short:"Global" },
 ];
 const groupShort = id => (FIELD_GROUPS.find(g=>g.id===id)||{}).short || id;
+// ---- Filter Data path (per ServiceOps screenshots): person → user attribute → target Request field ----
+const FD_PERSONS = [
+  { value:"request__assignee",  label:"Assignee" },
+  { value:"request__requester", label:"Requester" },
+];
+const FD_USER_FIELDS = [
+  { value:"requester__location",   label:"Location" },
+  { value:"requester__department", label:"Department" },
+];
+const fdUserFields = person => FD_USER_FIELDS;   // Assignee and Requester both expose these user attributes
+// The last dropdown lists the chosen user field's own values — Location → its 5 locations, Department → its 5 departments
+const fdTargets = srcFieldId => { const f=fieldOf(srcFieldId); return (f && f.options) ? f.options.map(o=>({ value:o, label:o })) : []; };
 
 // Operator sets by field kind (DD2 depends on the field chosen in DD1)
 const OP_SETS = {
@@ -288,7 +300,7 @@ const ACTION_TYPES = [
   { id:"SHOW_OPTIONS", label:"Show Options",      phrase:(f)=>`show options for ${f}` },
   { id:"HIDE_OPTIONS", label:"Hide Options",      phrase:(f)=>`hide options for ${f}` },
   { id:"RUN_SCRIPT",   label:"Run Custom Script", phrase:(f)=>`run a custom script` },
-  { id:"FILTER_DATA",  label:"Filter Data",       phrase:(f)=>`filter the data in ${f}` },
+  { id:"FILTER_DATA",  label:"Filter Data",       phrase:(f,v)=>`filter the data in ${f}${v?` to ${v}`:""}` },
 ];
 const REVERSIBLE = ["SHOW","HIDE","MANDATE","OPTIONAL","ENABLE","DISABLE","SHOW_OPTIONS","HIDE_OPTIONS"];
 const OPPOSITE = { SHOW:"HIDE", HIDE:"SHOW", MANDATE:"OPTIONAL", OPTIONAL:"MANDATE", ENABLE:"DISABLE", DISABLE:"ENABLE", SHOW_OPTIONS:"HIDE_OPTIONS", HIDE_OPTIONS:"SHOW_OPTIONS" };
@@ -1501,8 +1513,14 @@ function V9Toggle({ on, onClick, label, sub }){
 
 function V9Actions({ block, conflictFields, update }){
   const setAct = (ai,k,v) => update(b=>{ b.actions[ai][k]=v; });
+  // Filter Data cascade — changing the type or an earlier step resets every step after it
+  const setActType = (ai,v) => update(b=>{ const a=b.actions[ai]; const wasFilter=a.type==="FILTER_DATA"; a.type=v; if(v==="FILTER_DATA"||wasFilter){ a.entity=""; a.srcField=""; a.fieldId=""; a.fieldIds=[]; a.value=""; } });
+  const setFDEntity= (ai,v) => update(b=>{ const a=b.actions[ai]; a.entity=v; a.srcField=""; a.fieldId=""; a.fieldIds=[]; a.value=""; });   // new source resets the whole path
+  const setFDField = (ai,v) => update(b=>{ const a=b.actions[ai]; a.srcField=v; a.fieldId=""; a.fieldIds=[]; a.value=""; });                // new source field resets the target
+  const setFDTarget= (ai,v) => update(b=>{ const a=b.actions[ai]; a.fieldId=v; a.fieldIds=[v]; });                                          // target Request field the rule filters
   const rmAct  = (ai)     => update(b=>{ b.actions.splice(ai,1); });
   const addAct = ()       => update(b=>{ b.actions.push(newAction()); });
+  const clearAllActions = () => update(b=>{ b.actions=[]; });   // bulk remove — mirrors clearAll for conditions
   // one action can target many fields — fieldIds is the source of truth, fieldId stays = first field
   const addActField = (ai,fid) => update(b=>{ const a=b.actions[ai]; const cur=(a.fieldIds&&a.fieldIds.length)?a.fieldIds:(a.fieldId?[a.fieldId]:[]); if(!cur.includes(fid)) cur.push(fid); a.fieldIds=cur; a.fieldId=cur[0]; });
   const rmActField  = (ai,fid) => update(b=>{ const a=b.actions[ai]; const cur=((a.fieldIds&&a.fieldIds.length)?a.fieldIds:(a.fieldId?[a.fieldId]:[])).filter(x=>x!==fid); a.fieldIds=cur; a.fieldId=cur[0]||""; });
@@ -1517,12 +1535,25 @@ function V9Actions({ block, conflictFields, update }){
           <div key={a.id} className="v7in flex items-center gap-2">
             <div className={cx("flex flex-1 flex-wrap items-center gap-2 rounded-md border p-1.5", actFields(a).some(fid=>conflictFields.has(fid))?"border-amber-300 ring-1 ring-amber-200":"border-slate-200 bg-white")}>
               <Dropdown trigger={<span className={cx("cursor-pointer rounded-md px-3 py-1.5 text-sm font-medium transition-colors", a.type ? "bg-slate-100 text-slate-700 hover:bg-slate-200" : "border border-dashed border-slate-300 italic text-slate-400 hover:bg-slate-50")}>{a.type ? (ACTION_TYPES.find(t=>t.id===a.type)||{}).label : "choose action"} ▾</span>}>
-                {close => <div className="-m-1 overflow-hidden rounded-lg"><GuidedPanel options={ACTION_GUIDE2} value={a.type} onPick={v=>{setAct(ai,"type",v);close();}} /></div>}
+                {close => <div className="-m-1 overflow-hidden rounded-lg"><GuidedPanel options={ACTION_GUIDE2} value={a.type} onPick={v=>{setActType(ai,v);close();}} /></div>}
               </Dropdown>
-              {a.type && <ValueMultiSelect search addLabel="field"
+              {a.type && a.type!=="FILTER_DATA" && <ValueMultiSelect search addLabel="field"
                 options={ACTION_FIELDS.map(f=>({value:f.id,label:f.name}))}
                 selected={actFields(a)}
                 onToggle={fid=> actFields(a).includes(fid) ? rmActField(ai,fid) : addActField(ai,fid)} />}
+              {a.type==="FILTER_DATA" && (<React.Fragment>
+                <Dropdown trigger={<span className={cx("cursor-pointer rounded-md border px-3 py-1.5 text-sm transition-colors", a.entity ? "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100" : "border-dashed border-slate-300 italic text-slate-400 hover:bg-slate-50")}>{a.entity?fieldOf(a.entity).name:"Select"} ▾</span>}>
+                  {close => <PickList search items={FD_PERSONS} onPick={v=>{setFDEntity(ai,v);close();}} />}
+                </Dropdown>
+                {a.entity && <span className="text-sm text-slate-400">›</span>}
+                {a.entity && <Dropdown trigger={<span className={cx("cursor-pointer rounded-md border px-3 py-1.5 text-sm transition-colors", a.srcField ? "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100" : "border-dashed border-slate-300 italic text-slate-400 hover:bg-slate-50")}>{a.srcField?fieldOf(a.srcField).name:"Select User Field"} ▾</span>}>
+                  {close => <PickList search items={fdUserFields(a.entity)} onPick={v=>{setFDField(ai,v);close();}} />}
+                </Dropdown>}
+                {a.srcField && <span className="text-sm text-slate-400">›</span>}
+                {a.srcField && <Dropdown trigger={<span className={cx("cursor-pointer rounded-md border px-3 py-1.5 text-sm transition-colors", a.fieldId ? "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100" : "border-dashed border-slate-300 italic text-slate-400 hover:bg-slate-50")}>{a.fieldId || ("Select "+(fieldOf(a.srcField).name||"Value"))} ▾</span>}>
+                  {close => <PickList search items={fdTargets(a.srcField)} onPick={v=>{setFDTarget(ai,v);close();}} />}
+                </Dropdown>}
+              </React.Fragment>)}
               {a.type==="SET_VALUE" && a.fieldId && <span className="text-sm text-slate-400">to</span>}
               {a.type==="SET_VALUE" && a.fieldId && (
                 (fieldOf(a.fieldId)||{}).options
@@ -1540,6 +1571,11 @@ function V9Actions({ block, conflictFields, update }){
         <button onClick={addAct} className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-sky-600 transition-colors hover:bg-sky-50">
           <span className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 text-[11px] leading-none text-white">+</span> Add Action
         </button>
+        {block.actions.length>0 && (
+          <button onClick={clearAllActions} className="ml-auto inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-red-500 transition-colors hover:bg-red-50">
+            <span>⊘</span> Remove All Actions
+          </button>
+        )}
       </div>
     </div>
   );
@@ -1561,8 +1597,8 @@ function V9Block({ b, bi, active, onActivate, mutateBlock, onDuplicate, onRemove
         </div>
         <div className="flex shrink-0 items-center gap-1">
           {blockConflicts.length>0 && <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">⚠ {blockConflicts.length}</span>}
+          <button onClick={e=>{e.stopPropagation();onDuplicate();}} title="Duplicate" className="flex h-6 w-6 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-600"><IconCopy/></button>
           <button onClick={e=>{e.stopPropagation();onToggleCollapse();}} title={collapsed?"Expand":"Collapse"} className="flex h-6 w-6 items-center justify-center rounded text-slate-400 hover:bg-slate-100">{collapsed?"▸":"▾"}</button>
-          <button onClick={e=>{e.stopPropagation();onDuplicate();}} title="Duplicate" className="flex h-6 w-6 items-center justify-center rounded text-slate-400 hover:bg-slate-100">⎘</button>
           {canRemove && <button onClick={e=>{e.stopPropagation();onRemove();}} title="Remove" className="flex h-6 w-6 items-center justify-center rounded text-slate-400 hover:bg-red-50 hover:text-red-500">✕</button>}
         </div>
       </div>
@@ -1859,8 +1895,6 @@ function RuleStudioV9({ initial, isNew, allRules, onCancel, onSave }){
                   <div className="space-y-2 border-t border-slate-100 p-4 pt-3">
                     <V9Toggle on={draft.advanced.reverseOnFalse} onClick={()=>onAdvanced("reverse")}
                       label="Reverse when the condition is no longer true" sub="Undo the action automatically when the rule stops matching" />
-                    <V9Toggle on={draft.advanced.enforceSystemWide} onClick={()=>onAdvanced("system")}
-                      label="Apply this rule to every form" sub="Enforce system-wide, overriding “Who should this affect”" />
                   </div>
                 )}
               </div>
