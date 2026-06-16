@@ -1582,6 +1582,7 @@ function V9Actions({ block, conflictFields, update }){
 }
 
 function V9Block({ b, bi, active, onActivate, mutateBlock, onDuplicate, onRemove, canRemove, collapsed, onToggleCollapse, conflicts, conflictFields, ifRef, thenRef, flashIf, flashThen }){
+  const [advOpen, setAdvOpen] = React.useState(false);   // per-block Advanced — collapsed by default, belongs to this block only
   const blockConflicts = conflicts.filter(c => b.actions.some(a=>actFields(a).includes(c.field)) || flatConds(b).some(cd=>cd.fieldId===c.field));
   const line = v9BlockLine(b);
   return (
@@ -1618,6 +1619,32 @@ function V9Block({ b, bi, active, onActivate, mutateBlock, onDuplicate, onRemove
               <span className="text-xs text-slate-400">do this to the form</span>
             </div>
             <V9Actions block={b} conflictFields={conflictFields} update={mutateBlock} />
+          </div>
+
+          {/* Advanced — optional, collapsed, belongs to THIS block (not a global/page-level setting) */}
+          <div className="rounded-lg bg-slate-50/70 p-3">
+            <button onClick={e=>{e.stopPropagation();setAdvOpen(o=>!o);}} className="flex w-full items-center gap-2 text-left">
+              <span className="rounded bg-slate-200/70 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-slate-500">Adv</span>
+              <span className="text-xs text-slate-400">advanced behavior for this block</span>
+              {(b.advanced||{}).reverseOnFalse
+                ? <span className="ml-auto rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-700">On</span>
+                : <span className="ml-auto rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-400">Optional</span>}
+              <span className="text-[10px] text-slate-400">{advOpen?"▾":"▸"}</span>
+            </button>
+            {advOpen && (
+              <div className="mt-2.5">
+                <button onClick={e=>{e.stopPropagation();mutateBlock(blk=>{ blk.advanced=blk.advanced||{}; blk.advanced.reverseOnFalse=!blk.advanced.reverseOnFalse; });}}
+                  className={cx("flex w-full items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors", (b.advanced||{}).reverseOnFalse?"border-sky-200 bg-sky-50/60":"border-slate-200 bg-white hover:bg-slate-50")}>
+                  <span className={cx("mt-0.5 flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors", (b.advanced||{}).reverseOnFalse?"bg-sky-500":"bg-slate-300")}>
+                    <span className={cx("h-4 w-4 rounded-full bg-white shadow-sm transition-transform", (b.advanced||{}).reverseOnFalse&&"translate-x-4")} />
+                  </span>
+                  <span className="min-w-0">
+                    <span className={cx("block text-sm font-medium", (b.advanced||{}).reverseOnFalse?"text-sky-900":"text-slate-700")}>Reverse when the condition is no longer true</span>
+                    <span className="mt-0.5 block text-[11px] leading-tight text-slate-400">Undo this block's action automatically when its conditions stop matching</span>
+                  </span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1873,32 +1900,6 @@ function RuleStudioV9({ initial, isNew, allRules, onCancel, onSave }){
               <button onClick={addBlock} className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 bg-white py-3 text-sm font-medium text-slate-500 transition-colors hover:border-slate-400 hover:text-sky-600">
                 + Add another rule block
               </button>
-
-              {/* Advanced section — optional, collapsed by default (progressive disclosure) */}
-              {(()=>{ const advCount = (draft.advanced.reverseOnFalse?1:0) + (draft.advanced.enforceSystemWide?1:0); return (
-              <div ref={advRef} className={cx("v9in overflow-hidden rounded-xl border bg-white shadow-sm transition-shadow", flash==="advanced" ? "border-sky-300 v9flash" : "border-slate-200")}>
-                <button onClick={()=>setAdvOpen(o=>!o)} className="flex w-full items-center justify-between gap-3 p-4 text-left transition-colors hover:bg-slate-50">
-                  <div className="min-w-0">
-                    <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-                      Advanced Conditions
-                      {advCount>0
-                        ? <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-700">Configured</span>
-                        : <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-400">Optional</span>}
-                    </h3>
-                    <p className="mt-0.5 text-xs text-slate-500">{advCount>0
-                      ? advCount+" advanced option"+(advCount>1?"s":"")+" applied"
-                      : "For complex logic, nested groups, custom evaluation, and advanced matching behavior."}</p>
-                  </div>
-                  <span className="shrink-0 text-sm font-medium text-sky-600">{advOpen ? "Collapse" : "Expand"}</span>
-                </button>
-                {advOpen && (
-                  <div className="space-y-2 border-t border-slate-100 p-4 pt-3">
-                    <V9Toggle on={draft.advanced.reverseOnFalse} onClick={()=>onAdvanced("reverse")}
-                      label="Reverse when the condition is no longer true" sub="Undo the action automatically when the rule stops matching" />
-                  </div>
-                )}
-              </div>
-              ); })()}
             </div>
           ) : (
             <div className="mx-auto max-w-2xl">

@@ -1422,7 +1422,7 @@ function RuleStudio({ initial, isNew, allRules, onCancel, onSave }){
   const [dismissed, setDismissed] = useState(() => new Set());
   const [expandedId, setExpandedId] = useState(() => (initial.blocks[0] && initial.blocks[0].id) || null);
   const [previewOpen, setPreviewOpen] = useState({});
-  const [advOpen, setAdvOpen] = useState(false);   // Advanced Conditions — collapsed by default
+  const [advOpen, setAdvOpen] = useState({});   // Advanced Conditions — collapsed by default, per block (keyed by block id)
   const [samples, setSamples] = useState({});
 
   const confMap = useMemo(() => workspaceConflicts(draft, allRules), [draft, allRules]);
@@ -1689,6 +1689,33 @@ function RuleStudio({ initial, isNew, allRules, onCancel, onSave }){
                         )}
                       </div>
                       )}
+
+                      {/* Advanced — optional, collapsed, belongs to THIS block (not a global/page-level setting) */}
+                      {ctxReady(b) && (
+                      <div className="mt-4 border-t border-slate-100 pt-3">
+                        <button onClick={()=>setAdvOpen(s=>({...s,[b.id]:!s[b.id]}))} className="flex items-center gap-2 text-xs font-medium text-slate-500 transition-colors hover:text-slate-700">
+                          <span className="text-[10px]">{advOpen[b.id]?"▾":"▸"}</span>
+                          Advanced behavior for this block
+                          {(b.advanced||{}).reverseOnFalse
+                            ? <span className="rounded-full bg-sky-50 px-1.5 py-0.5 text-[10px] font-semibold text-sky-600 ring-1 ring-sky-100">On</span>
+                            : <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-400">Optional</span>}
+                        </button>
+                        {advOpen[b.id] && (
+                          <div className="mt-2">
+                            <button onClick={()=>update(d=>{ const blk=d.blocks[bi]; blk.advanced=blk.advanced||{}; blk.advanced.reverseOnFalse=!blk.advanced.reverseOnFalse; })}
+                              className={cx("flex w-full items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors", (b.advanced||{}).reverseOnFalse?"border-sky-200 bg-sky-50/60":"border-slate-200 bg-white hover:bg-slate-50")}>
+                              <span className={cx("mt-0.5 flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors", (b.advanced||{}).reverseOnFalse?"bg-sky-500":"bg-slate-300")}>
+                                <span className={cx("h-4 w-4 rounded-full bg-white shadow-sm transition-transform", (b.advanced||{}).reverseOnFalse&&"translate-x-4")} />
+                              </span>
+                              <span className="min-w-0">
+                                <span className={cx("block text-sm font-medium", (b.advanced||{}).reverseOnFalse?"text-sky-900":"text-slate-700")}>Reverse when the condition is no longer true</span>
+                                <span className="mt-0.5 block text-[11px] leading-tight text-slate-400">Undo this block's action automatically when its conditions stop matching</span>
+                              </span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1700,36 +1727,6 @@ function RuleStudio({ initial, isNew, allRules, onCancel, onSave }){
           <div className="mt-4 rounded-xl border border-dashed border-slate-300 bg-white p-4 text-center">
             <button onClick={addBlock} className="rounded-full bg-sky-500 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-sky-600">+ Add rule block</button>
             <p className="mt-2 text-xs text-slate-400">Each block is one independent IF → THEN business rule.</p>
-          </div>
-
-          {/* Advanced Conditions — optional, collapsed by default (placement mirrors V9: below the blocks) */}
-          <div className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-            <button onClick={()=>setAdvOpen(o=>!o)} className="flex w-full items-center justify-between gap-3 p-4 text-left transition-colors hover:bg-slate-50">
-              <div className="min-w-0">
-                <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-                  Advanced Conditions
-                  {draft.advanced.reverseOnFalse
-                    ? <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-700">Configured</span>
-                    : <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-400">Optional</span>}
-                </h3>
-                <p className="mt-0.5 text-xs text-slate-500">For complex logic, nested groups, custom evaluation, and advanced matching behavior.</p>
-              </div>
-              <span className="shrink-0 text-sm font-medium text-sky-600">{advOpen ? "Collapse" : "Expand"}</span>
-            </button>
-            {advOpen && (
-              <div className="space-y-2 border-t border-slate-100 p-4 pt-3">
-                <button onClick={()=>update(d=>{ d.advanced.reverseOnFalse=!d.advanced.reverseOnFalse; })}
-                  className={cx("flex w-full items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors", draft.advanced.reverseOnFalse?"border-sky-200 bg-sky-50/60":"border-slate-200 bg-white hover:bg-slate-50")}>
-                  <span className={cx("mt-0.5 flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors", draft.advanced.reverseOnFalse?"bg-sky-500":"bg-slate-300")}>
-                    <span className={cx("h-4 w-4 rounded-full bg-white shadow-sm transition-transform", draft.advanced.reverseOnFalse&&"translate-x-4")} />
-                  </span>
-                  <span className="min-w-0">
-                    <span className={cx("block text-sm font-medium", draft.advanced.reverseOnFalse?"text-sky-900":"text-slate-700")}>Reverse when the condition is no longer true</span>
-                    <span className="mt-0.5 block text-[11px] leading-tight text-slate-400">Undo the action automatically when the rule stops matching</span>
-                  </span>
-                </button>
-              </div>
-            )}
           </div>
         </div>
       </div>
