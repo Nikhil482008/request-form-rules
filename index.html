@@ -47,10 +47,13 @@
   var frame = document.getElementById("frame");
   var pop = document.getElementById("pop");
 
+  // bump on each deploy to bust the browser cache of the iframed prototype (stale cache was loading
+  // an old version that still pointed at blocked CDNs → blank iframe)
+  var BUILD = "20260617b";
   function select(id, push){
     var v = VERSIONS.find(function(x){ return x.id === id; }) || VERSIONS[0];
-    frame.src = v.src;
-    pop.href = v.src;
+    frame.src = v.src + "?b=" + BUILD;
+    pop.href = v.src + "?b=" + BUILD;
     Array.prototype.forEach.call(tabsEl.children, function(btn){
       btn.classList.toggle("active", btn.dataset.id === v.id);
     });
