@@ -38,6 +38,8 @@
 
 <script>
   var VERSIONS = [
+    { id:"v11", label:"Field Rule Workspace",   sub:"V11", src:"rule-studio-v11.html" },
+    { id:"v10", label:"Form Builder",           sub:"V10", src:"rule-studio-v10.html" },
     { id:"v7", label:"Progressive Workspace",   sub:"V7", src:"rule-studio-v7.html" },
     { id:"v8", label:"Guided Form Canvas",      sub:"V8", src:"rule-studio-v8.html" },
     { id:"v9", label:"Rule Sequence Workspace", sub:"V9", src:"rule-studio-v9.html" },
@@ -49,7 +51,7 @@
 
   // bump on each deploy to bust the browser cache of the iframed prototype (stale cache was loading
   // an old version that still pointed at blocked CDNs → blank iframe)
-  var BUILD = "20260617b";
+  var BUILD = "20260619a";
   function select(id, push){
     var v = VERSIONS.find(function(x){ return x.id === id; }) || VERSIONS[0];
     frame.src = v.src + "?b=" + BUILD;
@@ -71,9 +73,9 @@
     tabsEl.appendChild(b);
   });
 
-  // honor #v7/#v8/#v9 deep-links; default to V7
+  // honor #v11/#v10/#v7/#v8/#v9 deep-links; default to V11 (current focus)
   var start = (location.hash || "").replace("#", "");
-  select(VERSIONS.some(function(v){ return v.id === start; }) ? start : "v7", false);
+  select(VERSIONS.some(function(v){ return v.id === start; }) ? start : "v11", false);
   window.addEventListener("hashchange", function(){
     var id = (location.hash || "").replace("#", "");
     if (VERSIONS.some(function(v){ return v.id === id; })) select(id, false);
