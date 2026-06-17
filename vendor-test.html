@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Vendor self-test</title>
+<style>body{font:15px/1.5 system-ui,Segoe UI,sans-serif;margin:24px;color:#111}
+.ok{color:#0a7d28}.bad{color:#b00020}pre{background:#f4f4f5;padding:12px;border-radius:8px;white-space:pre-wrap}</style>
+<!-- load the SAME vendored libs the prototypes use -->
+<script src="vendor/react.production.min.js" onerror="window.__err=(window.__err||'')+'react FAILED; '"></script>
+<script src="vendor/react-dom.production.min.js" onerror="window.__err=(window.__err||'')+'react-dom FAILED; '"></script>
+<script src="vendor/babel.min.js" onerror="window.__err=(window.__err||'')+'babel FAILED; '"></script>
+<script src="vendor/tailwind.js" onerror="window.__err=(window.__err||'')+'tailwind FAILED; '"></script>
+</head>
+<body>
+<h1>Vendored library self-test</h1>
+<div id="root">⏳ waiting for React + Babel to run…</div>
+
+<script type="text/babel" data-presets="react">
+ReactDOM.createRoot(document.getElementById("root")).render(
+  <div className="ok"><h2 style={{color:"#0a7d28"}}>✅ React + Babel both work — the libraries are fine.</h2>
+  <p>If you see this, the blank prototype is a code/runtime issue, not the libraries. Tell me and I'll fix the code.</p></div>
+);
+</script>
+
+<!-- report the real state after a moment, even if the babel script never ran -->
+<script>
+setTimeout(function(){
+  var root = document.getElementById("root");
+  var stillWaiting = root && root.textContent.indexOf("waiting") !== -1;
+  var report =
+    "loadErrors: " + (window.__err || "(none)") + "\n" +
+    "window.React  : " + (typeof React) + "\n" +
+    "window.ReactDOM: " + (typeof ReactDOM) + "\n" +
+    "window.Babel  : " + (typeof Babel) + "\n" +
+    "window.tailwind: " + (typeof tailwind);
+  var pre = document.createElement("pre");
+  pre.textContent = report;
+  document.body.appendChild(pre);
+  if (stillWaiting) {
+    var h = document.createElement("h2");
+    h.className = "bad"; h.style.color = "#b00020";
+    h.textContent = "❌ The React/Babel script did NOT run — see the report above for which library is missing.";
+    document.body.insertBefore(h, pre);
+  }
+}, 2500);
+</script>
+</body>
+</html>
