@@ -1539,12 +1539,6 @@ function V11Block({block, onCopy, onToggle, onChange, onDuplicate, onRemove}){
         </BlockPanel>
         {revealRest &&
           <>
-            <BlockPanel badge="WHEN" tone="sky" title="When the rule runs" subtitle="and for who">
-              <div className="flex flex-wrap gap-2.5">
-                <GuidedDropdown variant="pill" value={block.time} onChange={v=>onChange({time:v})} options={WHENS} guide={WHEN_GUIDE} placeholder="Choose a time"/>
-                <GuidedDropdown variant="pill" value={block.people} onChange={v=>onChange({people:v})} options={AUDS} guide={AUD_GUIDE} placeholder="For who"/>
-              </div>
-            </BlockPanel>
             <BlockPanel badge="IF" tone="violet" title="Conditions" subtitle={hasConds ? "when these are true" : "optional — leave empty to always run"}>
               {!hasConds && <p className="text-[12.5px] text-slate-400 italic mb-2.5">No conditions — this rule always runs.</p>}
               {hasConds &&
@@ -1556,6 +1550,12 @@ function V11Block({block, onCopy, onToggle, onChange, onDuplicate, onRemove}){
               <div className="flex flex-wrap gap-2">
                 <V9AddBtn label="Add Condition" variant="cond" onClick={addCond}/>
                 <V9AddBtn label="Add Condition Group" variant="group" onClick={addGroup}/>
+              </div>
+            </BlockPanel>
+            <BlockPanel badge="WHEN" tone="sky" title="When the rule runs" subtitle="and for who">
+              <div className="flex flex-wrap gap-2.5">
+                <GuidedDropdown variant="pill" value={block.time} onChange={v=>onChange({time:v})} options={WHENS} guide={WHEN_GUIDE} placeholder="Choose a time"/>
+                <GuidedDropdown variant="pill" value={block.people} onChange={v=>onChange({people:v})} options={AUDS} guide={AUD_GUIDE} placeholder="For who"/>
               </div>
             </BlockPanel>
             <div className="rounded-xl bg-slate-50 px-3.5 py-2.5">

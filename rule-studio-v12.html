@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Motadata ServiceOps — Request Form (V10 · Form Builder)</title>
+<title>Motadata ServiceOps — Request Form (V12 · Multi-Field Rule Workspace)</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -55,6 +55,9 @@ const ICON = {
   x:         <path d="M18 6L6 18M6 6l12 12"/>,
   copy:      <><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></>,
   lock:      <><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></>,
+  clipboard: <><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/></>,
+  trash:     <><path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/></>,
+  power:     <><path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 11-12.8 0"/></>,
   star:      <path d="M12 2.5l2.9 5.9 6.6.9-4.8 4.6 1.1 6.5L12 17.8 6.2 20.9l1.1-6.5L2.5 9.3l6.6-.9z" fill="currentColor" stroke="none"/>,
   info:      <><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></>,
   back:      <path d="M19 12H5M12 19l-7-7 7-7"/>,
@@ -388,17 +391,16 @@ function TabsRow({tab, onBuilder, onRules, total}){
         <Tab active={tab==="builder"} icon="layout"  label="Form Builder" onClick={onBuilder}/>
         <Tab active={tab==="rules"}   icon="sliders" label="Form Rules"   badge={total} onClick={onRules}/>
       </div>
-      {tab==="builder" &&
-        <div className="flex items-center gap-2 pr-2">
-          <button className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-[13px] text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 transition">
-            <Ico name="eye" size={15}/> Preview
-          </button>
-          <button onClick={()=>setSaved(true)}
-            className="inline-flex items-center gap-1.5 h-8 px-4 rounded-md text-[13px] font-medium text-white shadow-sm transition"
-            style={{background: saved ? "#16a34a" : BRAND}}>
-            {saved ? <><Ico name="check" size={15}/> Saved</> : "Save"}
-          </button>
-        </div>}
+      <div className="flex items-center gap-2 pr-2">
+        <button className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-[13px] text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 transition">
+          <Ico name="eye" size={15}/> Preview
+        </button>
+        <button onClick={()=>setSaved(true)}
+          className="inline-flex items-center gap-1.5 h-8 px-4 rounded-md text-[13px] font-medium text-white shadow-sm transition"
+          style={{background: saved ? "#16a34a" : BRAND}}>
+          {saved ? <><Ico name="check" size={15}/> Saved</> : "Save"}
+        </button>
+      </div>
     </div>
   );
 }
@@ -492,49 +494,62 @@ function FieldControl({field}){
     </div>
   );
 }
-function FieldRow({field, flash, goRules}){
+function FieldRow({field, flash, goRules, selected, onToggleSelect}){
   const id = field.id;
   const count = ruleCount(id);
   const cCount = condRulesFor(id).length;
   const aCount = actRulesFor(id).length;
   const isFlash = flash===id;
+  const selMode = selected.length>0;          // any field selected → show all checkboxes
+  const isSel = selected.includes(id);
   return (
     <div className={"group relative rounded-lg px-3 py-2.5 transition-all duration-150 " +
-      (isFlash ? "v10-flash ring-1 ring-sky-300 bg-sky-50/70 " : "hover:bg-slate-50/80 hover:ring-1 hover:ring-slate-300/70 hover:shadow ")}>
+      (isFlash ? "v10-flash ring-1 ring-sky-300 bg-sky-50/70 "
+        : isSel ? "ring-1 ring-sky-300 bg-sky-50/40 "
+        : "hover:bg-slate-50/80 hover:ring-1 hover:ring-slate-300/70 hover:shadow ")}>
       <span className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full opacity-0 group-hover:opacity-100 transition" style={{background:BRAND}} />
       <div className="absolute -left-5 top-3.5 text-slate-300 opacity-0 group-hover:opacity-100 transition cursor-grab" title="Drag to reorder">
         <Grip/>
       </div>
-      {/* Floating contextual toolbar — one field-centric action: Configure Rules (opens the sidebar). */}
-      <div className="absolute right-1.5 top-1.5 z-10 opacity-0 pointer-events-none translate-y-1 group-hover:opacity-100 group-hover:pointer-events-auto group-hover:translate-y-0 transition-all duration-150">
-        <div className="flex items-center gap-2 rounded-lg bg-white ring-1 ring-slate-200 shadow-md px-1.5 py-1">
-          {count>0 && <span className="text-[10.5px] text-slate-400 pl-0.5 whitespace-nowrap">{cCount} cond · {aCount} act</span>}
-          <TbBtn icon="zap" label="Configure Rules" primary onClick={()=>goRules(id)}/>
-        </div>
-      </div>
+      {/* Floating contextual toolbar — one field-centric action: Configure Rules (opens the sidebar). Hidden in multi-select: only the bulk flow applies. */}
+      {!selMode &&
+        <div className="absolute right-1.5 top-1.5 z-10 opacity-0 pointer-events-none translate-y-1 group-hover:opacity-100 group-hover:pointer-events-auto group-hover:translate-y-0 transition-all duration-150">
+          <div className="flex items-center gap-2 rounded-lg bg-white ring-1 ring-slate-200 shadow-md px-1.5 py-1">
+            {count>0 && <span className="text-[10.5px] text-slate-400 pl-0.5 whitespace-nowrap">{cCount} cond · {aCount} act</span>}
+            <TbBtn icon="zap" label="Configure Rules" primary onClick={()=>goRules(id)}/>
+          </div>
+        </div>}
       <div className="flex items-center gap-2 flex-wrap mb-2 pr-2 min-h-[20px]">
+        <input type="checkbox" checked={isSel} onChange={()=>onToggleSelect(id)}
+          className={"appearance-none relative w-3.5 h-3.5 shrink-0 cursor-pointer rounded-[3px] border border-slate-300 bg-white transition checked:bg-sky-500 checked:border-sky-500 after:content-[''] after:absolute after:left-[4px] after:top-[1px] after:w-[4px] after:h-[7px] after:border-white after:border-r-2 after:border-b-2 after:rotate-45 after:opacity-0 checked:after:opacity-100 " + ((selMode||isSel) ? "opacity-100" : "opacity-0 group-hover:opacity-100")}
+          title={isSel ? "Selected for bulk configuration" : "Select to configure with other fields"}/>
         <label className="text-[13px] font-medium text-slate-600">{field.label}</label>
         {field.required && <span className="text-rose-500 -ml-1">*</span>}
         {count>0
-          ? <RuleBadge count={count} cCount={cCount} aCount={aCount} onClick={()=>goRules(id)}/>
-          : <button onClick={()=>goRules(id)} title="No rules yet — configure rules for this field"
+          ? (selMode
+              ? <span title={count + " rule" + (count===1?"":"s") + " on this field"}
+                  className={"inline-flex items-center gap-1 rounded-full pl-1.5 pr-2 py-0.5 text-[11px] font-semibold ring-1 " + (count>=5 ? "bg-sky-100 text-[#0f6ea3] ring-sky-200" : "bg-sky-50 text-[#1180c1] ring-sky-200/80")}>
+                  <Ico name={count>=5 ? "layers" : "flag"} size={11}/>{count} {count===1 ? "rule" : "rules"}
+                </span>
+              : <RuleBadge count={count} cCount={cCount} aCount={aCount} onClick={()=>goRules(id)}/>)
+          : (!selMode && <button onClick={()=>goRules(id)} title="No rules yet — configure rules for this field"
               className="text-slate-300 hover:text-[#1593d4] opacity-70 hover:opacity-100 transition">
               <Ico name="flag" size={12}/>
-            </button>}
+            </button>)}
       </div>
       <FieldControl field={field}/>
     </div>
   );
 }
-function FormRow({row, flash, goRules}){
+function FormRow({row, flash, goRules, selected, onToggleSelect}){
   if(row.length===2){
     return (
       <div className="grid grid-cols-2 gap-x-10">
-        {row.map(f=> <FieldRow key={f.id} field={f} flash={flash} goRules={goRules}/>)}
+        {row.map(f=> <FieldRow key={f.id} field={f} flash={flash} goRules={goRules} selected={selected} onToggleSelect={onToggleSelect}/>)}
       </div>
     );
   }
-  return <FieldRow field={row[0]} flash={flash} goRules={goRules}/>;
+  return <FieldRow field={row[0]} flash={flash} goRules={goRules} selected={selected} onToggleSelect={onToggleSelect}/>;
 }
 
 /* ============================================================ LEFT PALETTE */
@@ -586,30 +601,59 @@ function Palette(){
 }
 
 /* ============================================================ CANVAS */
-function Canvas({flash, goRules}){
+function Canvas({flash, goRules, selected, onToggleSelect}){
   return (
     <div className="max-w-5xl mx-auto">
       <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <div>
             <h2 className="text-[15px] font-semibold" style={{color:BRAND}}>Request Form</h2>
-            <p className="text-[12px] text-slate-400 mt-0.5">Hover any field to see its rules and quick actions.</p>
+            <p className="text-[12px] text-slate-400 mt-0.5">Hover any field to see its rules — or tick fields to configure several at once.</p>
           </div>
           <button className="text-slate-400 hover:text-slate-600 transition"><Ico name="gear" size={17}/></button>
         </div>
         <div className="px-7 py-6 space-y-3">
-          {FORM_ROWS.map((row,i)=> <FormRow key={i} row={row} flash={flash} goRules={goRules}/>)}
+          {FORM_ROWS.map((row,i)=> <FormRow key={i} row={row} flash={flash} goRules={goRules} selected={selected} onToggleSelect={onToggleSelect}/>)}
         </div>
       </div>
     </div>
   );
 }
-function FormBuilder({flash, goRules}){
+// Bulk-selection summary bar — appears once any field is ticked; the "Configure N fields" CTA is the primary action for the selection state.
+function SelectionBar({selected, onToggleSelect, onConfigureBulk, onClearSelected}){
+  if(!selected.length) return null;
+  return (
+    <div className="sticky top-0 z-20 -mt-6 -mx-8 px-8 pt-4 pb-3 mb-4 bg-slate-50/95 backdrop-blur border-b border-slate-200">
+      <div className="max-w-5xl mx-auto flex items-center gap-3 flex-wrap">
+        <span className="inline-flex items-center gap-2 text-[13px] font-semibold text-slate-700 shrink-0">
+          <span className="w-6 h-6 rounded-md grid place-items-center text-white text-[12px] font-bold" style={{background:BRAND}}>{selected.length}</span>
+          field{selected.length===1?"":"s"} selected
+        </span>
+        <div className="flex items-center gap-1.5 flex-wrap flex-1 min-w-0">
+          {selected.map(fid=>
+            <span key={fid} className="inline-flex items-center gap-1 rounded-full bg-white ring-1 ring-slate-200 text-slate-600 text-[11.5px] pl-2 pr-1 py-0.5">
+              {labelOf(fid)}
+              <button onClick={()=>onToggleSelect(fid)} className="text-slate-400 hover:text-rose-500" title="Remove from selection"><Ico name="x" size={12}/></button>
+            </span>)}
+        </div>
+        <button onClick={onClearSelected} className="text-[12.5px] text-slate-500 hover:text-slate-700 shrink-0 inline-flex items-center gap-1" title="Exit multi-select"><Ico name="x" size={13}/> Clear selection</button>
+        {selected.length>=2
+          ? <button onClick={onConfigureBulk}
+              className="inline-flex items-center gap-1.5 h-9 px-4 rounded-lg text-[13px] font-medium text-white shadow-sm hover:shadow transition shrink-0" style={{background:BRAND}}>
+              <Ico name="zap" size={15}/> Configure {selected.length} fields
+            </button>
+          : <span className="text-[11.5px] text-slate-400 shrink-0">Select one more field to configure them together</span>}
+      </div>
+    </div>
+  );
+}
+function FormBuilder({flash, goRules, selected, onToggleSelect, onConfigureBulk, onClearSelected}){
   return (
     <div className="h-full flex min-h-0 bg-slate-50">
       <Palette/>
       <section className="flex-1 min-w-0 overflow-y-auto px-8 py-6">
-        <Canvas flash={flash} goRules={goRules}/>
+        <SelectionBar selected={selected} onToggleSelect={onToggleSelect} onConfigureBulk={onConfigureBulk} onClearSelected={onClearSelected}/>
+        <Canvas flash={flash} goRules={goRules} selected={selected} onToggleSelect={onToggleSelect}/>
       </section>
     </div>
   );
@@ -786,317 +830,6 @@ function FormRules({field, intent, onBack, onOpen, onClear}){
   );
 }
 
-/* ============================================================ CUSTOM RULES (policy configuration) */
-// LEFT sidebar = governance families (kept as navigation). RIGHT = each family's sections; a section's
-// checkboxes / radios are the FIELDS or conditions the rule applies to. Nothing is selected by default.
-// A live policy preview sits under each section, and a sticky "Active Policies" panel translates the
-// whole configuration into plain English. This is a predefined governance surface — NOT a rule builder.
-const CR_FIELDS = [
-  {id:"assignee",label:"Assignee"},{id:"priority",label:"Priority"},{id:"category",label:"Category"},
-  {id:"impact",label:"Impact"},{id:"urgency",label:"Urgency"},{id:"department",label:"Department"},
-  {id:"location",label:"Location"},{id:"group",label:"Technician Group"},
-];
-const CR_CONDITIONS = [
-  {id:"tasks",    label:"All tasks closed",          clause:"all tasks are closed"},
-  {id:"approvals",label:"All approvals completed",   clause:"all approvals are completed"},
-  {id:"problems", label:"All problems closed",       clause:"all problems are closed"},
-  {id:"children", label:"All child requests closed", clause:"all child requests are closed"},
-];
-// Resolved Rules and Closed Rules share the same condition sections (only the target state differs).
-function crStateConditions(p, state){
-  return [
-    { id:p+"-int", bucket:"condition", title:"User Interaction", type:"check",
-      helper:"Require the user to do these before a ticket can be " + state + ".",
-      empty:"No user-interaction requirements configured.",
-      lead:"Before a ticket can be " + state + ",", tail:"must be provided",
-      options:[ {id:"comm",label:"Require communication",clause:"a communication"}, {id:"note",label:"Require note",clause:"a note"} ] },
-    { id:p+"-mand", bucket:"condition", title:"Mandatory Fields", type:"check",
-      helper:"Select the fields that must be completed before a ticket can be " + state + ".",
-      empty:"No mandatory fields configured.",
-      lead:"Before a ticket can be " + state + ",", tail:"must be completed",
-      options:CR_FIELDS },
-    { id:p+"-state", bucket:"condition", title:"Required State", type:"check",
-      helper:"Select the conditions that must be satisfied before a ticket can be " + state + ".",
-      empty:"No required conditions configured.",
-      lead:"A ticket can only be " + state + " when", tail:"",
-      options:CR_CONDITIONS },
-  ];
-}
-const CR_FAMILIES = [
-  { id:"resolved", label:"Resolved Rules", icon:"check", desc:"Configure what must be satisfied before a ticket can be resolved.", examples:["Require mandatory fields","Require communication","Require state validations"],
-    sections:[ ...crStateConditions("r","resolved"),
-      { id:"r-act", bucket:"action", title:"Enforcement", type:"radio",
-        helper:"Choose what the system should enforce when the conditions are met.",
-        empty:"No enforcement selected.",
-        options:[ {id:"block",label:"Block resolution until the selected conditions are satisfied"},
-                  {id:"allow",label:"Allow resolving only when the configured requirements are met"} ] },
-    ]},
-  { id:"closed", label:"Closed Rules", icon:"lock", desc:"Configure what must be satisfied before a ticket can be closed.", examples:["Mandatory fields","Required interactions","State validations"],
-    sections:[ ...crStateConditions("c","closed"),
-      { id:"c-act", bucket:"action", title:"Enforcement", type:"radio",
-        helper:"Choose what the system should enforce when the conditions are met.",
-        empty:"No enforcement selected.",
-        options:[ {id:"block",label:"Block close until the selected conditions are satisfied"},
-                  {id:"allow",label:"Allow closing only when the configured requirements are met"} ] },
-    ]},
-  { id:"note", label:"Required Note Rules", icon:"doc", desc:"Require a note when selected actions happen or fields are updated.", examples:["Reopen ticket","Update Assignee","Update Priority"],
-    sections:[
-      { id:"n-int", bucket:"condition", title:"User Interaction", type:"check",
-        helper:"Choose the actions that should trigger a note requirement.",
-        empty:"No actions configured.",
-        lead:"Triggered when a user", tail:"",
-        options:[ {id:"reopen",label:"Reopen",clause:"reopens the ticket"}, {id:"cancel",label:"Cancel",clause:"cancels the ticket"} ] },
-      { id:"n-fields", bucket:"condition", title:"Service Catalog Updated", type:"check",
-        helper:"Choose the fields whose update should trigger a note requirement.",
-        empty:"No fields configured.",
-        lead:"Triggered when a user updates", tail:"",
-        options:CR_FIELDS },
-      { id:"n-act", bucket:"action", title:"Note enforcement", type:"check",
-        helper:"Choose how the note requirement is enforced when the conditions are met.",
-        empty:"No enforcement selected.",
-        lead:"When triggered,", tail:"",
-        options:[ {id:"require",label:"Require a note",clause:"require a note"},
-                  {id:"prompt",label:"Show a note prompt before continuing",clause:"show a note prompt before continuing"} ] },
-    ]},
-  { id:"dialog", label:"Show Dialog Rules", icon:"chat", desc:"Show a dialog before selected fields are changed.", examples:["Updating Category","Updating Status","Updating Assignee"],
-    sections:[
-      { id:"d-fields", bucket:"condition", title:"Service Catalog Updated", type:"check",
-        helper:"Choose the field updates that should trigger a dialog.",
-        empty:"No fields configured.",
-        lead:"Triggered when a user updates", tail:"",
-        options:CR_FIELDS },
-      { id:"d-act", bucket:"action", title:"Dialog behavior", type:"radio",
-        helper:"Choose what kind of dialog appears before the change proceeds.",
-        empty:"No dialog behavior selected.",
-        options:[ {id:"confirm",label:"Show a confirmation dialog"},
-                  {id:"warn",label:"Show a warning dialog"},
-                  {id:"inform",label:"Show an informational dialog"} ] },
-    ]},
-  { id:"worklog", label:"Add Worklog Rules", icon:"history", desc:"Control who is allowed to add worklogs to a request.", examples:["Only Assignee","Only Technician Group","All Technicians"],
-    sections:[
-      { id:"w-who", bucket:"condition", title:"Access context", type:"radio",
-        helper:"Choose whose worklog access this rule controls.",
-        empty:"No access context selected.",
-        tail:"can add worklogs",
-        options:[ {id:"assignee",label:"Only Assignee",clause:"Only the assigned technician"},
-                  {id:"group",label:"Only Technician Group",clause:"Only the technician group"},
-                  {id:"all",label:"All Technicians",clause:"All technicians"},
-                  {id:"either",label:"Only Assignee or Technician Group",clause:"Only the assignee or technician group"} ] },
-      { id:"w-act", bucket:"action", title:"Access decision", type:"radio",
-        helper:"Choose what the system should do for that access context.",
-        empty:"No decision selected.",
-        options:[ {id:"allow",label:"Allow add worklog"}, {id:"restrict",label:"Restrict add worklog"} ] },
-    ]},
-];
-function crList(arr){
-  if(arr.length===1) return arr[0];
-  if(arr.length===2) return arr[0] + " and " + arr[1];
-  return arr.slice(0,-1).join(", ") + " and " + arr[arr.length-1];
-}
-// Translate a section's selection into a plain-English policy sentence.
-function crSectionPreview(section, ids){
-  if(!ids || !ids.length) return null;
-  const opts = section.options.filter(o=> ids.indexOf(o.id)>=0);
-  if(!opts.length) return null;
-  if(section.type==="radio"){
-    const o = opts[0];
-    return (section.lead ? section.lead + " " : "") + (o.clause || o.label) + (section.tail ? " " + section.tail : "") + ".";
-  }
-  const list = crList(opts.map(o=> o.clause || o.label));
-  return (section.lead ? section.lead + " " : "") + list + (section.tail ? (" " + section.tail) : "") + ".";
-}
-const CR_UNITS = { resolved:["validation","configured"], closed:["validation","configured"], note:["field","selected"], dialog:["field","selected"], worklog:["selection","made"] };
-// Short status detail for a family's dashboard card (e.g., "5 validations configured", or the chosen worklog access).
-function famStatus(fam, sel){
-  const count = fam.sections.reduce((n,sec)=> n + ((sel[sec.id]||[]).length), 0);
-  if(!count) return null;
-  if(fam.id==="worklog"){ const sec = fam.sections.find(s=>s.id==="w-who"); const o = sec && sec.options.find(x=>x.id===(sel["w-who"]||[])[0]); if(o) return o.label; }
-  const u = CR_UNITS[fam.id] || ["item","selected"];
-  return count + " " + u[0] + (count===1?"":"s") + " " + u[1];
-}
-// Split-dropdown entry point: "Create Rule" (primary = Form Rule) + a menu to pick Form vs Custom.
-function CreateRuleButton({onForm, onCustom}){
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="relative">
-      <div className="inline-flex rounded-lg shadow-sm overflow-hidden text-white" style={{background:BRAND}}>
-        <button onClick={()=>setOpen(o=>!o)} className="inline-flex items-center gap-1.5 h-9 pl-3.5 pr-3 text-[13px] font-medium hover:brightness-95 transition"><Ico name="plus" size={15}/> Create Rule</button>
-        <button onClick={()=>setOpen(o=>!o)} className="h-9 px-2 border-l border-white/25 hover:brightness-95 transition" title="Choose rule type"><Ico name="chevdown" size={15}/></button>
-      </div>
-      {open &&
-        <>
-          <div className="fixed inset-0 z-30" onClick={()=>setOpen(false)}/>
-          <div className="absolute right-0 mt-1.5 z-40 w-60 rounded-xl bg-white shadow-xl ring-1 ring-slate-200 overflow-hidden p-1">
-            <button onClick={()=>{ setOpen(false); onForm(); }} className="w-full text-left rounded-lg px-3 py-2 hover:bg-slate-50 flex items-start gap-2.5 transition">
-              <span className="w-7 h-7 rounded-md bg-sky-50 text-[#1593d4] grid place-items-center shrink-0 mt-0.5"><Ico name="layout" size={15}/></span>
-              <span><span className="block text-[13px] font-medium text-slate-800">Create Form Rule</span><span className="block text-[11.5px] text-slate-400">Show / hide, mandate or set field behavior.</span></span>
-            </button>
-            <button onClick={()=>{ setOpen(false); onCustom(); }} className="w-full text-left rounded-lg px-3 py-2 hover:bg-slate-50 flex items-start gap-2.5 transition">
-              <span className="w-7 h-7 rounded-md bg-sky-50 text-[#1593d4] grid place-items-center shrink-0 mt-0.5"><Ico name="shield" size={15}/></span>
-              <span><span className="block text-[13px] font-medium text-slate-800">Create Custom Rule</span><span className="block text-[11.5px] text-slate-400">Governance &amp; compliance policies.</span></span>
-            </button>
-          </div>
-        </>}
-    </div>
-  );
-}
-// One governance section: title + plain-English helper + field checkboxes (or worklog radios) + live policy preview / empty state.
-function CrSection({section, selected, onToggle, onRadio}){
-  const sel = selected || [];
-  const preview = crSectionPreview(section, sel);
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white">
-      <div className="px-4 pt-4 pb-3 border-b border-slate-100">
-        <h4 className="text-[14px] font-semibold text-slate-800">{section.title}</h4>
-        <p className="text-[12.5px] text-slate-500 mt-0.5 leading-snug">{section.helper}</p>
-      </div>
-      <div className="px-4 py-3.5">
-        {section.type==="radio"
-          ? <div className="space-y-0.5">
-              {section.options.map(o=>{ const on = sel[0]===o.id;
-                return (
-                  <label key={o.id} className="flex items-center gap-2.5 py-1.5 px-1 rounded-md hover:bg-slate-50 cursor-pointer">
-                    <span className={"w-4 h-4 rounded-full border-2 grid place-items-center shrink-0 " + (on?"border-[#1593d4]":"border-slate-300")}>{on && <span className="w-2 h-2 rounded-full" style={{background:BRAND}}/>}</span>
-                    <input type="radio" checked={on} onChange={()=>onRadio(section.id,o.id)} className="sr-only"/>
-                    <span className={"text-[13px] " + (on?"text-slate-800 font-medium":"text-slate-700")}>{o.label}</span>
-                  </label>);
-              })}
-            </div>
-          : <div className="grid grid-cols-2 gap-x-5 gap-y-0.5">
-              {section.options.map(o=>{ const on = sel.indexOf(o.id)>=0;
-                return (
-                  <label key={o.id} className="flex items-center gap-2.5 py-1.5 px-1 rounded-md hover:bg-slate-50 cursor-pointer">
-                    <span className={"w-4 h-4 rounded-[4px] border grid place-items-center shrink-0 transition " + (on?"bg-sky-500 border-sky-500":"border-slate-300 bg-white")}>{on && <Ico name="check" size={11} cls="text-white"/>}</span>
-                    <input type="checkbox" checked={on} onChange={()=>onToggle(section.id,o.id)} className="sr-only"/>
-                    <span className={"text-[13px] " + (on?"text-slate-800 font-medium":"text-slate-700")}>{o.label}</span>
-                  </label>);
-              })}
-            </div>}
-      </div>
-      <div className="px-4 py-3 border-t border-slate-100 bg-slate-50/50">
-        {preview
-          ? <p className="text-[12.5px] text-slate-700 flex items-start gap-1.5"><Ico name="info" size={13} cls="text-[#1593d4] mt-0.5 shrink-0"/><span><span className="font-semibold text-slate-500">Policy: </span>{preview}</span></p>
-          : <div className="text-[12.5px] text-slate-400 flex items-center gap-1.5"><Ico name="info" size={13}/> {section.empty}</div>}
-      </div>
-    </div>
-  );
-}
-// Selectable custom-rule-type card (existing V10 card styling; hover elevation + selected indicator).
-function CustomRuleCard({fam, count, detail, onClick}){
-  const configured = count>0;
-  return (
-    <button onClick={onClick}
-      className={"text-left rounded-xl border p-4 w-full transition-all hover:shadow-md " + (configured ? "border-emerald-200 bg-emerald-50/20 hover:border-emerald-300" : "border-slate-200 bg-white hover:border-sky-300")}>
-      <div className="flex items-start gap-2.5">
-        <span className="w-9 h-9 rounded-lg bg-sky-50 text-[#1593d4] grid place-items-center shrink-0"><Ico name={fam.icon} size={17}/></span>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center justify-between gap-2">
-            <h4 className="text-[14px] font-semibold text-slate-800">{fam.label}</h4>
-            {configured
-              ? <span className="inline-flex items-center gap-1 text-[11px] font-semibold rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 px-2 py-0.5 shrink-0"><Ico name="check" size={11}/> Configured</span>
-              : <span className="text-[11px] font-medium rounded-full bg-slate-100 text-slate-400 px-2 py-0.5 shrink-0">Not Configured</span>}
-          </div>
-          <p className="text-[12.5px] text-slate-500 mt-0.5 leading-snug">{fam.desc}</p>
-          <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
-            {configured
-              ? <span className="text-[11.5px] text-emerald-600 font-medium">{detail} · tap to edit</span>
-              : fam.examples.map(ex=> <span key={ex} className="text-[10.5px] rounded-full bg-slate-100 text-slate-500 px-2 py-0.5">{ex}</span>)}
-          </div>
-        </div>
-      </div>
-    </button>
-  );
-}
-// One right-side drawer: pick a custom-rule type, then the SAME drawer transitions to the existing config UI.
-function CustomRuleDrawer({onClose, onSaved}){
-  const [selected, setSelected] = useState(null);
-  const [sel, setSel] = useState({});       // sectionId -> [optionId] (committed working copy)
-  const [snap, setSnap] = useState(null);   // snapshot of the open category's sections, for Cancel revert
-  const [saving, setSaving] = useState(false);
-  const fam = selected ? CR_FAMILIES.find(f=>f.id===selected) : null;
-  const famCount = f => f.sections.reduce((acc,sec)=> acc + ((sel[sec.id]||[]).length), 0);
-  const toggle = (sid,oid) => setSel(s=>{ const cur = s[sid]||[]; return {...s, [sid]: cur.indexOf(oid)>=0 ? cur.filter(x=>x!==oid) : [...cur, oid]}; });
-  const radio  = (sid,oid) => setSel(s=> ({...s, [sid]:[oid]}));
-  // Open a category — snapshot its current sections so Cancel can revert unsaved edits.
-  const openFam = (f) => { const s={}; f.sections.forEach(sec=> s[sec.id]=(sel[sec.id]||[]).slice()); setSnap(s); setSelected(f.id); };
-  const saveCat = () => { setSnap(null); setSelected(null); };                                  // keep live edits, back to dashboard
-  const cancelCat = () => { if(snap) setSel(s=> ({...s, ...snap})); setSnap(null); setSelected(null); };  // revert, back to dashboard
-  // Save Custom Rules = finalize the whole config: persist, close, refresh + toast (parent handles).
-  const saveAll = () => { setSaving(true); setTimeout(()=> onSaved && onSaved(), 700); };
-  return (
-    <>
-      <div className="fixed inset-0 z-40 bg-slate-900/10" onClick={onClose}/>
-      <aside className="fixed top-0 right-0 z-50 h-full w-[620px] max-w-[94vw] bg-white shadow-2xl border-l border-slate-200 flex flex-col v10-drawer">
-        <div className="px-5 py-4 border-b border-slate-100 flex items-start justify-between gap-3 shrink-0">
-          <div className="min-w-0">
-            {fam
-              ? <>
-                  <div className="flex items-center gap-2"><span className="w-7 h-7 rounded-md bg-sky-50 text-[#1593d4] grid place-items-center shrink-0"><Ico name={fam.icon} size={15}/></span><h3 className="text-[16px] font-semibold text-slate-800 truncate">{fam.label}</h3></div>
-                  <p className="text-[12px] text-slate-400 mt-1">{fam.desc}</p>
-                </>
-              : <>
-                  <div className="flex items-center gap-2"><span className="w-7 h-7 rounded-md bg-sky-50 text-[#1593d4] grid place-items-center shrink-0"><Ico name="shield" size={15}/></span><h3 className="text-[16px] font-semibold text-slate-800">Custom Rules</h3></div>
-                  <p className="text-[12px] text-slate-400 mt-1">Configure governance and compliance for this form. Open a category to set it up.</p>
-                </>}
-          </div>
-          <button onClick={onClose} className="w-8 h-8 grid place-items-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-600 shrink-0" title="Close"><Ico name="x" size={17}/></button>
-        </div>
-        <div className="flex-1 overflow-y-auto px-5 py-4">
-          {!fam
-            ? <div className="space-y-2.5">
-                <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Choose a rule type</div>
-                {CR_FAMILIES.map(f=> <CustomRuleCard key={f.id} fam={f} count={famCount(f)} detail={famStatus(f, sel)} onClick={()=>openFam(f)}/>)}
-              </div>
-            : <div className="space-y-6">
-                {[
-                  {bucket:"condition", label:"Conditions", badge:"bg-violet-100 text-violet-700", help:"Choose the event, state, or fields that drive this rule."},
-                  {bucket:"action",    label:"Actions",    badge:"bg-emerald-100 text-emerald-700", help:"Choose what the system should enforce when the conditions are met."},
-                ].map(grp=>{
-                  const secs = fam.sections.filter(s=> (s.bucket||"condition")===grp.bucket);
-                  if(!secs.length) return null;
-                  return (
-                    <div key={grp.bucket}>
-                      <div className="flex items-center gap-2">
-                        <span className={"text-[10.5px] font-bold rounded px-1.5 py-0.5 " + grp.badge}>{grp.label.toUpperCase()}</span>
-                        <h4 className="text-[14px] font-semibold text-slate-800">{grp.label}</h4>
-                      </div>
-                      <p className="text-[12px] text-slate-400 mt-0.5 mb-2.5">{grp.help}</p>
-                      <div className="space-y-3">
-                        {secs.map(sec=> <CrSection key={sec.id} section={sec} selected={sel[sec.id]} onToggle={toggle} onRadio={radio}/>)}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>}
-        </div>
-        {/* Footer — exactly one state: category [Cancel][Save] OR dashboard [Cancel][Save Custom Rules] */}
-        {fam
-          ? <div className="shrink-0 border-t border-slate-200 px-5 py-3 flex items-center justify-between gap-2 bg-white">
-              <button onClick={cancelCat} className="h-9 px-4 rounded-md text-[13px] font-medium text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 transition">Cancel</button>
-              <button onClick={saveCat} className="h-9 px-5 rounded-md text-[13px] font-medium text-white inline-flex items-center gap-1.5 transition" style={{background:BRAND}}><Ico name="check" size={15}/> Save</button>
-            </div>
-          : <div className="shrink-0 border-t border-slate-200 px-5 py-3 flex items-center justify-between gap-2 bg-white">
-              <button onClick={onClose} className="h-9 px-4 rounded-md text-[13px] font-medium text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 transition">Cancel</button>
-              <button onClick={saveAll} className="h-9 px-5 rounded-md text-[13px] font-medium text-white inline-flex items-center gap-1.5 transition" style={{background: saving ? "#16a34a" : BRAND}}><Ico name="check" size={15}/> {saving ? "Saved" : "Save Custom Rules"}</button>
-            </div>}
-      </aside>
-    </>
-  );
-}
-// Form Rules home = a "Create Rule" split-button toolbar above the unchanged Field Rules surface.
-function FormRulesHome({field, intent, onBack, onOpen, onClear, onCreateForm, onCreateCustom}){
-  return (
-    <div className="h-full flex flex-col bg-slate-50">
-      <div className="px-8 py-2.5 shrink-0 bg-slate-50 border-b border-slate-200 flex items-center justify-end">
-        <CreateRuleButton onForm={onCreateForm} onCustom={onCreateCustom}/>
-      </div>
-      <div className="flex-1 min-h-0">
-        <FormRules field={field} intent={intent} onBack={onBack} onOpen={onOpen} onClear={onClear}/>
-      </div>
-    </div>
-  );
-}
-
 /* ============================================================ RULE ATTACHMENT FLOW (field-driven) */
 function MetaChip({icon, children, tone}){
   return (
@@ -1168,6 +901,7 @@ function PickerRuleBody({rule, fieldId}){
     <>
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-1.5 min-w-0">
+          {(rule.recommended || related) && <span className="text-amber-400 shrink-0" title="Recommended"><Ico name="star" size={14}/></span>}
           <h4 className="text-[13.5px] font-semibold text-slate-800 truncate">{rule.name}</h4>
           {rule.status==="Draft" && <StatusPill s="Draft"/>}
         </div>
@@ -1307,7 +1041,7 @@ function summarizeBlock(block, people){
   return cap(condText + actText + aud) + ".";
 }
 function summarizeRule(draft){
-  const parts = (draft.blocks||[]).map(b=> summarizeBlock(b, b.people)).filter(Boolean);
+  const parts = (draft.blocks||[]).map(b=> summarizeBlock(b, draft.people)).filter(Boolean);
   if (!parts.length) return "Add an action to describe what this rule does.";
   return parts.join("  Also, ");
 }
@@ -1437,10 +1171,10 @@ function V9CondRow({c, onChange, onRemove, fieldOpts}){
   return (
     <div className={"flex items-center gap-2 rounded-lg bg-white border p-1.5 " + (c._new ? "border-sky-300 ring-1 ring-sky-200" : "border-slate-200")}>
       <div className="w-40 shrink-0"><GuidedDropdown value={c.fieldId} onChange={v=>onChange({fieldId:v, value:""})} options={fieldOpts} placeholder="Choose field" hint="Pick the form field this condition checks." highlight={c._new}/></div>
-      <div className="w-32 shrink-0"><GuidedDropdown value={c.op} onChange={v=>onChange({op:v, value: OPS_MULTI.indexOf(v)>=0 ? [] : ""})} options={OPS} guide={OP_GUIDE} placeholder="Choose condition"/></div>
+      <div className="w-32 shrink-0"><GuidedDropdown value={c.op} onChange={v=>onChange({op:v, value: OPS_MULTI.indexOf(v)>=0 ? [] : ""})} options={OPS} guide={OP_GUIDE} placeholder="Operator"/></div>
       {OPS_NOVALUE.indexOf(c.op)<0 &&
         <div className="flex-1 min-w-0"><ValueControl fieldId={c.fieldId} op={c.op} value={c.value} onChange={v=>onChange({value:v})}/></div>}
-      {c._new && <span className="text-[10px] font-semibold text-[#1180c1] bg-sky-100 rounded px-1.5 py-0.5 shrink-0">Prefilled</span>}
+      {c._new && <span className="text-[10px] font-semibold text-[#1180c1] bg-sky-100 rounded px-1.5 py-0.5 shrink-0">suggested</span>}
       <button onClick={onRemove} className="text-slate-300 hover:text-rose-500 shrink-0 px-1" title="Remove"><Ico name="x" size={15}/></button>
     </div>
   );
@@ -1448,18 +1182,18 @@ function V9CondRow({c, onChange, onRemove, fieldOpts}){
 function V9ActionRow({a, onChange, onRemove, fieldOpts}){
   return (
     <div className={"flex items-center gap-2 rounded-lg bg-white border p-1.5 " + (a._new ? "border-sky-300 ring-1 ring-sky-200" : "border-slate-200")}>
-      <div className="w-36 shrink-0"><GuidedDropdown value={a.behavior} onChange={v=>onChange({behavior:v})} options={BEHAVIORS} guide={ACTION_GUIDE} placeholder="Choose action"/></div>
+      <div className="w-36 shrink-0"><GuidedDropdown value={a.behavior} onChange={v=>onChange({behavior:v})} options={BEHAVIORS} guide={ACTION_GUIDE} placeholder="Behavior"/></div>
       <div className="flex-1 min-w-0"><GuidedDropdown value={a.fieldId} onChange={v=>onChange({fieldId:v})} options={fieldOpts} placeholder="Choose field" hint="Pick the field this action changes." highlight={a._new}/></div>
       {a.behavior==="Set Value" &&
         <div className="w-32 shrink-0"><ValueControl fieldId={a.fieldId} op="Equals" value={a.value} onChange={v=>onChange({value:v})}/></div>}
-      {a._new && <span className="text-[10px] font-semibold text-[#1180c1] bg-sky-100 rounded px-1.5 py-0.5 shrink-0">Prefilled</span>}
+      {a._new && <span className="text-[10px] font-semibold text-[#1180c1] bg-sky-100 rounded px-1.5 py-0.5 shrink-0">suggested</span>}
       <button onClick={onRemove} className="text-slate-300 hover:text-rose-500 shrink-0 px-1" title="Remove"><Ico name="x" size={15}/></button>
     </div>
   );
 }
 function V9Group({g, onChange, onRemove, fieldOpts}){
   const setLeaf = (i,p)=> onChange({conditions: g.conditions.map((c,j)=> j===i?{...c,...p}:c)});
-  const addLeaf = ()=> onChange({conditions:[...g.conditions, {fieldId:"", op:"", value:""}]});
+  const addLeaf = ()=> onChange({conditions:[...g.conditions, {fieldId:"", op:"Equals", value:""}]});
   const rmLeaf  = i => onChange({conditions: g.conditions.filter((_,j)=>j!==i)});
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-2.5">
@@ -1478,17 +1212,17 @@ function V9Group({g, onChange, onRemove, fieldOpts}){
     </div>
   );
 }
-function V9Block({block, index, total, onChange, onDuplicate, onRemove, fieldOpts}){
+function V9Block({block, index, total, people, onChange, onDuplicate, onRemove, fieldOpts}){
   const [collapsed, setCollapsed] = useState(false);
   const setCondItem = (i,p)=> onChange({conditions: block.conditions.map((c,j)=> j===i?{...c,...p}:c)});
-  const addCond = ()=> onChange({conditions:[...block.conditions, {fieldId:"", op:"", value:""}]});
-  const addGroup = ()=> onChange({conditions:[...block.conditions, {group:true, match:"all", conditions:[{fieldId:"", op:"", value:""}]}]});
+  const addCond = ()=> onChange({conditions:[...block.conditions, {fieldId:"", op:"Equals", value:""}]});
+  const addGroup = ()=> onChange({conditions:[...block.conditions, {group:true, match:"all", conditions:[{fieldId:"", op:"Equals", value:""}]}]});
   const rmCond = i => onChange({conditions: block.conditions.filter((_,j)=>j!==i)});
   const setAct = (i,p)=> onChange({actions: block.actions.map((a,j)=> j===i?{...a,...p}:a)});
-  const addAct = ()=> onChange({actions:[...block.actions, {behavior:"", fieldId:"", value:""}]});
+  const addAct = ()=> onChange({actions:[...block.actions, {behavior:"Show", fieldId:"", value:""}]});
   const rmAct = i => onChange({actions: block.actions.filter((_,j)=>j!==i)});
   const hasConds = block.conditions.length>0;
-  const sub = summarizeBlock(block, block.people) || "Add an action to define what happens";
+  const sub = summarizeBlock(block, people) || "Add an action to define what happens";
   return (
     <div className="rounded-2xl border-2 border-sky-200 bg-white shadow-sm">
       <div className="flex items-center gap-3 px-4 py-3">
@@ -1503,22 +1237,6 @@ function V9Block({block, index, total, onChange, onDuplicate, onRemove, fieldOpt
       </div>
       {!collapsed &&
         <div className="px-4 pb-4 space-y-3">
-          <div className="rounded-xl bg-slate-50 p-3.5">
-            <div className="flex items-center gap-2 mb-2.5">
-              <span className="text-[10.5px] font-bold rounded px-1.5 py-0.5 bg-sky-100 text-[#1180c1]">WHEN</span>
-              <span className="text-[12.5px] text-slate-500">trigger for this block</span>
-            </div>
-            <h4 className="text-[13.5px] font-semibold text-slate-800">When should this happen?</h4>
-            <p className="text-[12px] text-slate-400 mb-2.5">Choose when this behavior should take effect.</p>
-            <div className="flex flex-wrap gap-2.5">
-              <GuidedDropdown variant="pill" value={block.time} onChange={v=>onChange({time:v})} options={WHENS} guide={WHEN_GUIDE} placeholder="Choose a time"/>
-              <GuidedDropdown variant="pill" value={block.requests} onChange={v=>onChange({requests:v})} options={REQUESTS} guide={REQ_GUIDE} placeholder="Which requests"/>
-            </div>
-            <div className="border-t border-slate-200/70 my-3"/>
-            <h4 className="text-[13.5px] font-semibold text-slate-800">Who should this affect?</h4>
-            <p className="text-[12px] text-slate-400 mb-2.5">Pick who this rule applies to.</p>
-            <GuidedDropdown variant="pill" value={block.people} onChange={v=>onChange({people:v})} options={AUDS} guide={AUD_GUIDE} placeholder="Choose people"/>
-          </div>
           <div className="rounded-xl bg-slate-50 p-3.5">
             <div className="flex items-center gap-2 mb-2">
               <span className="text-[10.5px] font-bold rounded px-1.5 py-0.5 bg-violet-100 text-violet-700">IF</span>
@@ -1593,20 +1311,20 @@ function ContextStrip({fieldId, dir, mode, ruleName, onEdit}){
 }
 function RuleEditor({fieldId, dir, baseRule, onClose, onSaved}){
   const init = useMemo(()=>{
-    const fieldCond = {fieldId, op:"", value:"", _new:true};   // prefill the field only — user picks the condition
-    const fieldAct  = {behavior:"", fieldId, value:"", _new:true};   // prefill the field only — user picks the action
+    const fieldCond = {fieldId, op:"Equals", value:"", _new:true};
+    const fieldAct  = {behavior:"Mandate", fieldId, value:"", _new:true};
     if (baseRule){
-      // Migration: move the rule's shared trigger into the block so each block is a complete unit.
       const block = { match:"all", advanced:!!baseRule.advanced, advOpen:false,
-        time: baseRule.when, requests:"All requests", people: baseRule.audience,
         conditions: baseRule.conditions.map(c=>({...c})), actions: baseRule.actions.map(a=>({...a})) };
       if (dir==="condition") block.conditions.push(fieldCond); else block.actions.push(fieldAct);
-      return { name: baseRule.name, blocks:[block] };
+      return { name: baseRule.name, time: baseRule.when, requests:"All requests", people: baseRule.audience, blocks:[block] };
     }
     return {
       name: "",
+      time: dir==="condition" ? "When a field changes" : "While the form is filled",
+      requests: "All requests",
+      people: "Everyone",
       blocks: [{ match:"all", advanced:false, advOpen:false,
-        time: "", requests: "", people: "",
         conditions: dir==="condition" ? [fieldCond] : [],
         actions: dir==="action" ? [fieldAct] : [] }],
     };
@@ -1618,17 +1336,29 @@ function RuleEditor({fieldId, dir, baseRule, onClose, onSaved}){
   const setBlock = (i,p) => setDraft(d=>({...d, blocks: d.blocks.map((b,j)=> j===i?{...b,...p}:b)}));
   const dupBlock = i => setDraft(d=>{ const src=d.blocks[i]; const copy={...src, conditions:src.conditions.map(c=>({...c})), actions:src.actions.map(a=>({...a}))}; const blocks=d.blocks.slice(); blocks.splice(i+1,0,copy); return {...d, blocks}; });
   const rmBlock = i => setDraft(d=>({...d, blocks: d.blocks.filter((_,j)=>j!==i)}));
-  const addBlock = () => setDraft(d=>({...d, blocks:[...d.blocks, {match:"all", advanced:false, advOpen:false, time:"", requests:"", people:"", conditions:[], actions:[]}]}));
+  const addBlock = () => setDraft(d=>({...d, blocks:[...d.blocks, {match:"all", advanced:false, advOpen:false, conditions:[], actions:[]}]}));
   const summary = summarizeRule(draft);
-  const canSave = draft.blocks.some(b=> b.actions.some(a=>a.fieldId && a.behavior));
+  const canSave = draft.blocks.some(b=> b.actions.some(a=>a.fieldId));
   const save = () => { setSaved(true); setTimeout(()=>{ onSaved && onSaved(); }, 750); };
   return (
     <div>
       <input value={draft.name} onChange={e=>patch({name:e.target.value})} placeholder="Name this rule"
         className="w-full h-11 rounded-lg border border-slate-200 px-3.5 text-[15px] font-semibold outline-none focus:ring-2 focus:ring-sky-100 focus:border-sky-300 mb-4"/>
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 mb-4">
+        <h4 className="text-[14px] font-semibold text-slate-800">When should this happen?</h4>
+        <p className="text-[12px] text-slate-400 mb-2.5">Choose when this behavior should take effect.</p>
+        <div className="flex flex-wrap gap-2.5">
+          <GuidedDropdown variant="pill" value={draft.time} onChange={v=>patch({time:v})} options={WHENS} guide={WHEN_GUIDE} placeholder="Choose a time"/>
+          <GuidedDropdown variant="pill" value={draft.requests} onChange={v=>patch({requests:v})} options={REQUESTS} guide={REQ_GUIDE} placeholder="Which requests"/>
+        </div>
+        <div className="border-t border-slate-100 my-3.5"/>
+        <h4 className="text-[14px] font-semibold text-slate-800">Who should this affect?</h4>
+        <p className="text-[12px] text-slate-400 mb-2.5">Pick who this rule applies to.</p>
+        <GuidedDropdown variant="pill" value={draft.people} onChange={v=>patch({people:v})} options={AUDS} guide={AUD_GUIDE} placeholder="Choose people"/>
+      </div>
       <div className="space-y-3">
         {draft.blocks.map((b,i)=>
-          <V9Block key={i} block={b} index={i} total={draft.blocks.length} fieldOpts={fieldOpts}
+          <V9Block key={i} block={b} index={i} total={draft.blocks.length} people={draft.people} fieldOpts={fieldOpts}
             onChange={p=>setBlock(i,p)} onDuplicate={()=>dupBlock(i)} onRemove={()=>rmBlock(i)}/>)}
       </div>
       <button onClick={addBlock}
@@ -1713,70 +1443,31 @@ function RoleRulesList({fieldId, dir, onPick, onNew}){
         <h4 className="text-[13px] font-semibold text-slate-700">{heading}</h4>
         <span className="text-[11px] text-slate-400">{rules.length} found</span>
       </div>
-      <button onClick={onNew}
-        className="mb-3 w-full inline-flex items-center justify-center gap-1.5 h-11 rounded-xl border border-dashed border-sky-300 text-[13.5px] font-medium text-[#1180c1] bg-sky-50/40 hover:bg-sky-50 transition">
-        <Ico name="plus" size={15}/> Create New Rule
-      </button>
       {rules.length>0
         ? <div className="space-y-2">{rules.map(r=> <PickerRuleCard key={r.id} rule={r} fieldId={fieldId} onPick={onPick}/>)}</div>
-        : <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50/60 px-4 py-6 text-center text-[12.5px] text-slate-400">No rules yet use {lbl} as {dir==="condition" ? "a condition" : "an action"}. Start a new one above.</div>}
-    </div>
-  );
-}
-// V10: clicking the "X rules" chip opens this list FIRST — every rule on the field, Create New on top.
-function FieldRulesList({fieldId, onPick, onNew}){
-  const lbl = labelOf(fieldId);
-  const rules = ruleList(fieldId);   // all rules associated with this field (condition or action)
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-2">
-        <h4 className="text-[13px] font-semibold text-slate-700">Rules for {lbl}</h4>
-        <span className="text-[11px] text-slate-400">{rules.length} found</span>
-      </div>
+        : <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50/60 px-4 py-6 text-center text-[12.5px] text-slate-400">No rules yet use {lbl} as {dir==="condition" ? "a condition" : "an action"}. Start a new one below.</div>}
       <button onClick={onNew}
-        className="mb-3 w-full inline-flex items-center justify-center gap-1.5 h-11 rounded-xl border border-dashed border-sky-300 text-[13.5px] font-medium text-[#1180c1] bg-sky-50/40 hover:bg-sky-50 transition">
+        className="mt-3 w-full inline-flex items-center justify-center gap-1.5 h-11 rounded-xl border border-dashed border-sky-300 text-[13.5px] font-medium text-[#1180c1] bg-sky-50/40 hover:bg-sky-50 transition">
         <Ico name="plus" size={15}/> Create New Rule
       </button>
-      {rules.length>0
-        ? <div className="space-y-2">{rules.map(r=> <PickerRuleCard key={r.id} rule={r} fieldId={fieldId} onPick={onPick}/>)}</div>
-        : <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50/60 px-4 py-6 text-center text-[12.5px] text-slate-400">No rules use {lbl} yet. Create one above.</div>}
     </div>
   );
 }
 // The whole rule-attachment journey lives in ONE contextual right drawer (no popups/wizard screens).
-// Step 1 — choose how the field participates; each card shows how many rules use the field in that role.
-function HowDecision({fieldId, onSelect}){
-  const cCount = condRulesFor(fieldId).length;
-  const aCount = actRulesFor(fieldId).length;
-  return (
-    <div>
-      <h4 className="text-[14px] font-semibold text-slate-800 mb-0.5">How should this field participate?</h4>
-      <p className="text-[12.5px] text-slate-500 mb-3.5">Choose whether this field decides when a rule runs, or is changed when a rule runs.</p>
-      <div className="grid grid-cols-2 gap-3">
-        <ChoiceCard icon="branch" title="Condition" desc="Use this field to determine when a rule should run."
-          hint={cCount + " rule" + (cCount===1?"":"s") + " use this field"} onClick={()=>onSelect("condition")}/>
-        <ChoiceCard icon="zap" accent title="Action" desc="Use this field as the outcome of a rule."
-          hint={aCount + " rule" + (aCount===1?"":"s") + " affect this field"} onClick={()=>onSelect("action")}/>
-      </div>
-    </div>
-  );
-}
 function RuleFlow({flow, setFlow, onClose}){
   const f = flow;
   const fieldId = f.field;
   const lbl = labelOf(fieldId);
   const baseRule = f.ruleId ? RULE_DB.find(r=>r.id===f.ruleId) : null;
-  const setDir  = d => setFlow(x=>({...x, dir:d}));        // keeps mode: field Configure → role list, Create Form Rule → builder
-  const pickRule = id => setFlow(x=>({...x, mode:"existing", ruleId:id, entered:false}));
-  const createNew = () => setFlow(x=>({...x, mode:"new", ruleId:null, entered:false}));
-  const backToList = () => setFlow(x=>({...x, mode:null, ruleId:null, entered:false}));        // keep dir → role-filtered list
-  const backToHow = () => setFlow(x=>({...x, dir:null, mode:null, ruleId:null, entered:false}));   // change participation
+  const setDir  = d => setFlow(x=>({...x, dir:d, mode:null, ruleId:null, entered:false}));
+  const pickRule = id => setFlow(x=>({...x, mode:"existing", ruleId:id}));
+  const createNew = () => setFlow(x=>({...x, mode:"new", ruleId:null}));
+  const backToList = () => setFlow(x=>({...x, mode:null, ruleId:null}));
   const continueEditor = () => setFlow(x=>({...x, entered:true}));
-  const editChoices = () => setFlow(x=>({...x, dir:null, mode:null, ruleId:null, entered:false}));
+  const editChoices = () => setFlow(x=>({...x, mode:null, ruleId:null, entered:false}));
   const inEditor = f.dir && (f.mode==="new" || (f.mode==="existing" && f.ruleId && f.entered));
+  const showList = f.dir && !inEditor && !(f.mode==="existing" && f.ruleId);
   const showPreview = f.dir && f.mode==="existing" && f.ruleId && !f.entered;
-  const showHow = !f.dir;                                  // Step 1: Condition / Action
-  const showList = f.dir && !inEditor && !showPreview;     // Step 2: role-filtered rules + Create New
   return (
     <>
       <div className="fixed inset-0 z-40 bg-slate-900/10" onClick={onClose}/>
@@ -1792,12 +1483,8 @@ function RuleFlow({flow, setFlow, onClose}){
           <button onClick={onClose} className="w-8 h-8 grid place-items-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-600 shrink-0" title="Close"><Ico name="x" size={17}/></button>
         </div>
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
-          {showHow && <HowDecision fieldId={fieldId} onSelect={setDir}/>}
-          {showList &&
-            <div>
-              <button onClick={backToHow} className="text-[12px] text-slate-500 hover:text-slate-700 mb-3 inline-flex items-center gap-1"><Ico name="back" size={13}/> Change participation</button>
-              <RoleRulesList fieldId={fieldId} dir={f.dir} onPick={pickRule} onNew={createNew}/>
-            </div>}
+          {!inEditor && <DecisionBlock n="1" heading="How should this field participate?" options={HOW_OPTS} value={f.dir} onSelect={setDir}/>}
+          {showList && <RoleRulesList fieldId={fieldId} dir={f.dir} onPick={pickRule} onNew={createNew}/>}
           {showPreview &&
             <SelectedRulePreview rule={baseRule} fieldId={fieldId} dir={f.dir} onBack={backToList} onContinue={continueEditor}/>}
           {inEditor &&
@@ -1811,25 +1498,509 @@ function RuleFlow({flow, setFlow, onClose}){
   );
 }
 
+/* ============================================================ V11 FIELD RULE WORKSPACE */
+// Execution scope per seeded rule (New / Existing / Both) — drives the top tabs.
+const EXEC = { r1:"existing", r2:"new", r3:"existing", r4:"new", r5:"both", r6:"new", r7:"existing", r8:"both", r9:"new", r10:"new", r11:"new", r12:"both", r13:"existing", r14:"existing" };
+const ruleExec = id => EXEC[id] || "both";
+const EXEC_TABS = [{k:"new", label:"New requests"}, {k:"existing", label:"Existing requests"}, {k:"both", label:"New & existing"}];
+const execLabel = k => (EXEC_TABS.find(t=>t.k===k) || {}).label || k;
+const ORIGIN = {
+  existing: {label:"Existing", cls:"bg-slate-100 text-slate-500 ring-slate-200"},
+  new:      {label:"New",      cls:"bg-emerald-100 text-emerald-700 ring-emerald-200"},
+  imported: {label:"Linked",   cls:"bg-violet-100 text-violet-700 ring-violet-200"},
+  copied:   {label:"Copied",   cls:"bg-violet-100 text-violet-700 ring-violet-200"},
+};
+function OriginBadge({origin}){
+  const o = ORIGIN[origin] || ORIGIN.existing;
+  return <span className={"text-[10px] font-bold rounded px-1.5 py-0.5 shrink-0 ring-1 " + o.cls}>{o.label}</span>;
+}
+function ScopeChip({exec}){
+  return <span className="text-[10px] rounded-full bg-slate-100 text-slate-500 px-2 py-0.5 shrink-0 whitespace-nowrap">{execLabel(exec)}</span>;
+}
+function BlockPanel({badge, tone, title, subtitle, children}){
+  const tones = { sky:"bg-sky-100 text-[#1180c1]", emerald:"bg-emerald-100 text-emerald-700", violet:"bg-violet-100 text-violet-700", slate:"bg-slate-200 text-slate-500" };
+  return (
+    <div className="rounded-xl bg-slate-50 p-3.5">
+      <div className="flex items-center gap-2 mb-2">
+        <span className={"text-[10.5px] font-bold rounded px-1.5 py-0.5 " + (tones[tone]||tones.sky)}>{badge}</span>
+        <h3 className="text-[13px] font-semibold text-slate-700">{title}</h3>
+        {subtitle && <span className="text-[11.5px] text-slate-400">· {subtitle}</span>}
+      </div>
+      {children}
+    </div>
+  );
+}
+// Enable/disable toggle shown in the top-right corner of a block.
+function Switch({on, onChange, title}){
+  return (
+    <button type="button" role="switch" aria-checked={on} onClick={onChange} title={title}
+      className={"relative inline-flex items-center h-5 w-9 rounded-full transition shrink-0 " + (on ? "" : "bg-slate-200")}
+      style={on ? {background:BRAND} : undefined}>
+      <span className={"inline-block w-4 h-4 rounded-full bg-white shadow-sm transform transition " + (on ? "translate-x-[18px]" : "translate-x-0.5")}/>
+    </button>
+  );
+}
+// Expanded block editor — action-first, then When/Who, Conditions, Advanced, Summary (V9 structure).
+function V11Block({block, onCopy, onToggle, onChange, onDuplicate, onRemove}){
+  const fieldOpts = ALL_FIELDS.map(f=>({value:f.id, label:f.label}));
+  const setAct = (i,p)=> onChange({actions: block.actions.map((a,j)=> j===i?{...a,...p}:a)});
+  const addAct = ()=> onChange({actions:[...block.actions, {behavior:"", fieldId:"", value:""}]});
+  const rmAct  = i => onChange({actions: block.actions.filter((_,j)=>j!==i)});
+  const setCondItem = (i,p)=> onChange({conditions: block.conditions.map((c,j)=> j===i?{...c,...p}:c)});
+  const addCond = ()=> onChange({conditions:[...block.conditions, {fieldId:"", op:"Equals", value:""}]});
+  const addGroup = ()=> onChange({conditions:[...block.conditions, {group:true, match:"all", conditions:[{fieldId:"", op:"Equals", value:""}]}]});
+  const rmCond = i => onChange({conditions: block.conditions.filter((_,j)=>j!==i)});
+  const hasConds = block.conditions.length>0;
+  const revealRest = block.origin!=="new" || block.actions.some(a=> a.fieldId && a.behavior);
+  const summary = summarizeBlock(block, block.people) || "Pick an action to define what this block does.";
+  return (
+    <div className={"rounded-2xl border-2 bg-white shadow-sm " + (block.disabled ? "border-slate-200 " : "border-sky-300 ") + ((block.origin==="copied"||block.origin==="imported") ? "border-l-4 border-l-violet-400" : "")}>
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-100">
+        {block.disabled && <span className="text-[10px] font-bold rounded px-1.5 py-0.5 bg-amber-100 text-amber-700 ring-1 ring-amber-200 shrink-0">Disabled</span>}
+        <input value={block.name} onChange={e=>onChange({name:e.target.value})} placeholder="Name this rule block"
+          className="flex-1 min-w-0 h-8 rounded-md border border-transparent hover:border-slate-200 focus:border-sky-300 px-2 text-[14px] font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-sky-100"/>
+        <ScopeChip exec={block.exec}/>
+        <button onClick={onCopy} className="inline-flex items-center gap-1 h-7 px-2 rounded-md text-[11.5px] font-medium text-slate-500 hover:text-[#1180c1] hover:bg-sky-50 transition shrink-0" title="Copy this rule's ID to reuse on another field"><Ico name="clipboard" size={13}/> Copy</button>
+        <button onClick={onDuplicate} className="text-slate-400 hover:text-slate-600 p-1" title="Duplicate"><Ico name="copy" size={15}/></button>
+        <button onClick={onRemove} className="text-slate-400 hover:text-rose-500 p-1" title="Delete block"><Ico name="trash" size={15}/></button>
+        <button onClick={()=>onChange({expanded:false})} className="text-slate-400 hover:text-slate-600 p-1" title="Collapse"><Ico name="chevdown" size={16}/></button>
+        <Switch on={!block.disabled} onChange={onToggle} title={block.disabled ? "Enable block" : "Disable block"}/>
+      </div>
+      <div className={"px-4 py-3 space-y-3 " + (block.disabled ? "opacity-50" : "")}>
+        {block.origin==="copied" &&
+          <div className="rounded-lg border border-violet-200 bg-violet-50/50 p-3">
+            <div className="text-[10.5px] font-semibold uppercase tracking-wider text-violet-600 mb-2">Pasted from copied rule</div>
+            <div className="space-y-1 text-[12px]">
+              <div className="flex gap-2"><span className="w-24 shrink-0 text-slate-400">Source field</span><span className="font-medium text-slate-700">{block.copiedFrom}</span></div>
+              <div className="flex gap-2"><span className="w-24 shrink-0 text-slate-400">Source rule</span><span className="font-medium text-slate-700">{block.copiedRule}</span></div>
+              <div className="flex gap-2"><span className="w-24 shrink-0 text-slate-400">Reuse on</span><span className="font-medium text-slate-700">{block.reuseOn}{!block.bulkShared && <span className="text-slate-400 font-normal"> (this field)</span>}</span></div>
+            </div>
+            <div className="mt-2 rounded-md bg-white ring-1 ring-violet-100 px-2.5 py-2 text-[12.5px] text-slate-600 leading-snug">{summary}</div>
+            <p className="text-[11px] text-violet-500/80 mt-1.5">Edits here won't change the source.</p>
+          </div>}
+        <BlockPanel badge="THEN" tone="emerald" title="Action" subtitle="what should happen">
+          {block.actions.length===0 && <p className="text-[12.5px] text-slate-400 italic mb-2.5">No action yet — add one to define what happens.</p>}
+          {block.actions.length>0 &&
+            <div className="space-y-1.5 mb-2.5">
+              {block.actions.map((a,i)=> <V9ActionRow key={i} a={a} fieldOpts={fieldOpts} onChange={p=>setAct(i,p)} onRemove={()=>rmAct(i)}/>)}
+            </div>}
+          <V9AddBtn label="Add Action" variant="action" onClick={addAct}/>
+        </BlockPanel>
+        {revealRest &&
+          <>
+            <BlockPanel badge="IF" tone="violet" title="Conditions" subtitle={hasConds ? "when these are true" : "optional — leave empty to always run"}>
+              {!hasConds && <p className="text-[12.5px] text-slate-400 italic mb-2.5">No conditions — this rule always runs.</p>}
+              {hasConds &&
+                <div className="space-y-1.5 mb-2.5">
+                  {block.conditions.map((c,i)=> c.group
+                    ? <V9Group key={i} g={c} fieldOpts={fieldOpts} onChange={p=>setCondItem(i,p)} onRemove={()=>rmCond(i)}/>
+                    : <V9CondRow key={i} c={c} fieldOpts={fieldOpts} onChange={p=>setCondItem(i,p)} onRemove={()=>rmCond(i)}/>)}
+                </div>}
+              <div className="flex flex-wrap gap-2">
+                <V9AddBtn label="Add Condition" variant="cond" onClick={addCond}/>
+                <V9AddBtn label="Add Condition Group" variant="group" onClick={addGroup}/>
+              </div>
+            </BlockPanel>
+            <BlockPanel badge="WHEN" tone="sky" title="When the rule runs" subtitle="and for who">
+              <div className="flex flex-wrap gap-2.5">
+                <GuidedDropdown variant="pill" value={block.time} onChange={v=>onChange({time:v})} options={WHENS} guide={WHEN_GUIDE} placeholder="Choose a time"/>
+                <GuidedDropdown variant="pill" value={block.people} onChange={v=>onChange({people:v})} options={AUDS} guide={AUD_GUIDE} placeholder="For who"/>
+              </div>
+            </BlockPanel>
+            <div className="rounded-xl bg-slate-50 px-3.5 py-2.5">
+              <button onClick={()=>onChange({advOpen: !block.advOpen})} className="w-full flex items-center gap-2">
+                <span className="text-[10.5px] font-bold rounded px-1.5 py-0.5 bg-slate-200 text-slate-500">ADV</span>
+                <span className="text-[12.5px] text-slate-500">advanced behavior</span>
+                <span className="ml-auto flex items-center gap-1.5">
+                  <span className="text-[11px] rounded-full bg-slate-100 text-slate-500 px-2 py-0.5">{block.advanced ? "On" : "Optional"}</span>
+                  <Ico name="chevdown" size={14} cls={"text-slate-400 " + (block.advOpen ? "" : "-rotate-90")}/>
+                </span>
+              </button>
+              {block.advOpen &&
+                <label className="mt-2.5 flex items-center gap-2.5 rounded-lg border border-slate-200 bg-white px-3 py-2.5 cursor-pointer">
+                  <input type="checkbox" checked={!!block.advanced} onChange={e=>onChange({advanced:e.target.checked})} className="accent-sky-500 w-4 h-4"/>
+                  <span className="text-[12.5px] text-slate-600">Reverse this rule when the condition is no longer true</span>
+                </label>}
+            </div>
+          </>}
+        <div className="rounded-lg bg-white ring-1 ring-slate-200 px-3.5 py-3">
+          <div className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-400 mb-1 flex items-center gap-1.5"><Ico name="info" size={12}/> In plain English</div>
+          <p className="text-[13.5px] text-slate-700 leading-snug">{summary}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+// Collapsed, summary-driven block card.
+function V11BlockCard({block, onCopy, onToggle, onExpand, onDuplicate, onRemove}){
+  const summary = summarizeBlock(block, block.people) || "No action set yet.";
+  const copied = block.origin==="copied" || block.origin==="imported";
+  return (
+    <div className={"rounded-xl border bg-white transition " + (copied ? "border-slate-200 border-l-4 border-l-violet-400 " : "border-slate-200 ") + (block.disabled ? "bg-slate-50/40" : "hover:border-slate-300 hover:shadow-sm")}>
+      <div className="px-4 py-3">
+        <div className="flex items-start gap-2">
+          <button onClick={onExpand} className={"flex-1 min-w-0 text-left " + (block.disabled ? "opacity-60" : "")}>
+            <div className="text-[13.5px] font-semibold text-slate-800 truncate">{block.name || "Untitled rule block"}</div>
+            <div className="text-[12px] text-slate-500 mt-0.5 leading-snug">{summary}</div>
+          </button>
+          <Switch on={!block.disabled} onChange={onToggle} title={block.disabled ? "Enable block" : "Disable block"}/>
+        </div>
+        <div className="flex items-center justify-between gap-2 mt-2.5">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <ScopeChip exec={block.exec}/>
+            {block.disabled && <span className="text-[10px] font-semibold rounded px-1.5 py-0.5 bg-amber-50 text-amber-600 ring-1 ring-amber-200">Disabled</span>}
+          </div>
+          <div className="flex items-center gap-0.5 shrink-0">
+            <button onClick={onCopy} className="text-slate-400 hover:text-[#1180c1] p-1.5 rounded-md hover:bg-slate-100 transition" title="Copy rule ID"><Ico name="clipboard" size={15}/></button>
+            <button onClick={onDuplicate} className="text-slate-400 hover:text-slate-600 p-1.5 rounded-md hover:bg-slate-100 transition" title="Duplicate"><Ico name="copy" size={15}/></button>
+            <button onClick={onRemove} className="text-slate-400 hover:text-rose-500 p-1.5 rounded-md hover:bg-slate-100 transition" title="Delete block"><Ico name="trash" size={15}/></button>
+            <button onClick={onExpand} className="text-slate-400 hover:text-slate-600 p-1.5 rounded-md hover:bg-slate-100 transition" title="Expand"><Ico name="chevdown" size={16} cls="-rotate-90"/></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+// The field-centric rule workspace: execution tabs · default entry · existing block stack.
+function FieldWorkspace({field, clipboard, onCopy, onClose}){
+  const lbl = labelOf(field);
+  const seq = useRef(1);
+  const nid = () => "v11-" + (seq.current++);
+  const seed = useMemo(()=> ruleList(field).map(r=>({
+    id: r.id, origin:"existing", linkedId:null, exec: ruleExec(r.id), expanded:false,
+    name: r.name, time: r.when, requests: r.requests || "All requests", people: r.audience, match:"all",
+    conditions: r.conditions.map(c=>({...c})), actions: r.actions.map(a=>({...a})), advanced: !!r.advanced, advOpen:false,
+  })), [field]);
+  const [blocks, setBlocks] = useState(seed);
+  const [tab, setTab] = useState(()=> { for (let i=0;i<EXEC_TABS.length;i++){ if (seed.some(b=>b.exec===EXEC_TABS[i].k)) return EXEC_TABS[i].k; } return "new"; });
+  const [toast, setToast] = useState("");
+  useEffect(()=>{ if(!toast) return; const t=setTimeout(()=>setToast(""), 3200); return ()=>clearTimeout(t); }, [toast]);
+  const [saving, setSaving] = useState(false);
+  const save = () => { setSaving(true); setTimeout(onClose, 650); };
+
+  const counts = { new:0, existing:0, both:0 };
+  blocks.forEach(b=> { counts[b.exec] = (counts[b.exec]||0) + 1; });
+  const visible = blocks.filter(b=> b.exec===tab);
+
+  const setBlock = (id,p)=> setBlocks(bs=> bs.map(b=> b.id===id ? {...b, ...p} : b));
+  const removeBlock = id => setBlocks(bs=> bs.filter(b=> b.id!==id));
+  const dupBlock = id => setBlocks(bs=> {
+    const i = bs.findIndex(b=>b.id===id); if (i<0) return bs;
+    const src = bs[i];
+    const copy = {...src, id:nid(), origin:"new", linkedId:null, expanded:false, name:(src.name || "Rule block") + " (copy)",
+      conditions: src.conditions.map(c=>({...c})), actions: src.actions.map(a=>({...a}))};
+    const out = bs.slice(); out.splice(i+1, 0, copy); return out;
+  });
+  const addNew = () => {
+    const nb = { id:nid(), origin:"new", linkedId:null, exec:tab, expanded:true,
+      name:"", time:"", requests:"All requests", people:"Everyone", match:"all",
+      conditions:[], actions:[{behavior:"", fieldId:field, value:"", _new:true}], advanced:false, advOpen:false };
+    setBlocks(bs=> [nb, ...bs]);
+  };
+  // Paste = a direct action: drop the copied rule in as a new block (expanded, with an inline preview).
+  const pasteNow = () => {
+    if (!clipboard){ setToast("Copy a rule from a block first, then Paste to reuse it."); return; }
+    const b = clipboard.block;
+    const nb = { id:nid(), origin:"copied", linkedId:(RULE_DB.some(x=>x.id===clipboard.id) ? clipboard.id : null),
+      copiedFrom:clipboard.fromField, copiedRule:clipboard.name, reuseOn:lbl, exec:tab, expanded:true,
+      name:clipboard.name, time:b.time, requests:b.requests, people:b.people, match:b.match,
+      conditions:b.conditions.map(c=>({...c})), actions:b.actions.map(a=>({...a})), advanced:b.advanced, advOpen:false };
+    setBlocks(bs=> [nb, ...bs]);
+  };
+  const copyBlock = (block) => {
+    const b = { time:block.time, requests:block.requests, people:block.people, match:block.match,
+      conditions: block.conditions.map(c=>({...c})), actions: block.actions.map(a=>({...a})), advanced:!!block.advanced };
+    onCopy({ id: block.id, name: block.name || "Untitled rule", fromField: lbl, block: b });
+    setToast("Copied “" + (block.name || "Untitled rule") + "” — open another field and Paste to reuse it.");
+  };
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-slate-900/10" onMouseDown={onClose}/>
+      <aside className="fixed top-0 right-0 z-50 h-full w-[620px] max-w-[94vw] bg-white shadow-2xl border-l border-slate-200 flex flex-col v10-drawer">
+        <div className="px-5 py-4 border-b border-slate-100 flex items-start justify-between gap-3 shrink-0">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="w-7 h-7 rounded-md bg-sky-50 text-[#1593d4] grid place-items-center shrink-0"><Ico name="flag" size={15}/></span>
+              <h3 className="text-[16px] font-semibold text-slate-800 truncate">{lbl} — Rules</h3>
+            </div>
+            <p className="text-[12px] text-slate-400 mt-1">Manage the rule blocks that apply to this field.</p>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 grid place-items-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-600 shrink-0" title="Close"><Ico name="x" size={17}/></button>
+        </div>
+        <div className="flex gap-1 px-3 py-2 border-b border-slate-100 bg-slate-50/60 shrink-0">
+          {EXEC_TABS.map(t=>
+            <button key={t.k} onClick={()=>setTab(t.k)} title={t.label}
+              className={"flex-1 h-9 rounded-lg text-[12.5px] font-medium transition inline-flex items-center justify-center gap-1.5 " + (tab===t.k ? "bg-white text-[#1180c1] ring-1 ring-sky-200 shadow-sm" : "text-slate-500 hover:bg-white/70")}>
+              {t.label}
+              {counts[t.k]>0 && <span className={"text-[10px] rounded-full px-1.5 font-bold " + (tab===t.k ? "bg-sky-100 text-[#1180c1]" : "bg-slate-200 text-slate-500")}>{counts[t.k]}</span>}
+            </button>)}
+        </div>
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+          {toast && <div className="rounded-lg bg-emerald-50 ring-1 ring-emerald-200 text-emerald-700 text-[12px] px-3 py-2 flex items-center gap-2"><Ico name="check" size={13}/>{toast}</div>}
+          <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-sky-50/70 to-white p-3.5">
+            <div className="text-[12px] font-semibold text-slate-700 mb-2">Add a rule for {lbl}</div>
+            <div className="flex gap-2 flex-wrap">
+              <button onClick={addNew} className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg text-[13px] font-medium text-white shadow-sm" style={{background:BRAND}}>
+                <Ico name="plus" size={15}/> Add new block
+              </button>
+              <button onClick={pasteNow}
+                className="relative inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg text-[13px] font-medium border transition border-slate-200 bg-white text-slate-600 hover:border-slate-300">
+                <Ico name="clipboard" size={14}/> Paste rule
+                {clipboard && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-violet-500 ring-2 ring-white" title="A copied rule is ready to paste"/>}
+              </button>
+            </div>
+          </div>
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="text-[13px] font-semibold text-slate-700">Rules on {lbl} · {execLabel(tab)}</h4>
+              <span className="text-[11px] text-slate-400">{visible.length} block{visible.length===1?"":"s"}</span>
+            </div>
+            <div className="space-y-2.5">
+              {visible.length===0 &&
+                <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-8 text-center text-[12.5px] text-slate-400">No rule blocks for {execLabel(tab).toLowerCase()} yet. Add one above.</div>}
+              {visible.map(b=> b.expanded
+                ? <V11Block key={b.id} block={b} onCopy={()=>copyBlock(b)} onToggle={()=>setBlock(b.id,{disabled:!b.disabled})} onChange={p=>setBlock(b.id,p)} onDuplicate={()=>dupBlock(b.id)} onRemove={()=>removeBlock(b.id)}/>
+                : <V11BlockCard key={b.id} block={b} onCopy={()=>copyBlock(b)} onToggle={()=>setBlock(b.id,{disabled:!b.disabled})} onExpand={()=>setBlock(b.id,{expanded:true})} onDuplicate={()=>dupBlock(b.id)} onRemove={()=>removeBlock(b.id)}/>)}
+            </div>
+          </div>
+        </div>
+        <div className="shrink-0 border-t border-slate-200 px-5 py-3 flex items-center justify-between gap-2 bg-white">
+          <span className="text-[11.5px] text-slate-400">{blocks.length} rule block{blocks.length===1?"":"s"} on {lbl}</span>
+          <div className="flex items-center gap-2">
+            <button onClick={onClose} className="h-9 px-4 rounded-md text-[13px] font-medium text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 transition">Cancel</button>
+            <button onClick={save} className="h-9 px-5 rounded-md text-[13px] font-medium text-white transition" style={{background: saving ? "#16a34a" : BRAND}}>{saving ? "Saved ✓" : "Save"}</button>
+          </div>
+        </div>
+      </aside>
+    </>
+  );
+}
+
+// V12 — bulk workspace: one familiar sidebar, an accordion per selected field; Add/Paste apply to every field
+// (each field keeps its own editable copy underneath). Reuses the exact V11.2 block UI inside each accordion.
+function BulkFieldWorkspace({fields, clipboard, onCopy, onClose}){
+  const seq = useRef(1);
+  const nid = () => "v12-" + (seq.current++);
+  // Seed each selected field with its own block list (field-specific data underneath one bulk session).
+  const seed = useMemo(()=>{
+    const m = {};
+    fields.forEach(fid=>{
+      m[fid] = ruleList(fid).map(r=>({
+        id: r.id, origin:"existing", linkedId:null, exec: ruleExec(r.id), expanded:false,
+        name: r.name, time: r.when, requests: r.requests || "All requests", people: r.audience, match:"all",
+        conditions: r.conditions.map(c=>({...c})), actions: r.actions.map(a=>({...a})), advanced: !!r.advanced, advOpen:false,
+      }));
+    });
+    return m;
+  }, [fields]);
+  const [data, setData] = useState(seed);
+  // V12 refinement: keep every field accordion collapsed by default (no auto-expand on open).
+  const [open, setOpen] = useState({});
+  // Restored top-level execution tabs (same model as the V11.2 sidebar); default to the first tab that has rules.
+  const [tab, setTab] = useState(()=>{ for(let i=0;i<EXEC_TABS.length;i++){ if(fields.some(fid=> (seed[fid]||[]).some(b=>b.exec===EXEC_TABS[i].k))) return EXEC_TABS[i].k; } return "new"; });
+  const [shared, setShared] = useState([]);   // one shared pasted-rule representation across all selected fields
+  const [toast, setToast] = useState("");
+  useEffect(()=>{ if(!toast) return; const t=setTimeout(()=>setToast(""), 3200); return ()=>clearTimeout(t); }, [toast]);
+  const [saving, setSaving] = useState(false);
+  const save = () => { setSaving(true); setTimeout(onClose, 650); };
+
+  const totalBlocks = fields.reduce((n,fid)=> n + ((data[fid]||[]).length), 0);
+  const visibleTotal = fields.reduce((n,fid)=> n + ((data[fid]||[]).filter(b=>b.exec===tab).length), 0);
+  const allOpen = fields.every(fid=> open[fid]);
+  const counts = { new:0, existing:0, both:0 };
+  fields.forEach(fid=> (data[fid]||[]).forEach(b=> { counts[b.exec] = (counts[b.exec]||0) + 1; }));
+
+  const setBlock = (fid,id,p)=> setData(d=> ({...d, [fid]: d[fid].map(b=> b.id===id ? {...b, ...p} : b)}));
+  const removeBlock = (fid,id)=> setData(d=> ({...d, [fid]: d[fid].filter(b=> b.id!==id)}));
+  const dupBlock = (fid,id)=> setData(d=>{
+    const arr = d[fid]; const i = arr.findIndex(b=>b.id===id); if(i<0) return d;
+    const src = arr[i];
+    const copy = {...src, id:nid(), origin:"new", linkedId:null, expanded:false, name:(src.name || "Rule block") + " (copy)",
+      conditions: src.conditions.map(c=>({...c})), actions: src.actions.map(a=>({...a}))};
+    const out = arr.slice(); out.splice(i+1, 0, copy); return {...d, [fid]:out};
+  });
+  const copyBlock = (fid, block)=>{
+    const b = { time:block.time, requests:block.requests, people:block.people, match:block.match,
+      conditions: block.conditions.map(c=>({...c})), actions: block.actions.map(a=>({...a})), advanced:!!block.advanced };
+    onCopy({ id: block.id, name: block.name || "Untitled rule", fromField: labelOf(fid), block: b });
+    setToast("Copied “" + (block.name || "Untitled rule") + "” — Paste to reuse it on other fields.");
+  };
+  // Shared pasted-rule block (one representation across all selected fields).
+  const updShared = (id,p)=> setShared(s=> s.map(b=> b.id===id ? {...b, ...p} : b));
+  const rmShared  = id => setShared(s=> s.filter(b=> b.id!==id));
+  const dupShared = id => setShared(s=>{
+    const i = s.findIndex(b=>b.id===id); if(i<0) return s;
+    const src = s[i]; const c = {...src, id:nid(), name:(src.name || "Rule block") + " (copy)",
+      conditions: src.conditions.map(x=>({...x})), actions: src.actions.map(x=>({...x}))};
+    const o = s.slice(); o.splice(i+1, 0, c); return o;
+  });
+  const copyShared = (block)=>{
+    const b = { time:block.time, requests:block.requests, people:block.people, match:block.match,
+      conditions: block.conditions.map(c=>({...c})), actions: block.actions.map(a=>({...a})), advanced:!!block.advanced };
+    onCopy({ id: block.id, name: block.name || "Untitled rule", fromField: fields.length + " selected fields", block: b });
+    setToast("Copied “" + (block.name || "Untitled rule") + "”.");
+  };
+  // SHARED bulk actions — apply to every selected field, each getting its own editable instance.
+  const expandAllFields = () => setOpen(()=>{ const o={}; fields.forEach(fid=> o[fid]=true); return o; });
+  const addNewAll = () => {
+    setData(d=>{
+      const nd = {...d};
+      fields.forEach(fid=>{
+        const nb = { id:nid(), origin:"new", linkedId:null, exec:tab, expanded:true,
+          name:"", time:"", requests:"All requests", people:"Everyone", match:"all",
+          conditions:[], actions:[{behavior:"", fieldId:fid, value:"", _new:true}], advanced:false, advOpen:false };
+        nd[fid] = [nb, ...(d[fid]||[])];
+      });
+      return nd;
+    });
+    expandAllFields();
+    setToast("Added a new rule block to all " + fields.length + " fields.");
+  };
+  // Paste in bulk = ONE shared representation that lists the affected fields (not a copy per field).
+  const pasteAll = () => {
+    if(!clipboard){ setToast("Copy a rule from a block first, then Paste to reuse it on all selected fields."); return; }
+    const cb = clipboard.block;
+    const nb = { id:nid(), origin:"copied", linkedId:(RULE_DB.some(x=>x.id===clipboard.id) ? clipboard.id : null),
+      copiedFrom:clipboard.fromField, copiedRule:clipboard.name, reuseOn:"all selected fields", bulkShared:true, exec:tab, expanded:true,
+      name:clipboard.name, time:cb.time, requests:cb.requests, people:cb.people, match:cb.match,
+      conditions:cb.conditions.map(c=>({...c})), actions:cb.actions.map(a=>({...a})), advanced:cb.advanced, advOpen:false };
+    setShared(s=> [nb, ...s]);
+    setToast("Pasted “" + clipboard.name + "” — one shared rule affecting all " + fields.length + " fields.");
+  };
+  const toggleAll = () => allOpen
+    ? setOpen(()=>{ const o={}; fields.forEach(fid=> o[fid]=false); return o; })
+    : expandAllFields();
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-slate-900/10" onMouseDown={onClose}/>
+      <aside className="fixed top-0 right-0 z-50 h-full w-[620px] max-w-[94vw] bg-white shadow-2xl border-l border-slate-200 flex flex-col v10-drawer">
+        <div className="px-5 py-4 border-b border-slate-100 flex items-start justify-between gap-3 shrink-0">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="w-7 h-7 rounded-md bg-sky-50 text-[#1593d4] grid place-items-center shrink-0"><Ico name="layers" size={15}/></span>
+              <h3 className="text-[16px] font-semibold text-slate-800 truncate">Configure {fields.length} fields</h3>
+            </div>
+            <p className="text-[12px] text-slate-400 mt-1">Add or paste a rule once — it applies to every selected field. Expand a field to fine-tune its own copy.</p>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 grid place-items-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-600 shrink-0" title="Close"><Ico name="x" size={17}/></button>
+        </div>
+        {/* Selected fields stay visible in context */}
+        <div className="flex items-center gap-1.5 flex-wrap px-5 py-2.5 border-b border-slate-100 bg-slate-50/60 shrink-0">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mr-0.5">Affecting</span>
+          {fields.map(fid=>
+            <span key={fid} className="inline-flex items-center gap-1 rounded-full bg-white ring-1 ring-slate-200 text-slate-600 text-[11.5px] px-2 py-0.5">
+              {labelOf(fid)}<span className="text-slate-300">·</span><span className="text-slate-400">{(data[fid]||[]).length}</span>
+            </span>)}
+        </div>
+        <div className="flex gap-1 px-3 py-2 border-b border-slate-100 bg-slate-50/60 shrink-0">
+          {EXEC_TABS.map(t=>
+            <button key={t.k} onClick={()=>setTab(t.k)} title={t.label}
+              className={"flex-1 h-9 rounded-lg text-[12.5px] font-medium transition inline-flex items-center justify-center gap-1.5 " + (tab===t.k ? "bg-white text-[#1180c1] ring-1 ring-sky-200 shadow-sm" : "text-slate-500 hover:bg-white/70")}>
+              {t.label}
+              {counts[t.k]>0 && <span className={"text-[10px] rounded-full px-1.5 font-bold " + (tab===t.k ? "bg-sky-100 text-[#1180c1]" : "bg-slate-200 text-slate-500")}>{counts[t.k]}</span>}
+            </button>)}
+        </div>
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+          {toast && <div className="rounded-lg bg-emerald-50 ring-1 ring-emerald-200 text-emerald-700 text-[12px] px-3 py-2 flex items-center gap-2"><Ico name="check" size={13}/>{toast}</div>}
+          <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-sky-50/70 to-white p-3.5">
+            <div className="text-[12px] font-semibold text-slate-700 mb-2">Add a rule to all {fields.length} selected fields</div>
+            <div className="flex gap-2 flex-wrap">
+              <button onClick={addNewAll} className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg text-[13px] font-medium text-white shadow-sm" style={{background:BRAND}}>
+                <Ico name="plus" size={15}/> Add new block
+              </button>
+              <button onClick={pasteAll}
+                className="relative inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg text-[13px] font-medium border transition border-slate-200 bg-white text-slate-600 hover:border-slate-300">
+                <Ico name="clipboard" size={14}/> Paste rule
+                {clipboard && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-violet-500 ring-2 ring-white" title="A copied rule is ready to paste"/>}
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-2">“Add new block” gives each field its own editable copy. “Paste rule” adds one shared rule across all selected fields.</p>
+          </div>
+          {shared.length>0 &&
+            <div>
+              <h4 className="text-[13px] font-semibold text-slate-700 mb-2">Pasted rule{shared.length>1?"s":""} — applies to all {fields.length} selected fields</h4>
+              <div className="space-y-2.5">
+                {shared.map(b=>
+                  <div key={b.id}>
+                    <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
+                      <span className="text-[11px] font-semibold uppercase tracking-wider text-violet-500 mr-0.5">Affecting</span>
+                      {fields.map(fid=> <span key={fid} className="rounded-full bg-violet-50 ring-1 ring-violet-200 text-violet-700 text-[11px] px-2 py-0.5">{labelOf(fid)}</span>)}
+                    </div>
+                    {b.expanded
+                      ? <V11Block block={b} onCopy={()=>copyShared(b)} onToggle={()=>updShared(b.id,{disabled:!b.disabled})} onChange={p=>updShared(b.id,p)} onDuplicate={()=>dupShared(b.id)} onRemove={()=>rmShared(b.id)}/>
+                      : <V11BlockCard block={b} onCopy={()=>copyShared(b)} onToggle={()=>updShared(b.id,{disabled:!b.disabled})} onExpand={()=>updShared(b.id,{expanded:true})} onDuplicate={()=>dupShared(b.id)} onRemove={()=>rmShared(b.id)}/>}
+                  </div>)}
+              </div>
+            </div>}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="text-[13px] font-semibold text-slate-700">Fields · {visibleTotal} rule block{visibleTotal===1?"":"s"}</h4>
+              <button onClick={toggleAll} className="text-[11.5px] text-slate-500 hover:text-[#1180c1] font-medium">{allOpen ? "Collapse all" : "Expand all"}</button>
+            </div>
+            <div className="space-y-2.5">
+              {fields.map(fid=>{
+                const blocks = (data[fid] || []).filter(b=> b.exec===tab);
+                const isOpen = !!open[fid];
+                const has = blocks.length>0;
+                return (
+                  <div key={fid} className="rounded-xl border border-slate-200 bg-white">
+                    <button onClick={()=>setOpen(o=>({...o,[fid]:!o[fid]}))} className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left">
+                      <Ico name="chevdown" size={16} cls={"text-slate-400 transition shrink-0 " + (isOpen ? "" : "-rotate-90")}/>
+                      <span className="w-7 h-7 rounded-md bg-sky-50 text-[#1593d4] grid place-items-center shrink-0"><Ico name="flag" size={14}/></span>
+                      <span className="flex-1 min-w-0">
+                        <span className="block text-[13.5px] font-semibold text-slate-800 truncate">{labelOf(fid)}</span>
+                        <span className="block text-[11.5px] text-slate-400">{blocks.length} rule block{blocks.length===1?"":"s"}</span>
+                      </span>
+                      {has
+                        ? <span className="inline-flex items-center gap-1 text-[11px] rounded-full bg-emerald-50 text-emerald-600 ring-1 ring-emerald-200 px-2 py-0.5 shrink-0"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500"/>Has rules</span>
+                        : <span className="text-[11px] rounded-full bg-slate-100 text-slate-400 px-2 py-0.5 shrink-0">No rules yet</span>}
+                    </button>
+                    {isOpen &&
+                      <div className="px-3.5 pb-3.5 pt-1 space-y-2.5 border-t border-slate-100">
+                        {blocks.length===0 &&
+                          <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50/60 px-4 py-6 text-center text-[12.5px] text-slate-400 mt-2.5">No rule blocks for this scope yet. Use “Add new block” above to add an editable copy to every selected field.</div>}
+                        {blocks.map(b=> b.expanded
+                          ? <V11Block key={b.id} block={b} onCopy={()=>copyBlock(fid,b)} onToggle={()=>setBlock(fid,b.id,{disabled:!b.disabled})} onChange={p=>setBlock(fid,b.id,p)} onDuplicate={()=>dupBlock(fid,b.id)} onRemove={()=>removeBlock(fid,b.id)}/>
+                          : <V11BlockCard key={b.id} block={b} onCopy={()=>copyBlock(fid,b)} onToggle={()=>setBlock(fid,b.id,{disabled:!b.disabled})} onExpand={()=>setBlock(fid,b.id,{expanded:true})} onDuplicate={()=>dupBlock(fid,b.id)} onRemove={()=>removeBlock(fid,b.id)}/>)}
+                      </div>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+        <div className="shrink-0 border-t border-slate-200 px-5 py-3 flex items-center justify-between gap-2 bg-white">
+          <span className="text-[11.5px] text-slate-400">{totalBlocks} rule block{totalBlocks===1?"":"s"} across {fields.length} fields{shared.length ? " · " + shared.length + " shared" : ""}</span>
+          <div className="flex items-center gap-2">
+            <button onClick={onClose} className="h-9 px-4 rounded-md text-[13px] font-medium text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 transition">Cancel</button>
+            <button onClick={save} className="h-9 px-5 rounded-md text-[13px] font-medium text-white transition" style={{background: saving ? "#16a34a" : BRAND}}>{saving ? "Saved ✓" : "Save"}</button>
+          </div>
+        </div>
+      </aside>
+    </>
+  );
+}
+
 /* ============================================================ APP */
-function AppV10(){
+function AppV11(){
   const [tab, setTab]           = useState("builder");
   const [selField, setSelField] = useState(null);
   const [intent, setIntent]     = useState(null);
   const [flash, setFlash]       = useState(null);
   const [flow, setFlow]         = useState(null);   // field-driven rule-attachment flow
-  const [customOpen, setCustomOpen] = useState(false); // Create Custom Rule drawer
-  const [toast, setToast]       = useState("");
+  const [clipboard, setClipboard] = useState(null); // copied rule reference — persists across fields
+  const [selected, setSelected] = useState([]);     // V12 multi-field selection (preserves tick order)
+  const [bulkOpen, setBulkOpen] = useState(false);  // V12 bulk configuration sidebar
 
-  const openFlow   = (fieldId) => { setSelField(null); setFlash(fieldId); setFlow({ field:fieldId, mode:null, ruleId:null, dir:null, entered:false, creating:false }); };
+  const copyRule  = (clip) => { setClipboard(clip); try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(clip.id); } catch(e){} };
+  const openFlow   = (fieldId) => { setSelField(null); setFlash(fieldId); setFlow({ field:fieldId }); };
   const closeFlow  = () => { setFlow(null); setFlash(null); };
-  // Create Form Rule → open the existing form-rule builder straight into "create new" for a default field.
-  const createForm = () => { setSelField(null); setFlash(null); setFlow({ field: ALL_FIELDS[0].id, mode:"new", ruleId:null, dir:null, entered:false, creating:true }); };
-  const openCustom = () => setCustomOpen(true);
-  const closeCustom= () => setCustomOpen(false);
-  // Save Custom Rules: persist the session (mock), close the drawer, refresh the Form Rules view + toast.
-  const saveCustom = () => { setCustomOpen(false); setTab("rules"); setToast("Custom rules saved successfully."); };
-  useEffect(()=>{ if(!toast) return; const t=setTimeout(()=>setToast(""), 3000); return ()=>clearTimeout(t); }, [toast]);
+  const toggleSelect  = (fieldId) => setSelected(s=> s.includes(fieldId) ? s.filter(x=>x!==fieldId) : [...s, fieldId]);
+  const clearSelected = () => setSelected([]);
+  const openBulk      = () => { if(selected.length>=2) setBulkOpen(true); };
+  const closeBulk     = () => setBulkOpen(false);
   // "Add rule" launches the guided attach flow; View / Edit go to the Form Rules tab.
   const goRules    = (fieldId) => openFlow(fieldId);   // field-centric: one action opens the rule sidebar
   const openTab    = () => { setTab("rules"); };
@@ -1857,26 +2028,25 @@ function AppV10(){
           <div className="flex-1 min-h-0 overflow-hidden">
             <div key={tab} className={(tab==="rules" ? "v10-slide" : "v10-fade") + " h-full"}>
               {tab==="builder"
-                ? <FormBuilder flash={flash} goRules={goRules}/>
-                : <FormRulesHome field={selField} intent={intent} onBack={openBuilder} onOpen={onOpen} onClear={onClear} onCreateForm={createForm} onCreateCustom={openCustom}/>}
+                ? <FormBuilder flash={flash} goRules={goRules} selected={selected} onToggleSelect={toggleSelect} onConfigureBulk={openBulk} onClearSelected={clearSelected}/>
+                : <FormRules field={selField} intent={intent} onBack={openBuilder} onOpen={onOpen} onClear={onClear}/>}
             </div>
           </div>
         </main>
       </div>
-      {flow && <RuleFlow flow={flow} setFlow={setFlow} onClose={closeFlow}/>}
-      {customOpen && <CustomRuleDrawer onClose={closeCustom} onSaved={saveCustom}/>}
-      {toast && <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[60] rounded-lg bg-slate-900 text-white text-[13px] px-4 py-2.5 shadow-lg flex items-center gap-2"><Ico name="check" size={15} cls="text-emerald-400"/>{toast}</div>}
+      {flow && <FieldWorkspace key={flow.field} field={flow.field} clipboard={clipboard} onCopy={copyRule} onClose={closeFlow}/>}
+      {bulkOpen && selected.length>=2 && <BulkFieldWorkspace key={selected.join(",")} fields={selected} clipboard={clipboard} onCopy={copyRule} onClose={closeBulk}/>}
     </div>
   );
 }
 
 try {
-  ReactDOM.createRoot(document.getElementById("root")).render(<AppV10 />);
+  ReactDOM.createRoot(document.getElementById("root")).render(<AppV11 />);
 } catch (e) {
   var _err = document.createElement("pre");
   _err.id = "v10err";
   _err.style.cssText = "white-space:pre-wrap;background:#fff1f2;color:#9f1239;padding:14px 16px;margin:0;font:13px/1.5 ui-monospace,Menlo,Consolas,monospace;border-bottom:3px solid #e11d48;";
-  _err.textContent = "V10 runtime error:\n\n" + ((e && e.stack) ? e.stack : (e && e.message ? e.message : e));
+  _err.textContent = "V12 runtime error:\n\n" + ((e && e.stack) ? e.stack : (e && e.message ? e.message : e));
   document.body.insertBefore(_err, document.body.firstChild);
 }
 </script>
@@ -1899,7 +2069,7 @@ try {
           if (s) Babel.transform(s.textContent, { presets:["react"] });
           msg = "Scripts loaded and compiled OK, but nothing rendered — likely a runtime error.\nOpen DevTools (F12) and copy the red Console error.";
         } catch(err){
-          msg = "V10 failed to compile:\n\n" + (err && err.message ? err.message : err);
+          msg = "V12 failed to compile:\n\n" + (err && err.message ? err.message : err);
         }
       }
       var pre = document.createElement("pre");
