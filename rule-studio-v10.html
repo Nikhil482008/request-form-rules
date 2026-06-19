@@ -1014,9 +1014,13 @@ function CustomRuleCard({fam, count, detail, onClick}){
   );
 }
 // One right-side drawer: pick a custom-rule type, then the SAME drawer transitions to the existing config UI.
-function CustomRuleDrawer({onClose, onSaved}){
-  const [selected, setSelected] = useState(null);
-  const [sel, setSel] = useState({});       // sectionId -> [optionId] (committed working copy)
+function CustomRuleDrawer({onClose, onSaved, initialFamily}){
+  const [selected, setSelected] = useState(initialFamily || null);   // open straight into a family when launched from a field rule
+  // Seeded so the last two families (Show Dialog, Add Worklog) are configured by default.
+  const [sel, setSel] = useState({
+    "d-fields": ["category","assignee"], "d-act": ["confirm"],
+    "w-who": ["either"], "w-act": ["restrict"],
+  });
   const [snap, setSnap] = useState(null);   // snapshot of the open category's sections, for Cancel revert
   const [saving, setSaving] = useState(false);
   const fam = selected ? CR_FAMILIES.find(f=>f.id===selected) : null;
@@ -1708,10 +1712,33 @@ const HOW_OPTS = [
   {key:"action",    icon:"zap",    title:"Action",    desc:"Use this field as the outcome of a rule"},
 ];
 // After the role is chosen, surface the rules relevant to that role + a Create New CTA.
-function RoleRulesList({fieldId, dir, onPick, onNew}){
+// Distinct governance entry interleaved into the field rule list — clearly tagged as a Custom Rule.
+function CustomRuleEntryCard({fam, onClick}){
+  const f = CR_FAMILIES.find(x=>x.id===fam); if(!f) return null;
+  return (
+    <button onClick={onClick}
+      className="text-left w-full rounded-xl border border-violet-200 bg-violet-50/30 p-3.5 hover:border-violet-300 hover:shadow-md transition">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-2.5 min-w-0">
+          <span className="w-8 h-8 rounded-lg bg-violet-100 text-violet-600 grid place-items-center shrink-0"><Ico name={f.icon} size={16}/></span>
+          <div className="min-w-0">
+            <h4 className="text-[13.5px] font-semibold text-slate-800 truncate">{f.label}</h4>
+            <p className="text-[12.5px] text-slate-500 mt-0.5 leading-snug">{f.desc}</p>
+          </div>
+        </div>
+        <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 text-violet-700 ring-1 ring-violet-200 px-2 py-0.5 text-[10.5px] font-semibold shrink-0"><Ico name="shield" size={10}/> Custom Rule</span>
+      </div>
+    </button>
+  );
+}
+function RoleRulesList({fieldId, dir, onPick, onNew, onCustom}){
   const lbl = labelOf(fieldId);
   const rules = dir==="condition" ? condRulesFor(fieldId) : actRulesFor(fieldId);
   const heading = dir==="condition" ? ("Rules using " + lbl + " as a condition") : ("Rules affecting " + lbl);
+  // Interleave the two governance rules at non-fixed positions among the field rules.
+  const merged = [];
+  rules.forEach((r,i)=>{ merged.push({t:"field", r:r}); if(i===0) merged.push({t:"custom", fam:"dialog"}); if(i===2) merged.push({t:"custom", fam:"worklog"}); });
+  ["dialog","worklog"].forEach(fam=>{ if(!merged.some(m=> m.t==="custom" && m.fam===fam)) merged.push({t:"custom", fam:fam}); });
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
@@ -1722,9 +1749,11 @@ function RoleRulesList({fieldId, dir, onPick, onNew}){
         className="mb-3 w-full inline-flex items-center justify-center gap-1.5 h-11 rounded-xl border border-dashed border-sky-300 text-[13.5px] font-medium text-[#1180c1] bg-sky-50/40 hover:bg-sky-50 transition">
         <Ico name="plus" size={15}/> Create New Rule
       </button>
-      {rules.length>0
-        ? <div className="space-y-2">{rules.map(r=> <PickerRuleCard key={r.id} rule={r} fieldId={fieldId} onPick={onPick}/>)}</div>
-        : <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50/60 px-4 py-6 text-center text-[12.5px] text-slate-400">No rules yet use {lbl} as {dir==="condition" ? "a condition" : "an action"}. Start a new one above.</div>}
+      <div className="space-y-2">
+        {merged.map((m,i)=> m.t==="field"
+          ? <PickerRuleCard key={"f-"+m.r.id} rule={m.r} fieldId={fieldId} onPick={onPick}/>
+          : <CustomRuleEntryCard key={"c-"+m.fam} fam={m.fam} onClick={()=> onCustom && onCustom(m.fam)}/>)}
+      </div>
     </div>
   );
 }
@@ -1766,7 +1795,7 @@ function HowDecision({fieldId, onSelect}){
     </div>
   );
 }
-function RuleFlow({flow, setFlow, onClose}){
+function RuleFlow({flow, setFlow, onClose, onCustom}){
   const f = flow;
   const fieldId = f.field;
   const lbl = labelOf(fieldId);
@@ -1801,7 +1830,7 @@ function RuleFlow({flow, setFlow, onClose}){
           {showList &&
             <div>
               <button onClick={backToHow} className="text-[12px] text-slate-500 hover:text-slate-700 mb-3 inline-flex items-center gap-1"><Ico name="back" size={13}/> Change participation</button>
-              <RoleRulesList fieldId={fieldId} dir={f.dir} onPick={pickRule} onNew={createNew}/>
+              <RoleRulesList fieldId={fieldId} dir={f.dir} onPick={pickRule} onNew={createNew} onCustom={onCustom}/>
             </div>}
           {inEditor &&
             <>
@@ -1823,13 +1852,15 @@ function AppV10(){
   const [flash, setFlash]       = useState(null);
   const [flow, setFlow]         = useState(null);   // field-driven rule-attachment flow
   const [customOpen, setCustomOpen] = useState(false); // Create Custom Rule drawer
+  const [customFamily, setCustomFamily] = useState(null); // open the drawer straight into a family (null = dashboard)
   const [toast, setToast]       = useState("");
 
   const openFlow   = (fieldId) => { setSelField(null); setFlash(fieldId); setFlow({ field:fieldId, mode:null, ruleId:null, dir:null, entered:false, creating:false }); };
   const closeFlow  = () => { setFlow(null); setFlash(null); };
   // Create Form Rule → open the existing form-rule builder straight into "create new" for a default field.
   const createForm = () => { setSelField(null); setFlash(null); setFlow({ field: ALL_FIELDS[0].id, mode:"new", ruleId:null, dir:null, entered:false, creating:true }); };
-  const openCustom = () => setCustomOpen(true);
+  const openCustom = () => { setCustomFamily(null); setCustomOpen(true); };
+  const openCustomFamily = (famId) => { setFlow(null); setFlash(null); setCustomFamily(famId); setCustomOpen(true); };  // from an inline custom-rule entry
   const closeCustom= () => setCustomOpen(false);
   // Save Custom Rules: persist the session (mock), close the drawer, refresh the Form Rules view + toast.
   const saveCustom = () => { setCustomOpen(false); setTab("rules"); setToast("Custom rules saved successfully."); };
@@ -1867,8 +1898,8 @@ function AppV10(){
           </div>
         </main>
       </div>
-      {flow && <RuleFlow flow={flow} setFlow={setFlow} onClose={closeFlow}/>}
-      {customOpen && <CustomRuleDrawer onClose={closeCustom} onSaved={saveCustom}/>}
+      {flow && <RuleFlow flow={flow} setFlow={setFlow} onClose={closeFlow} onCustom={openCustomFamily}/>}
+      {customOpen && <CustomRuleDrawer initialFamily={customFamily} onClose={closeCustom} onSaved={saveCustom}/>}
       {toast && <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[60] rounded-lg bg-slate-900 text-white text-[13px] px-4 py-2.5 shadow-lg flex items-center gap-2"><Ico name="check" size={15} cls="text-emerald-400"/>{toast}</div>}
     </div>
   );
