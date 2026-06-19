@@ -657,7 +657,27 @@ function ComingSoonNote(){
     </div>
   );
 }
-function FormRules({field, intent, onBack, onOpen, onClear}){
+// Governance rule shown as a row in the "Fields with rules" overview — distinct violet "Custom Rule" tag.
+function CustomRuleOverviewRow({fam, onClick}){
+  const f = CR_FAMILIES.find(x=>x.id===fam); if(!f) return null;
+  return (
+    <button onClick={onClick}
+      className="w-full text-left rounded-lg border border-violet-200 bg-violet-50/30 px-4 py-3 flex items-center justify-between gap-3 hover:border-violet-300 hover:bg-violet-50/50 transition group">
+      <div className="flex items-center gap-3 min-w-0">
+        <span className="w-8 h-8 rounded-md bg-violet-100 grid place-items-center text-violet-600 shrink-0"><Ico name={f.icon} size={15}/></span>
+        <div className="min-w-0">
+          <div className="text-[13.5px] font-medium text-slate-800 truncate">{f.label}</div>
+          <div className="text-[12px] text-slate-500 truncate">{f.desc}</div>
+        </div>
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 text-violet-700 ring-1 ring-violet-200 px-2 py-0.5 text-[10.5px] font-semibold"><Ico name="shield" size={10}/> Custom Rule</span>
+        <Ico name="chevdown" size={15} cls="-rotate-90 text-slate-300 group-hover:text-slate-500 transition"/>
+      </div>
+    </button>
+  );
+}
+function FormRules({field, intent, onBack, onOpen, onClear, onCustom}){
   // ---- Detail: a specific field carried over from the Form Builder ----
   if(field){
     const rules = ruleList(field);
@@ -731,6 +751,10 @@ function FormRules({field, intent, onBack, onOpen, onClear}){
   // ---- Overview: opened from the tab directly ----
   const withRules = ALL_FIELDS.filter(f=> ruleCount(f.id) > 0);
   const without   = ALL_FIELDS.filter(f=> ruleCount(f.id) === 0);
+  // Interleave the two governance (Custom) rules among the field-rule rows at non-fixed positions.
+  const overviewRows = [];
+  withRules.forEach((f,i)=>{ overviewRows.push({t:"field", f:f}); if(i===1) overviewRows.push({t:"custom", fam:"dialog"}); if(i===4) overviewRows.push({t:"custom", fam:"worklog"}); });
+  ["dialog","worklog"].forEach(fam=>{ if(!overviewRows.some(x=> x.t==="custom" && x.fam===fam)) overviewRows.push({t:"custom", fam:fam}); });
   const Stat = ({n, label, icon}) => (
     <div className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-3 flex items-center gap-3">
       <span className="w-9 h-9 rounded-lg bg-sky-50 grid place-items-center text-[#1593d4]"><Ico name={icon} size={17}/></span>
@@ -753,8 +777,9 @@ function FormRules({field, intent, onBack, onOpen, onClear}){
 
         <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-2">Fields with rules</div>
         <div className="space-y-2 mb-6">
-          {withRules.map(f=>{
-            const c = ruleCount(f.id);
+          {overviewRows.map((row,idx)=>{
+            if(row.t==="custom") return <CustomRuleOverviewRow key={"c-"+row.fam} fam={row.fam} onClick={()=> onCustom && onCustom(row.fam)}/>;
+            const f = row.f; const c = ruleCount(f.id);
             return (
               <button key={f.id} onClick={()=>onOpen(f.id,"view")}
                 className="w-full text-left rounded-lg border border-slate-200 bg-white px-4 py-3 flex items-center justify-between gap-3 hover:border-sky-200 hover:bg-sky-50/40 transition group">
@@ -1094,14 +1119,14 @@ function CustomRuleDrawer({onClose, onSaved, initialFamily}){
   );
 }
 // Form Rules home = a "Create Rule" split-button toolbar above the unchanged Field Rules surface.
-function FormRulesHome({field, intent, onBack, onOpen, onClear, onCreateForm, onCreateCustom}){
+function FormRulesHome({field, intent, onBack, onOpen, onClear, onCreateForm, onCreateCustom, onCustomFamily}){
   return (
     <div className="h-full flex flex-col bg-slate-50">
       <div className="px-8 py-2.5 shrink-0 bg-slate-50 border-b border-slate-200 flex items-center justify-end">
         <CreateRuleButton onForm={onCreateForm} onCustom={onCreateCustom}/>
       </div>
       <div className="flex-1 min-h-0">
-        <FormRules field={field} intent={intent} onBack={onBack} onOpen={onOpen} onClear={onClear}/>
+        <FormRules field={field} intent={intent} onBack={onBack} onOpen={onOpen} onClear={onClear} onCustom={onCustomFamily}/>
       </div>
     </div>
   );
@@ -1893,7 +1918,7 @@ function AppV10(){
             <div key={tab} className={(tab==="rules" ? "v10-slide" : "v10-fade") + " h-full"}>
               {tab==="builder"
                 ? <FormBuilder flash={flash} goRules={goRules}/>
-                : <FormRulesHome field={selField} intent={intent} onBack={openBuilder} onOpen={onOpen} onClear={onClear} onCreateForm={createForm} onCreateCustom={openCustom}/>}
+                : <FormRulesHome field={selField} intent={intent} onBack={openBuilder} onOpen={onOpen} onClear={onClear} onCreateForm={createForm} onCreateCustom={openCustom} onCustomFamily={openCustomFamily}/>}
             </div>
           </div>
         </main>
