@@ -163,6 +163,7 @@ const OP_PHRASE = { "Equals":"is", "Not Equals":"is not", "Starts With":"starts 
 const BEHAVIORS = ["Show","Hide","Mandate","Non-Mandate","Enable","Disable","Set Value","Clear Value","Filter Data"];
 const WHENS = ["When the form opens","While the form is filled","When the form is submitted","When a field changes"];
 const AUDS  = ["Everyone","Technicians","Requesters","Approvers"];
+const EXEC_OPTS = ["New requests","Existing requests","New & existing requests"];   // rule-level execution scope
 // Value pickers: fields with a known option set get a contextual picker instead of a free text box.
 const FIELD_OPTIONS = {
   status:["Open","In Progress","On Hold","Resolved","Closed","Reopened"],
@@ -191,6 +192,11 @@ const AUD_GUIDE = {
   "Technicians": G("Agents only","Apply only to technicians and agents.","Runs only when a technician is using the form.","Requesters are unaffected.","Technicians must set an Assignee."),
   "Requesters": G("End users only","Apply only to requesters on the portal.","Runs only for requester-facing forms.","Technicians are unaffected.","Requesters cannot see internal Status."),
   "Approvers": G("Approvers only","Apply only during approval.","Runs only for users acting as approvers.","Other users are unaffected.","Approvers must add an approval note."),
+};
+const EXEC_GUIDE = {
+  "New requests": G("Only new tickets","Apply this rule only while a request is being created.","Runs on the create form, not on existing tickets.","Affects newly created requests only.","On new requests, require a Category."),
+  "Existing requests": G("Only existing tickets","Apply this rule only when an already-created request is edited.","Runs when an existing ticket is opened or updated.","Affects existing requests only.","On existing requests, lock the Requester."),
+  "New & existing requests": G("Both new and existing","Apply this rule everywhere — on creation and on edit.","Runs on the create form and on existing tickets.","Affects all requests.","On new & existing requests, keep Priority required."),
 };
 const OP_GUIDE = {
   "Equals": G("Exact match","Match a field against one exact value.","True when the field equals the chosen value.","Rule runs only on an exact match.","When Status is Resolved, require a Closure Code."),
@@ -1504,20 +1510,15 @@ function V9Block({block, index, total, onChange, onDuplicate, onRemove, fieldOpt
       {!collapsed &&
         <div className="px-4 pb-4 space-y-3">
           <div className="rounded-xl bg-slate-50 p-3.5">
-            <div className="flex items-center gap-2 mb-2.5">
+            <div className="flex items-center gap-2 mb-1">
               <span className="text-[10.5px] font-bold rounded px-1.5 py-0.5 bg-sky-100 text-[#1180c1]">WHEN</span>
-              <span className="text-[12.5px] text-slate-500">trigger for this block</span>
+              <span className="text-[12.5px] text-slate-500">when this runs</span>
             </div>
-            <h4 className="text-[13.5px] font-semibold text-slate-800">When should this happen?</h4>
-            <p className="text-[12px] text-slate-400 mb-2.5">Choose when this behavior should take effect.</p>
+            <p className="text-[12px] text-slate-400 mb-2.5">Choose when this rule runs and who it applies to.</p>
             <div className="flex flex-wrap gap-2.5">
               <GuidedDropdown variant="pill" value={block.time} onChange={v=>onChange({time:v})} options={WHENS} guide={WHEN_GUIDE} placeholder="Choose a time"/>
-              <GuidedDropdown variant="pill" value={block.requests} onChange={v=>onChange({requests:v})} options={REQUESTS} guide={REQ_GUIDE} placeholder="Which requests"/>
+              <GuidedDropdown variant="pill" value={block.people} onChange={v=>onChange({people:v})} options={AUDS} guide={AUD_GUIDE} placeholder="Choose people"/>
             </div>
-            <div className="border-t border-slate-200/70 my-3"/>
-            <h4 className="text-[13.5px] font-semibold text-slate-800">Who should this affect?</h4>
-            <p className="text-[12px] text-slate-400 mb-2.5">Pick who this rule applies to.</p>
-            <GuidedDropdown variant="pill" value={block.people} onChange={v=>onChange({people:v})} options={AUDS} guide={AUD_GUIDE} placeholder="Choose people"/>
           </div>
           <div className="rounded-xl bg-slate-50 p-3.5">
             <div className="flex items-center gap-2 mb-2">
@@ -1601,10 +1602,11 @@ function RuleEditor({fieldId, dir, baseRule, onClose, onSaved}){
         time: baseRule.when, requests:"All requests", people: baseRule.audience,
         conditions: baseRule.conditions.map(c=>({...c})), actions: baseRule.actions.map(a=>({...a})) };
       if (dir==="condition") block.conditions.push(fieldCond); else block.actions.push(fieldAct);
-      return { name: baseRule.name, blocks:[block] };
+      return { name: baseRule.name, exec: "", blocks:[block] };
     }
     return {
       name: "",
+      exec: "",
       blocks: [{ match:"all", advanced:false, advOpen:false,
         time: "", requests: "", people: "",
         conditions: dir==="condition" ? [fieldCond] : [],
@@ -1624,8 +1626,11 @@ function RuleEditor({fieldId, dir, baseRule, onClose, onSaved}){
   const save = () => { setSaved(true); setTimeout(()=>{ onSaved && onSaved(); }, 750); };
   return (
     <div>
-      <input value={draft.name} onChange={e=>patch({name:e.target.value})} placeholder="Name this rule"
-        className="w-full h-11 rounded-lg border border-slate-200 px-3.5 text-[15px] font-semibold outline-none focus:ring-2 focus:ring-sky-100 focus:border-sky-300 mb-4"/>
+      <div className="flex items-stretch gap-2.5 mb-4">
+        <input value={draft.name} onChange={e=>patch({name:e.target.value})} placeholder="Name this rule"
+          className="flex-1 min-w-0 h-11 rounded-lg border border-slate-200 px-3.5 text-[15px] font-semibold outline-none focus:ring-2 focus:ring-sky-100 focus:border-sky-300"/>
+        <div className="shrink-0"><GuidedDropdown variant="pill" value={draft.exec} onChange={v=>patch({exec:v})} options={EXEC_OPTS} guide={EXEC_GUIDE} placeholder="Which Requests"/></div>
+      </div>
       <div className="space-y-3">
         {draft.blocks.map((b,i)=>
           <V9Block key={i} block={b} index={i} total={draft.blocks.length} fieldOpts={fieldOpts}
