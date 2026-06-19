@@ -47,6 +47,8 @@
     { id:"v112", label:"Field Rule Workspace",  sub:"V11.2", src:"rule-studio-v11-2.html" },
     { id:"v12", label:"Multi-Field Rule Workspace",  sub:"V12", src:"rule-studio-v12.html" },
     { id:"v10", label:"Form Builder",           sub:"V10", src:"rule-studio-v10.html" },
+    { id:"v102", label:"Rule Block Display",    sub:"V10.2", src:"rule-studio-v10-2.html" },
+    { id:"v103", label:"Rule Landmarks",        sub:"V10.3", src:"rule-studio-v10-3.html" },
     { id:"v7", label:"Progressive Workspace",   sub:"V7", src:"rule-studio-v7.html" },
     { id:"v8", label:"Guided Form Canvas",      sub:"V8", src:"rule-studio-v8.html" },
     { id:"v9", label:"Rule Sequence Workspace", sub:"V9", src:"rule-studio-v9.html" },
@@ -67,6 +69,8 @@
     { id:"v92", label:"Guided Sequence Editor",     sub:"V9.2", src:"rule-studio-v9-2.html" },
     { id:"v10", label:"Form Builder",               sub:"V10",  src:"rule-studio-v10.html" },
     { id:"v101",label:"Service Catalog + Rules",     sub:"V10.1",src:"rule-studio-v10-1.html" },
+    { id:"v102",label:"Rule Block Display",          sub:"V10.2",src:"rule-studio-v10-2.html" },
+    { id:"v103",label:"Rule Landmarks",              sub:"V10.3",src:"rule-studio-v10-3.html" },
     { id:"v11", label:"Field Rule Workspace",       sub:"V11",  src:"rule-studio-v11.html" },
     { id:"v112",label:"Field Rule Workspace",       sub:"V11.2",src:"rule-studio-v11-2.html" },
     { id:"v12", label:"Multi-Field Rule Workspace", sub:"V12",  src:"rule-studio-v12.html" },
@@ -81,7 +85,7 @@
 
   // bump on each deploy to bust the browser cache of the iframed prototype (stale cache was loading
   // an old version that still pointed at blocked CDNs → blank iframe)
-  var BUILD = "20260619a";
+  var BUILD = "20260619c";
   function select(id, push){
     var v = vlookup(id);
     frame.src = v.src + "?b=" + BUILD;

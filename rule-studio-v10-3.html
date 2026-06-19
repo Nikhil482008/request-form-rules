@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Motadata ServiceOps — Request Form (V10 · Form Builder)</title>
+<title>Motadata ServiceOps — Request Form (V10.3 · Rule Landmarks)</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -1352,7 +1352,7 @@ function GBlock({label, text}){
   if(!text) return null;
   return <div><div className="text-[9.5px] font-bold tracking-wide text-slate-400 mb-0.5">{label}</div><p className="text-[11.5px] text-slate-600 leading-snug">{text}</p></div>;
 }
-function GuidedDropdown({value, onChange, options, guide, placeholder, hint, variant, highlight, multi}){
+function GuidedDropdown({value, onChange, options, guide, placeholder, hint, variant, highlight, multi, tone}){
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [active, setActive] = useState("");
@@ -1376,16 +1376,26 @@ function GuidedDropdown({value, onChange, options, guide, placeholder, hint, var
     setPos({left, top, W}); setActive(value || (norm[0] && norm[0].value) || ""); setQ(""); setOpen(true);
   };
   const pick = v => { if (isMulti){ const next = arr.indexOf(v)>=0 ? arr.filter(x=>x!==v) : arr.concat([v]); onChange(next); } else { onChange(v); setOpen(false); } };
+  const hasVal = sel || arr.length;
+  // inline variant: borderless, text-only trigger that reads like the read-only rule display (field bold, operator orange-italic)
+  const toneCls = tone==="op"    ? "text-orange-500 italic font-medium"
+                : tone==="field" ? "text-slate-800 font-semibold"
+                : tone==="val"   ? "text-slate-700 font-medium"
+                : "text-slate-700";
   const triggerCls = variant==="pill"
     ? "appearance-none h-11 rounded-lg border bg-white pl-4 pr-9 text-[14px] font-semibold inline-flex items-center justify-between gap-2 min-w-[150px] relative " + (sel?"text-slate-700":"text-slate-400") + " " + (open?"border-sky-300 ring-2 ring-sky-100":"border-slate-200 hover:border-slate-300")
+    : variant==="inline"
+    ? "group/dd inline-flex items-center gap-1 rounded px-1.5 py-1 text-[13.5px] max-w-[200px] transition " + (hasVal ? toneCls : "text-slate-400 italic") + " " + (open ? "bg-white/90 ring-1 ring-sky-200" : "hover:bg-white/70")
     : "h-9 rounded-md border bg-white px-2.5 text-[13px] inline-flex items-center justify-between gap-1.5 w-full relative " + ((sel||arr.length)?"text-slate-700":"text-slate-400") + " " + (open?"border-sky-300 ring-1 ring-sky-200":(highlight?"border-sky-300 ring-1 ring-sky-200":"border-slate-200 hover:border-slate-300"));
   const triggerText = isMulti ? (arr.length ? arr.map(labelFor).join(", ") : (placeholder||"Select")) : (sel ? sel.label : (placeholder||"Select"));
   const g = guide && active && guide[active];
   return (
     <>
       <button ref={btnRef} type="button" onClick={()=> open?setOpen(false):openMenu()} className={triggerCls}>
-        <span className="truncate">{triggerText}</span>
-        <Ico name="chevdown" size={14} cls="text-slate-400 shrink-0"/>
+        <span className={variant==="inline" ? "whitespace-nowrap truncate" : "truncate"}>{triggerText}</span>
+        {variant==="inline"
+          ? <Ico name="chevdown" size={11} cls="text-slate-400 shrink-0 opacity-40 group-hover/dd:opacity-100 transition"/>
+          : <Ico name="chevdown" size={14} cls="text-slate-400 shrink-0"/>}
       </button>
       {open && pos && ReactDOM.createPortal(
         <div className="fixed inset-0 z-[60]" onMouseDown={()=>setOpen(false)}>
@@ -1436,11 +1446,13 @@ function GuidedDropdown({value, onChange, options, guide, placeholder, hint, var
     </>
   );
 }
-function ValueControl({fieldId, op, value, onChange}){
+function ValueControl({fieldId, op, value, onChange, variant, tone}){
   const opts = FIELD_OPTIONS[fieldId];
   const isMulti = OPS_MULTI.indexOf(op) >= 0;
   if (opts && opts.length)
-    return <GuidedDropdown value={value} onChange={onChange} options={opts} placeholder={isMulti ? "Choose values" : "Choose value"} hint={"Pick a value for " + labelOf(fieldId) + "."} multi={isMulti}/>;
+    return <GuidedDropdown variant={variant} tone={tone} value={value} onChange={onChange} options={opts} placeholder={isMulti ? "Choose values" : "Choose value"} hint={"Pick a value for " + labelOf(fieldId) + "."} multi={isMulti}/>;
+  if (variant==="inline")
+    return <input value={(Array.isArray(value)?value.join(", "):value)||""} onChange={e=>onChange(e.target.value)} placeholder="value" className="h-7 min-w-[70px] max-w-[150px] rounded border border-slate-200 bg-white px-2 text-[13px] text-slate-700 font-medium outline-none focus:border-sky-300"/>;
   return <input value={(Array.isArray(value)?value.join(", "):value)||""} onChange={e=>onChange(e.target.value)} placeholder="value" className="h-9 w-full min-w-0 rounded-md border border-slate-200 px-2 text-[13px] outline-none focus:border-sky-300"/>;
 }
 function V9Pill({value, onChange, options, placeholder}){
@@ -1469,48 +1481,119 @@ function V9AddBtn({label, variant, onClick}){
     </button>
   );
 }
-function V9CondRow({c, onChange, onRemove, fieldOpts}){
+/* ===== V10.2 rule blocks — a visual logic flow (WHEN → IF → THEN spine), editable inline ===== */
+// Secondary, low-weight add affordance — recedes until needed.
+function AddLink({label, onClick, tone}){
+  const hov = tone==="warm" ? "hover:text-amber-700" : tone==="cool" ? "hover:text-sky-700" : "hover:text-slate-600";
   return (
-    <div className={"flex items-center gap-2 rounded-lg bg-white border p-1.5 " + (c._new ? "border-sky-300 ring-1 ring-sky-200" : "border-slate-200")}>
-      <div className="w-40 shrink-0"><GuidedDropdown value={c.fieldId} onChange={v=>onChange({fieldId:v, value:""})} options={fieldOpts} placeholder="Choose field" hint="Pick the form field this condition checks." highlight={c._new}/></div>
-      <div className="w-32 shrink-0"><GuidedDropdown value={c.op} onChange={v=>onChange({op:v, value: OPS_MULTI.indexOf(v)>=0 ? [] : ""})} options={OPS} guide={OP_GUIDE} placeholder="Choose condition"/></div>
+    <button type="button" onClick={onClick} className={"inline-flex items-center gap-1 text-[12px] font-medium text-slate-400 transition " + hov}>
+      <Ico name="plus" size={12}/> {label}
+    </button>
+  );
+}
+// One condition, rendered as a single readable statement: [field] [operator] [value].
+function CondRowInline({c, fieldOpts, onChange, onRemove}){
+  return (
+    <div className="group/row flex items-center gap-1 -mx-1.5 px-1.5 py-1 rounded-md hover:bg-amber-50/50 transition">
+      <GuidedDropdown variant="inline" tone="field" value={c.fieldId} onChange={v=>onChange({fieldId:v, value:""})} options={fieldOpts} placeholder="Choose field" hint="Pick the form field this condition checks."/>
+      <GuidedDropdown variant="inline" tone="op" value={c.op} onChange={v=>onChange({op:v, value: OPS_MULTI.indexOf(v)>=0 ? [] : ""})} options={OPS} guide={OP_GUIDE} placeholder="condition"/>
       {OPS_NOVALUE.indexOf(c.op)<0 &&
-        <div className="flex-1 min-w-0"><ValueControl fieldId={c.fieldId} op={c.op} value={c.value} onChange={v=>onChange({value:v})}/></div>}
-      {c._new && <span className="text-[10px] font-semibold text-[#1180c1] bg-sky-100 rounded px-1.5 py-0.5 shrink-0">Prefilled</span>}
-      <button onClick={onRemove} className="text-slate-300 hover:text-rose-500 shrink-0 px-1" title="Remove"><Ico name="x" size={15}/></button>
+        <ValueControl variant="inline" tone="val" fieldId={c.fieldId} op={c.op} value={c.value} onChange={v=>onChange({value:v})}/>}
+      {c._new && <span className="text-[9.5px] font-semibold text-amber-700 bg-amber-100 rounded px-1.5 py-0.5 shrink-0">Prefilled</span>}
+      <button type="button" onClick={onRemove} className="ml-auto text-slate-300 hover:text-rose-500 shrink-0 px-0.5 opacity-0 group-hover/row:opacity-100 transition" title="Remove condition"><Ico name="x" size={14}/></button>
     </div>
   );
 }
-function V9ActionRow({a, onChange, onRemove, fieldOpts}){
+// A list of conditions joined by an AND/OR connector (only shown when there's more than one). Warm accent.
+function CondTree({items, match, onToggleMatch, onItem, onRemoveItem, fieldOpts}){
+  const multi = items.length > 1;
   return (
-    <div className={"flex items-center gap-2 rounded-lg bg-white border p-1.5 " + (a._new ? "border-sky-300 ring-1 ring-sky-200" : "border-slate-200")}>
-      <div className="w-36 shrink-0"><GuidedDropdown value={a.behavior} onChange={v=>onChange({behavior:v})} options={BEHAVIORS} guide={ACTION_GUIDE} placeholder="Choose action"/></div>
-      <div className="flex-1 min-w-0"><GuidedDropdown value={a.fieldId} onChange={v=>onChange({fieldId:v})} options={fieldOpts} placeholder="Choose field" hint="Pick the field this action changes." highlight={a._new}/></div>
-      {a.behavior==="Set Value" &&
-        <div className="w-32 shrink-0"><ValueControl fieldId={a.fieldId} op="Equals" value={a.value} onChange={v=>onChange({value:v})}/></div>}
-      {a._new && <span className="text-[10px] font-semibold text-[#1180c1] bg-sky-100 rounded px-1.5 py-0.5 shrink-0">Prefilled</span>}
-      <button onClick={onRemove} className="text-slate-300 hover:text-rose-500 shrink-0 px-1" title="Remove"><Ico name="x" size={15}/></button>
+    <div className="flex">
+      {multi &&
+        <div className="relative w-[46px] shrink-0">
+          <span className="absolute left-[22px] top-[16px] bottom-[16px] w-px bg-amber-200" aria-hidden="true"/>
+          <button type="button" onClick={onToggleMatch}
+            className="absolute left-0 top-1/2 -translate-y-1/2 rounded-full bg-amber-50 text-amber-700 ring-1 ring-amber-200 px-2 py-0.5 text-[10px] font-bold tracking-wide hover:bg-amber-100 transition"
+            title="Toggle AND / OR">{match==="any" ? "OR" : "AND"}</button>
+        </div>}
+      <div className={"flex-1 min-w-0 " + (multi ? "space-y-0.5 py-1" : "")}>
+        {items.map((it,i)=>(
+          <div key={i} className="relative">
+            {multi && <span className="absolute -left-[24px] top-1/2 -translate-y-1/2 w-[24px] h-px bg-amber-200" aria-hidden="true"/>}
+            {it.group
+              ? <NestedGroup g={it} fieldOpts={fieldOpts} onChange={p=>onItem(i,p)} onRemove={()=>onRemoveItem(i)}/>
+              : <CondRowInline c={it} fieldOpts={fieldOpts} onChange={p=>onItem(i,p)} onRemove={()=>onRemoveItem(i)}/>}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
-function V9Group({g, onChange, onRemove, fieldOpts}){
+// A nested condition group — its own AND/OR sub-tree, grouped by a quiet surface (no heavy border).
+function NestedGroup({g, fieldOpts, onChange, onRemove}){
   const setLeaf = (i,p)=> onChange({conditions: g.conditions.map((c,j)=> j===i?{...c,...p}:c)});
-  const addLeaf = ()=> onChange({conditions:[...g.conditions, {fieldId:"", op:"", value:""}]});
   const rmLeaf  = i => onChange({conditions: g.conditions.filter((_,j)=>j!==i)});
+  const addLeaf = ()=> onChange({conditions:[...g.conditions, {fieldId:"", op:"", value:""}]});
+  const toggle  = ()=> onChange({match: g.match==="any"?"all":"any"});
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-2.5">
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-1.5 text-[12px]">
-          <span className="text-slate-400">Match</span>
-          <button onClick={()=>onChange({match: g.match==="any"?"all":"any"})} className="font-semibold text-[#1180c1] hover:underline">{g.match==="any" ? "ANY" : "ALL"}</button>
-          <span className="text-slate-400">of these</span>
+    <div className="rounded-lg bg-amber-50/40 px-2 py-1.5">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex-1 min-w-0">
+          <CondTree items={g.conditions} match={g.match} onToggleMatch={toggle} onItem={setLeaf} onRemoveItem={rmLeaf} fieldOpts={fieldOpts}/>
         </div>
-        <button onClick={onRemove} className="text-slate-300 hover:text-rose-500" title="Remove group"><Ico name="x" size={14}/></button>
+        <button type="button" onClick={onRemove} className="text-slate-300 hover:text-rose-500 shrink-0 mt-0.5" title="Remove group"><Ico name="x" size={13}/></button>
       </div>
-      <div className="space-y-1.5">
-        {g.conditions.map((c,i)=> <V9CondRow key={i} c={c} fieldOpts={fieldOpts} onChange={p=>setLeaf(i,p)} onRemove={()=>rmLeaf(i)}/>)}
-      </div>
-      <div className="mt-2"><V9AddBtn label="Add Condition" variant="cond" onClick={addLeaf}/></div>
+      <div className="mt-1 ml-1"><AddLink tone="warm" label="Add condition" onClick={addLeaf}/></div>
+    </div>
+  );
+}
+// Conditions for the IF stage — no card, just the logic (whitespace does the grouping).
+function IfPanel({block, fieldOpts, onItem, onRemoveItem, onToggleMatch}){
+  const conds = block.conditions;
+  if(!conds.length)
+    return <p className="text-[13px] text-slate-400 italic">No condition yet — this rule always runs.</p>;
+  return <CondTree items={conds} match={block.match} onToggleMatch={onToggleMatch} onItem={onItem} onRemoveItem={onRemoveItem} fieldOpts={fieldOpts}/>;
+}
+// Per-behavior leading glyph for THEN outcomes.
+const BEHAVIOR_ICON = { "Show":"eye", "Hide":"eye", "Mandate":"check", "Non-Mandate":"check", "Enable":"check", "Disable":"lock", "Set Value":"pencil", "Clear Value":"swap", "Filter Data":"sliders" };
+// One action, rendered as an outcome statement: [behavior] [field]. Cool accent; behavior reads strongest.
+function ActionRowInline({a, fieldOpts, onChange, onRemove}){
+  const icon = BEHAVIOR_ICON[a.behavior] || "zap";
+  return (
+    <div className="group/row flex items-center gap-2 -mx-1.5 px-1.5 py-1 rounded-md hover:bg-sky-50/50 transition">
+      <span className="text-sky-500 shrink-0"><Ico name={icon} size={15}/></span>
+      <GuidedDropdown variant="inline" tone="field" value={a.behavior} onChange={v=>onChange({behavior:v})} options={BEHAVIORS} guide={ACTION_GUIDE} placeholder="Choose action"/>
+      <GuidedDropdown variant="inline" tone="val" value={a.fieldId} onChange={v=>onChange({fieldId:v})} options={fieldOpts} placeholder="Choose field" hint="Pick the field this action changes."/>
+      {a.behavior==="Set Value" &&
+        <ValueControl variant="inline" tone="val" fieldId={a.fieldId} op="Equals" value={a.value} onChange={v=>onChange({value:v})}/>}
+      {a._new && <span className="text-[9.5px] font-semibold text-[#1180c1] bg-sky-100 rounded px-1.5 py-0.5 shrink-0">Prefilled</span>}
+      <button type="button" onClick={onRemove} className="ml-auto text-slate-300 hover:text-rose-500 shrink-0 px-0.5 opacity-0 group-hover/row:opacity-100 transition" title="Remove action"><Ico name="x" size={14}/></button>
+    </div>
+  );
+}
+// Actions for the THEN stage — outcomes listed plainly, no card.
+function ThenPanel({actions, fieldOpts, onAct, onRemoveAct}){
+  if(!actions.length)
+    return <p className="text-[13px] text-slate-400 italic">No action yet — add what should happen.</p>;
+  return (
+    <div className="space-y-0.5">
+      {actions.map((a,i)=> <ActionRowInline key={i} a={a} fieldOpts={fieldOpts} onChange={p=>onAct(i,p)} onRemove={()=>onRemoveAct(i)}/>)}
+    </div>
+  );
+}
+// V10.3 — a sticky chapter header that stays pinned while its section scrolls, so IF / THEN never get lost
+// in a long rule. Carries the landmark badge, the big label, a short descriptor, and a live count.
+function SectionHeader({tone, label, desc, count, unit}){
+  const a = tone==="if"
+    ? {bar:"bg-amber-400", tint:"bg-amber-50/95", border:"border-amber-200", badge:"bg-amber-100 text-amber-700", text:"text-amber-700", icon:"branch", chip:"bg-white text-amber-700 ring-amber-200"}
+    : {bar:"bg-sky-400",   tint:"bg-sky-50/95",   border:"border-sky-200",   badge:"bg-sky-100 text-sky-700",     text:"text-sky-700",   icon:"zap",    chip:"bg-white text-sky-700 ring-sky-200"};
+  return (
+    <div className={"sticky top-0 z-20 flex items-center gap-2.5 pl-4 pr-4 py-2.5 backdrop-blur-sm border-y " + a.tint + " " + a.border}>
+      <span aria-hidden="true" className={"absolute left-0 top-0 bottom-0 w-[3px] " + a.bar}/>
+      <span className={"w-7 h-7 rounded-lg grid place-items-center shrink-0 " + a.badge}><Ico name={a.icon} size={15}/></span>
+      <span className={"text-[16px] font-extrabold tracking-tight leading-none " + a.text}>{label}</span>
+      <span className="text-[12px] text-slate-400 truncate">{desc}</span>
+      {count>0 && <span className={"ml-auto shrink-0 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 " + a.chip}>{count} {count===1?unit:unit+"s"}</span>}
     </div>
   );
 }
@@ -1520,80 +1603,80 @@ function V9Block({block, index, total, onChange, onDuplicate, onRemove, fieldOpt
   const addCond = ()=> onChange({conditions:[...block.conditions, {fieldId:"", op:"", value:""}]});
   const addGroup = ()=> onChange({conditions:[...block.conditions, {group:true, match:"all", conditions:[{fieldId:"", op:"", value:""}]}]});
   const rmCond = i => onChange({conditions: block.conditions.filter((_,j)=>j!==i)});
+  const toggleMatch = ()=> onChange({match: block.match==="any"?"all":"any"});
   const setAct = (i,p)=> onChange({actions: block.actions.map((a,j)=> j===i?{...a,...p}:a)});
   const addAct = ()=> onChange({actions:[...block.actions, {behavior:"", fieldId:"", value:""}]});
   const rmAct = i => onChange({actions: block.actions.filter((_,j)=>j!==i)});
-  const hasConds = block.conditions.length>0;
   const sub = summarizeBlock(block, block.people) || "Add an action to define what happens";
+  // Section scale counts (leaf conditions, incl. those inside groups) for the landmark chips.
+  const condCount = block.conditions.reduce((n,it)=> n + (it.group ? ((it.conditions && it.conditions.length) || 0) : 1), 0);
+  const actCount  = block.actions.length;
   return (
-    <div className="rounded-2xl border-2 border-sky-200 bg-white shadow-sm">
-      <div className="flex items-center gap-3 px-4 py-3">
-        <span className="w-7 h-7 rounded-lg bg-sky-100 text-[#1180c1] text-[13px] font-bold grid place-items-center shrink-0">{index+1}</span>
+    <div className="rounded-xl border border-slate-200 bg-[#f9f9f9] overflow-visible">
+      {/* Block header — meaning-first summary of the rule */}
+      <div className="flex items-start gap-3 px-4 py-3 border-b border-slate-200/70">
+        <span className="w-6 h-6 rounded-md bg-slate-100 text-slate-500 text-[12px] font-semibold grid place-items-center shrink-0 mt-px">{index+1}</span>
         <div className="flex-1 min-w-0">
-          <div className="text-[14px] font-semibold text-slate-800">Rule block</div>
-          <div className="text-[12px] text-slate-400 truncate">{sub}</div>
+          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Rule</div>
+          <div className="text-[13.5px] text-slate-700 leading-snug">{sub}</div>
         </div>
-        <button onClick={onDuplicate} className="text-slate-400 hover:text-slate-600 p-1" title="Duplicate block"><Ico name="copy" size={16}/></button>
-        {total>1 && <button onClick={onRemove} className="text-slate-400 hover:text-rose-500 p-1" title="Remove block"><Ico name="x" size={16}/></button>}
-        <button onClick={()=>setCollapsed(c=>!c)} className="text-slate-400 hover:text-slate-600 p-1" title="Collapse"><Ico name="chevdown" size={16} cls={collapsed?"-rotate-90":""}/></button>
+        <div className="flex items-center gap-0.5 shrink-0 -mr-1">
+          <button onClick={onDuplicate} className="text-slate-300 hover:text-slate-600 p-1.5 rounded-md hover:bg-slate-100" title="Duplicate block"><Ico name="copy" size={15}/></button>
+          {total>1 && <button onClick={onRemove} className="text-slate-300 hover:text-rose-500 p-1.5 rounded-md hover:bg-slate-100" title="Remove block"><Ico name="x" size={15}/></button>}
+          <button onClick={()=>setCollapsed(c=>!c)} className="text-slate-300 hover:text-slate-600 p-1.5 rounded-md hover:bg-slate-100" title="Collapse"><Ico name="chevdown" size={15} cls={collapsed?"-rotate-90":""}/></button>
+        </div>
       </div>
       {!collapsed &&
-        <div className="px-4 pb-4 space-y-3">
-          <div className="rounded-xl bg-slate-50 p-3.5">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-[10.5px] font-bold rounded px-1.5 py-0.5 bg-sky-100 text-[#1180c1]">WHEN</span>
-              <span className="text-[12.5px] text-slate-500">when this runs</span>
+        <div>
+          {/* WHEN — lightest chapter: compact execution scope */}
+          <div className="px-4 py-3 border-b border-slate-200/70">
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="w-5 h-5 rounded grid place-items-center bg-slate-100 text-slate-400 shrink-0"><Ico name="history" size={12}/></span>
+              <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">When</span>
+              <span className="text-[11.5px] text-slate-400">run this rule</span>
             </div>
-            <p className="text-[12px] text-slate-400 mb-2.5">Choose when this rule runs and who it applies to.</p>
-            <div className="flex flex-wrap gap-2.5">
-              <GuidedDropdown variant="pill" value={block.time} onChange={v=>onChange({time:v})} options={WHENS} guide={WHEN_GUIDE} placeholder="Choose a time"/>
-              <GuidedDropdown variant="pill" value={block.people} onChange={v=>onChange({people:v})} options={AUDS} guide={AUD_GUIDE} placeholder="Choose people"/>
+            <div className="grid grid-cols-2 gap-2 max-w-md">
+              <GuidedDropdown value={block.time} onChange={v=>onChange({time:v})} options={WHENS} guide={WHEN_GUIDE} placeholder="Choose a time"/>
+              <GuidedDropdown value={block.people} onChange={v=>onChange({people:v})} options={AUDS} guide={AUD_GUIDE} placeholder="Choose people"/>
+            </div>
+            <p className="mt-1.5 text-[11px] text-slate-400">Choose when this rule runs and who it applies to.</p>
+          </div>
+
+          {/* IF — landmark chapter (warm): sticky header + continuous left-edge accent spine */}
+          <div className="relative">
+            <span aria-hidden="true" className="absolute left-0 top-0 bottom-0 w-[3px] bg-amber-300/80"/>
+            <SectionHeader tone="if" label="IF" desc="when these conditions are met" count={condCount} unit="condition"/>
+            <div className="px-4 py-3.5">
+              <div className="pl-3.5">
+                <IfPanel block={block} fieldOpts={fieldOpts} onItem={setCondItem} onRemoveItem={rmCond} onToggleMatch={toggleMatch}/>
+                <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5">
+                  <AddLink tone="warm" label="Add condition" onClick={addCond}/>
+                  <AddLink tone="warm" label="Add condition group" onClick={addGroup}/>
+                </div>
+              </div>
             </div>
           </div>
-          <div className="rounded-xl bg-slate-50 p-3.5">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-[10.5px] font-bold rounded px-1.5 py-0.5 bg-violet-100 text-violet-700">IF</span>
-              {hasConds
-                ? <span className="text-[12.5px] text-slate-500">match <button onClick={()=>onChange({match: block.match==="any"?"all":"any"})} className="font-semibold text-[#1180c1] hover:underline">{block.match==="any"?"ANY":"ALL"}</button> of these</span>
-                : <span className="text-[12.5px] text-slate-500">always — add a condition to narrow it</span>}
-            </div>
-            <div className="text-[11.5px] text-slate-400 mb-2">When the rule runs, check:</div>
-            {!hasConds && <p className="text-[12.5px] text-slate-400 italic mb-2.5">No conditions — this rule always runs.</p>}
-            {hasConds &&
-              <div className="space-y-1.5 mb-2.5">
-                {block.conditions.map((c,i)=> c.group
-                  ? <V9Group key={i} g={c} fieldOpts={fieldOpts} onChange={p=>setCondItem(i,p)} onRemove={()=>rmCond(i)}/>
-                  : <V9CondRow key={i} c={c} fieldOpts={fieldOpts} onChange={p=>setCondItem(i,p)} onRemove={()=>rmCond(i)}/>)}
-              </div>}
-            <div className="flex flex-wrap gap-2">
-              <V9AddBtn label="Add Condition" variant="cond" onClick={addCond}/>
-              <V9AddBtn label="Add Condition Group" variant="group" onClick={addGroup}/>
+
+          {/* THEN — landmark chapter (cool): sticky header + continuous left-edge accent spine */}
+          <div className="relative">
+            <span aria-hidden="true" className="absolute left-0 top-0 bottom-0 w-[3px] bg-sky-300/80"/>
+            <SectionHeader tone="then" label="THEN" desc="perform these actions" count={actCount} unit="action"/>
+            <div className="px-4 py-3.5">
+              <div className="pl-3.5">
+                <ThenPanel actions={block.actions} fieldOpts={fieldOpts} onAct={setAct} onRemoveAct={rmAct}/>
+                <div className="mt-3"><AddLink tone="cool" label="Add action" onClick={addAct}/></div>
+              </div>
             </div>
           </div>
-          <div className="rounded-xl bg-slate-50 p-3.5">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-[10.5px] font-bold rounded px-1.5 py-0.5 bg-emerald-100 text-emerald-700">THEN</span>
-              <span className="text-[12.5px] text-slate-500">do this to the form</span>
-            </div>
-            <div className="text-[11.5px] text-slate-400 mb-2">Then do this to the form:</div>
-            {block.actions.length===0 && <p className="text-[12.5px] text-slate-400 italic mb-2.5">No actions yet — add one to define what happens.</p>}
-            {block.actions.length>0 &&
-              <div className="space-y-1.5 mb-2.5">
-                {block.actions.map((a,i)=> <V9ActionRow key={i} a={a} fieldOpts={fieldOpts} onChange={p=>setAct(i,p)} onRemove={()=>rmAct(i)}/>)}
-              </div>}
-            <V9AddBtn label="Add Action" variant="action" onClick={addAct}/>
-          </div>
-          <div className="rounded-xl bg-slate-50 px-3.5 py-2.5">
-            <button onClick={()=>onChange({advOpen: !block.advOpen})} className="w-full flex items-center gap-2">
-              <span className="text-[10.5px] font-bold rounded px-1.5 py-0.5 bg-slate-200 text-slate-500">ADV</span>
-              <span className="text-[12.5px] text-slate-500">advanced behavior for this block</span>
-              <span className="ml-auto flex items-center gap-1.5">
-                <span className="text-[11px] rounded-full bg-slate-100 text-slate-500 px-2 py-0.5">{block.advanced ? "On" : "Optional"}</span>
-                <Ico name="chevdown" size={14} cls={"text-slate-400 " + (block.advOpen ? "" : "-rotate-90")}/>
-              </span>
+
+          {/* ADV — quiet, secondary, collapsed by default */}
+          <div className="px-4 py-2.5 border-t border-slate-200/70">
+            <button onClick={()=>onChange({advOpen: !block.advOpen})} className="inline-flex items-center gap-1.5 text-[12px] font-medium text-slate-400 hover:text-slate-600 transition">
+              <Ico name="sliders" size={12}/> Advanced{block.advanced ? " · on" : ""}
+              <Ico name="chevdown" size={12} cls={block.advOpen ? "" : "-rotate-90"}/>
             </button>
             {block.advOpen &&
-              <label className="mt-2.5 flex items-center gap-2.5 rounded-lg border border-slate-200 bg-white px-3 py-2.5 cursor-pointer">
+              <label className="mt-2 flex items-center gap-2.5 rounded-lg bg-slate-50 px-3 py-2.5 cursor-pointer max-w-md">
                 <input type="checkbox" checked={!!block.advanced} onChange={e=>onChange({advanced:e.target.checked})} className="accent-sky-500 w-4 h-4"/>
                 <span className="text-[12.5px] text-slate-600">Reverse this block when the condition is no longer true</span>
               </label>}
@@ -1932,7 +2015,7 @@ try {
   var _err = document.createElement("pre");
   _err.id = "v10err";
   _err.style.cssText = "white-space:pre-wrap;background:#fff1f2;color:#9f1239;padding:14px 16px;margin:0;font:13px/1.5 ui-monospace,Menlo,Consolas,monospace;border-bottom:3px solid #e11d48;";
-  _err.textContent = "V10 runtime error:\n\n" + ((e && e.stack) ? e.stack : (e && e.message ? e.message : e));
+  _err.textContent = "V10.3 runtime error:\n\n" + ((e && e.stack) ? e.stack : (e && e.message ? e.message : e));
   document.body.insertBefore(_err, document.body.firstChild);
 }
 </script>
@@ -1955,7 +2038,7 @@ try {
           if (s) Babel.transform(s.textContent, { presets:["react"] });
           msg = "Scripts loaded and compiled OK, but nothing rendered — likely a runtime error.\nOpen DevTools (F12) and copy the red Console error.";
         } catch(err){
-          msg = "V10 failed to compile:\n\n" + (err && err.message ? err.message : err);
+          msg = "V10.3 failed to compile:\n\n" + (err && err.message ? err.message : err);
         }
       }
       var pre = document.createElement("pre");
