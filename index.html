@@ -22,6 +22,10 @@
   .pop { flex: 0 0 auto; color: #94a3b8; text-decoration: none; font-size: 12px; padding: 6px 8px;
          border-radius: 6px; white-space: nowrap; }
   .pop:hover { color: #fff; background: #1e293b; }
+  .picker { flex: 0 0 auto; background: #1e293b; color: #e2e8f0; border: 1px solid #334155;
+            border-radius: 8px; font-size: 12px; padding: 6px 8px; cursor: pointer; max-width: 220px; }
+  .picker:hover { border-color: #475569; }
+  .picker:focus { outline: none; border-color: #0ea5e9; }
   main { flex: 1 1 auto; min-height: 0; background: #fff; }
   iframe { width: 100%; height: 100%; border: 0; display: block; }
 </style>
@@ -30,6 +34,7 @@
 <header>
   <span class="brand">Request Form Rules · Prototypes</span>
   <nav class="tabs" id="tabs"></nav>
+  <select class="picker" id="picker" title="Jump to any version (incl. older ones)"></select>
   <a class="pop" id="pop" href="#" target="_blank" rel="noopener">Open full screen ↗</a>
 </header>
 <main>
@@ -47,20 +52,44 @@
     { id:"v9", label:"Rule Sequence Workspace", sub:"V9", src:"rule-studio-v9.html" },
   ];
 
+  // Full catalogue (incl. older versions) — used by the dropdown so EVERY version is reachable.
+  // The tab bar above still renders only the VERSIONS subset (unchanged).
+  var ALL_VERSIONS = [
+    { id:"v1",  label:"Sentence-First Builder",     sub:"V1",   src:"rule-studio-v1.html" },
+    { id:"v2",  label:"Structured Form",            sub:"V2",   src:"rule-studio-demo.html" },
+    { id:"v3",  label:"Block Workspace",            sub:"V3",   src:"rule-studio-v3.html" },
+    { id:"v4",  label:"Starter Cards",              sub:"V4",   src:"rule-studio-v4.html" },
+    { id:"v5",  label:"Guided Composer",            sub:"V5",   src:"rule-studio-v5.html" },
+    { id:"v6",  label:"Refined Classic Form",       sub:"V6",   src:"rule-studio-v6.html" },
+    { id:"v7",  label:"Progressive Workspace",      sub:"V7",   src:"rule-studio-v7.html" },
+    { id:"v8",  label:"Guided Form Canvas",         sub:"V8",   src:"rule-studio-v8.html" },
+    { id:"v9",  label:"Rule Sequence Workspace",    sub:"V9",   src:"rule-studio-v9.html" },
+    { id:"v92", label:"Guided Sequence Editor",     sub:"V9.2", src:"rule-studio-v9-2.html" },
+    { id:"v10", label:"Form Builder",               sub:"V10",  src:"rule-studio-v10.html" },
+    { id:"v101",label:"Service Catalog + Rules",     sub:"V10.1",src:"rule-studio-v10-1.html" },
+    { id:"v11", label:"Field Rule Workspace",       sub:"V11",  src:"rule-studio-v11.html" },
+    { id:"v112",label:"Field Rule Workspace",       sub:"V11.2",src:"rule-studio-v11-2.html" },
+    { id:"v12", label:"Multi-Field Rule Workspace", sub:"V12",  src:"rule-studio-v12.html" },
+  ];
+
   var tabsEl = document.getElementById("tabs");
   var frame = document.getElementById("frame");
   var pop = document.getElementById("pop");
+  var picker = document.getElementById("picker");
+  var vlookup = function(id){ return ALL_VERSIONS.find(function(x){ return x.id === id; }) || VERSIONS[0]; };
+  var known = function(id){ return ALL_VERSIONS.some(function(v){ return v.id === id; }); };
 
   // bump on each deploy to bust the browser cache of the iframed prototype (stale cache was loading
   // an old version that still pointed at blocked CDNs → blank iframe)
   var BUILD = "20260619a";
   function select(id, push){
-    var v = VERSIONS.find(function(x){ return x.id === id; }) || VERSIONS[0];
+    var v = vlookup(id);
     frame.src = v.src + "?b=" + BUILD;
     pop.href = v.src + "?b=" + BUILD;
     Array.prototype.forEach.call(tabsEl.children, function(btn){
       btn.classList.toggle("active", btn.dataset.id === v.id);
     });
+    if (picker) picker.value = v.id;
     if (push && location.hash !== "#" + v.id) history.replaceState(null, "", "#" + v.id);
     document.title = "Hub · " + v.label + " " + v.sub;
   }
@@ -75,12 +104,21 @@
     tabsEl.appendChild(b);
   });
 
-  // honor #v11/#v10/#v7/#v8/#v9 deep-links; default to V11 (current focus)
+  // Dropdown — lists ALL versions (this is how older versions stay reachable).
+  ALL_VERSIONS.forEach(function(v){
+    var o = document.createElement("option");
+    o.value = v.id;
+    o.textContent = v.sub + " — " + v.label;
+    picker.appendChild(o);
+  });
+  picker.addEventListener("change", function(){ select(picker.value, true); });
+
+  // honor #v1…#v12 deep-links; default to V11 (current focus)
   var start = (location.hash || "").replace("#", "");
-  select(VERSIONS.some(function(v){ return v.id === start; }) ? start : "v11", false);
+  select(known(start) ? start : "v11", false);
   window.addEventListener("hashchange", function(){
     var id = (location.hash || "").replace("#", "");
-    if (VERSIONS.some(function(v){ return v.id === id; })) select(id, false);
+    if (known(id)) select(id, false);
   });
 </script>
 </body>

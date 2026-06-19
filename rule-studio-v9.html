@@ -2322,7 +2322,6 @@ function App(){
 
   return (
     <div className="flex h-screen flex-col">
-      <VersionBar />
       {view.screen!=="studio" && <ModeBar mode={mode} onChange={switchMode} />}
       {view.screen==="studio"
         ? <RuleStudioV9 initial={view.rule} isNew={view.isNew} allRules={rules} onCancel={cancel} onSave={save} />

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Motadata ServiceOps — Request Form (V10 · Form Builder)</title>
+<title>Motadata ServiceOps — Service Catalog (V10.1 · Catalog + Rules)</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -385,17 +385,31 @@ function Tab({active, icon, label, badge, onClick}){
     </button>
   );
 }
-function TabsRow({tab, onBuilder, onRules, total}){
+// V10.1 Service Catalog item-config tabs. Only "Service Catalog Form" + "Form Rules" are built out;
+// the rest are real catalog sections shown as placeholders. Custom Rules is NOT a tab — it lives inside Form Rules.
+const SC_TABS = [
+  { id:"builder",  label:"Service Catalog Form", icon:"layout" },
+  { id:"workflow", label:"Workflow",             icon:"branch" },
+  { id:"sla",      label:"SLA",                  icon:"history" },
+  { id:"approval", label:"Approval Workflow",    icon:"check" },
+  { id:"tasks",    label:"Tasks",                icon:"list" },
+  { id:"scenario", label:"Scenario",             icon:"grid" },
+  { id:"model",    label:"Service Model",        icon:"box" },
+  { id:"rules",    label:"Form Rules",           icon:"sliders" },
+  { id:"email",    label:"Email Notifications",  icon:"chat" },
+  { id:"print",    label:"Print Template",       icon:"doc" },
+];
+function TabsRow({tab, onSelect, total}){
   const [saved, setSaved] = useState(false);
   useEffect(()=>{ if(!saved) return; const t=setTimeout(()=>setSaved(false), 1600); return ()=>clearTimeout(t); }, [saved]);
   return (
-    <div className="px-4 flex items-center justify-between bg-slate-50 border-b border-slate-200">
-      <div className="flex items-end">
-        <Tab active={tab==="builder"} icon="layout"  label="Form Builder" onClick={onBuilder}/>
-        <Tab active={tab==="rules"}   icon="sliders" label="Form Rules"   badge={total} onClick={onRules}/>
+    <div className="px-4 flex items-center justify-between bg-slate-50 border-b border-slate-200 gap-2">
+      <div className="flex items-end overflow-x-auto min-w-0">
+        {SC_TABS.map(t=>
+          <Tab key={t.id} active={tab===t.id} icon={t.icon} label={t.label} badge={t.id==="rules"?total:0} onClick={()=>onSelect(t.id)}/>)}
       </div>
       {tab==="builder" &&
-        <div className="flex items-center gap-2 pr-2">
+        <div className="flex items-center gap-2 pr-2 shrink-0">
           <button className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-[13px] text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 transition">
             <Ico name="eye" size={15}/> Preview
           </button>
@@ -405,6 +419,50 @@ function TabsRow({tab, onBuilder, onRules, total}){
             {saved ? <><Ico name="check" size={15}/> Saved</> : "Save"}
           </button>
         </div>}
+    </div>
+  );
+}
+// Placeholder panel for the catalog sections not built out in this prototype.
+function SCTabPlaceholder({tabId, service}){
+  const t = SC_TABS.find(x=>x.id===tabId) || {};
+  return (
+    <div className="h-full overflow-y-auto bg-slate-50 px-8 py-6">
+      <div className="max-w-3xl mx-auto">
+        <div className="rounded-xl border border-dashed border-slate-200 bg-white px-6 py-12 text-center">
+          <span className="w-12 h-12 rounded-xl bg-slate-100 text-slate-400 grid place-items-center mx-auto mb-3"><Ico name={t.icon||"sliders"} size={22}/></span>
+          <h3 className="text-[15px] font-semibold text-slate-700">{t.label}</h3>
+          <p className="text-[13px] text-slate-400 mt-1.5">Configuration for <span className="font-medium text-slate-500">{service.name}</span>. This Service Catalog section is part of the shell and isn't built out in this prototype.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+// Governance summary shown on the Form Rules landing — keeps Custom Rules discoverable from one place.
+function GovernanceSummary({sel, onManage}){
+  var done = CR_FAMILIES.filter(function(f){ return f.sections.reduce(function(n,s){ return n + ((sel[s.id]||[]).length); }, 0) > 0; }).length;
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-4 mb-5">
+      <div className="flex items-center justify-between gap-3 mb-2.5">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="w-7 h-7 rounded-md bg-sky-50 text-[#1593d4] grid place-items-center shrink-0"><Ico name="shield" size={15}/></span>
+          <h4 className="text-[12px] font-semibold uppercase tracking-wider text-slate-500">Custom Rules</h4>
+          <span className="text-[11.5px] text-slate-400">· {done} of {CR_FAMILIES.length} configured</span>
+        </div>
+        <button onClick={onManage} className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-[12.5px] font-medium text-[#1180c1] border border-slate-200 bg-white hover:border-sky-300 hover:bg-sky-50/50 transition shrink-0">
+          <Ico name="sliders" size={14}/> Manage Custom Rules
+        </button>
+      </div>
+      <div className="space-y-1">
+        {CR_FAMILIES.map(function(f){
+          var on = f.sections.reduce(function(n,s){ return n + ((sel[s.id]||[]).length); }, 0) > 0;
+          return (
+            <div key={f.id} className="flex items-center gap-2 text-[12.5px]">
+              {on ? <Ico name="check" size={13} cls="text-emerald-500"/> : <span className="w-3 h-3 rounded-full border border-slate-300 shrink-0"/>}
+              <span className={on ? "text-slate-700" : "text-slate-400"}>{f.label} {on ? "configured" : "not configured"}</span>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -1014,9 +1072,9 @@ function CustomRuleCard({fam, count, detail, onClick}){
   );
 }
 // One right-side drawer: pick a custom-rule type, then the SAME drawer transitions to the existing config UI.
-function CustomRuleDrawer({onClose, onSaved}){
-  const [selected, setSelected] = useState(null);
-  const [sel, setSel] = useState({});       // sectionId -> [optionId] (committed working copy)
+function CustomRuleDrawer({sel, setSel, onClose, onSaved, initialFamily}){
+  const [selected, setSelected] = useState(initialFamily || null);   // open straight into a family when launched from a field rule
+  // sel/setSel are lifted to the app so the Form Rules governance summary reflects configured status.
   const [snap, setSnap] = useState(null);   // snapshot of the open category's sections, for Cancel revert
   const [saving, setSaving] = useState(false);
   const fam = selected ? CR_FAMILIES.find(f=>f.id===selected) : null;
@@ -1090,12 +1148,16 @@ function CustomRuleDrawer({onClose, onSaved}){
   );
 }
 // Form Rules home = a "Create Rule" split-button toolbar above the unchanged Field Rules surface.
-function FormRulesHome({field, intent, onBack, onOpen, onClear, onCreateForm, onCreateCustom}){
+function FormRulesHome({field, intent, onBack, onOpen, onClear, onCreateForm, onCreateCustom, customSel}){
   return (
     <div className="h-full flex flex-col bg-slate-50">
       <div className="px-8 py-2.5 shrink-0 bg-slate-50 border-b border-slate-200 flex items-center justify-end">
         <CreateRuleButton onForm={onCreateForm} onCustom={onCreateCustom}/>
       </div>
+      {!field &&
+        <div className="shrink-0 px-8 pt-5 bg-slate-50">
+          <div className="max-w-4xl mx-auto"><GovernanceSummary sel={customSel||{}} onManage={onCreateCustom}/></div>
+        </div>}
       <div className="flex-1 min-h-0">
         <FormRules field={field} intent={intent} onBack={onBack} onOpen={onOpen} onClear={onClear}/>
       </div>
@@ -1708,10 +1770,33 @@ const HOW_OPTS = [
   {key:"action",    icon:"zap",    title:"Action",    desc:"Use this field as the outcome of a rule"},
 ];
 // After the role is chosen, surface the rules relevant to that role + a Create New CTA.
-function RoleRulesList({fieldId, dir, onPick, onNew}){
+// Distinct governance entry interleaved into the field rule list — clearly tagged as a Custom Rule.
+function CustomRuleEntryCard({fam, onClick}){
+  const f = CR_FAMILIES.find(x=>x.id===fam); if(!f) return null;
+  return (
+    <button onClick={onClick}
+      className="text-left w-full rounded-xl border border-violet-200 bg-violet-50/30 p-3.5 hover:border-violet-300 hover:shadow-md transition">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-2.5 min-w-0">
+          <span className="w-8 h-8 rounded-lg bg-violet-100 text-violet-600 grid place-items-center shrink-0"><Ico name={f.icon} size={16}/></span>
+          <div className="min-w-0">
+            <h4 className="text-[13.5px] font-semibold text-slate-800 truncate">{f.label}</h4>
+            <p className="text-[12.5px] text-slate-500 mt-0.5 leading-snug">{f.desc}</p>
+          </div>
+        </div>
+        <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 text-violet-700 ring-1 ring-violet-200 px-2 py-0.5 text-[10.5px] font-semibold shrink-0"><Ico name="shield" size={10}/> Custom Rule</span>
+      </div>
+    </button>
+  );
+}
+function RoleRulesList({fieldId, dir, onPick, onNew, onCustom}){
   const lbl = labelOf(fieldId);
   const rules = dir==="condition" ? condRulesFor(fieldId) : actRulesFor(fieldId);
   const heading = dir==="condition" ? ("Rules using " + lbl + " as a condition") : ("Rules affecting " + lbl);
+  // Interleave the two governance rules at non-fixed positions among the field rules.
+  const merged = [];
+  rules.forEach((r,i)=>{ merged.push({t:"field", r:r}); if(i===0) merged.push({t:"custom", fam:"dialog"}); if(i===2) merged.push({t:"custom", fam:"worklog"}); });
+  ["dialog","worklog"].forEach(fam=>{ if(!merged.some(m=> m.t==="custom" && m.fam===fam)) merged.push({t:"custom", fam:fam}); });
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
@@ -1722,9 +1807,11 @@ function RoleRulesList({fieldId, dir, onPick, onNew}){
         className="mb-3 w-full inline-flex items-center justify-center gap-1.5 h-11 rounded-xl border border-dashed border-sky-300 text-[13.5px] font-medium text-[#1180c1] bg-sky-50/40 hover:bg-sky-50 transition">
         <Ico name="plus" size={15}/> Create New Rule
       </button>
-      {rules.length>0
-        ? <div className="space-y-2">{rules.map(r=> <PickerRuleCard key={r.id} rule={r} fieldId={fieldId} onPick={onPick}/>)}</div>
-        : <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50/60 px-4 py-6 text-center text-[12.5px] text-slate-400">No rules yet use {lbl} as {dir==="condition" ? "a condition" : "an action"}. Start a new one above.</div>}
+      <div className="space-y-2">
+        {merged.map((m,i)=> m.t==="field"
+          ? <PickerRuleCard key={"f-"+m.r.id} rule={m.r} fieldId={fieldId} onPick={onPick}/>
+          : <CustomRuleEntryCard key={"c-"+m.fam} fam={m.fam} onClick={()=> onCustom && onCustom(m.fam)}/>)}
+      </div>
     </div>
   );
 }
@@ -1766,7 +1853,7 @@ function HowDecision({fieldId, onSelect}){
     </div>
   );
 }
-function RuleFlow({flow, setFlow, onClose}){
+function RuleFlow({flow, setFlow, onClose, onCustom}){
   const f = flow;
   const fieldId = f.field;
   const lbl = labelOf(fieldId);
@@ -1801,7 +1888,7 @@ function RuleFlow({flow, setFlow, onClose}){
           {showList &&
             <div>
               <button onClick={backToHow} className="text-[12px] text-slate-500 hover:text-slate-700 mb-3 inline-flex items-center gap-1"><Ico name="back" size={13}/> Change participation</button>
-              <RoleRulesList fieldId={fieldId} dir={f.dir} onPick={pickRule} onNew={createNew}/>
+              <RoleRulesList fieldId={fieldId} dir={f.dir} onPick={pickRule} onNew={createNew} onCustom={onCustom}/>
             </div>}
           {inEditor &&
             <>
@@ -1815,24 +1902,137 @@ function RuleFlow({flow, setFlow, onClose}){
   );
 }
 
+/* ============================================================ V10.1 SERVICE CATALOG SHELL */
+// The outer container: pick a catalog item, then configure it (form + rules) — rules feel native to the item setup.
+const SERVICE_CATALOG = [
+  { id:"laptop",   name:"New Laptop Request",   cat:"Hardware", icon:"box",    desc:"Request a new or replacement laptop." },
+  { id:"software", name:"Software Access",       cat:"Software", icon:"grid",   desc:"Request access to licensed software." },
+  { id:"onboard",  name:"Employee Onboarding",   cat:"HR",       icon:"users",  desc:"Provision accounts and assets for a new hire." },
+  { id:"vpn",      name:"VPN Access",            cat:"Network",  icon:"server", desc:"Request remote VPN connectivity." },
+  { id:"email",    name:"Distribution List",     cat:"Email",    icon:"chat",   desc:"Create or modify an email distribution list." },
+  { id:"reset",    name:"Password Reset",        cat:"Access",   icon:"lock",   desc:"Reset a user account password." },
+];
+function ServiceCatalogList({onOpen}){
+  const [q, setQ] = useState("");
+  const ql = q.trim().toLowerCase();
+  const list = SERVICE_CATALOG.filter(s=> !ql || s.name.toLowerCase().indexOf(ql)>=0 || s.cat.toLowerCase().indexOf(ql)>=0);
+  return (
+    <div className="flex-1 min-h-0 overflow-y-auto bg-slate-50">
+      <div className="px-6 pt-4 pb-3 flex items-center justify-between bg-slate-50">
+        <h1 className="text-[18px] font-semibold text-slate-800">Service Catalog</h1>
+        <nav className="text-[12px] text-slate-400 flex items-center gap-1.5">
+          <span className="text-[#1593d4] font-medium">Admin</span><Ico name="chevdown" size={12} cls="-rotate-90 text-slate-300"/>
+          <span>Service Management</span><Ico name="chevdown" size={12} cls="-rotate-90 text-slate-300"/>
+          <span className="text-slate-600">Service Catalog</span>
+        </nav>
+      </div>
+      <div className="px-8 py-6">
+        <div className="max-w-5xl mx-auto">
+          <p className="text-[13px] text-slate-500 mb-4">Select a catalog item to configure its form, fields, and rules.</p>
+          <div className="relative mb-5 max-w-sm">
+            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"><Ico name="search" size={15}/></span>
+            <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search catalog items"
+              className="w-full h-9 pl-8 pr-2 rounded-md border border-slate-200 text-[13px] outline-none focus:ring-2 focus:ring-sky-100 focus:border-sky-300"/>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            {list.map(s=>
+              <button key={s.id} onClick={()=>onOpen(s)}
+                className="text-left rounded-xl border border-slate-200 bg-white p-4 hover:border-sky-300 hover:shadow-md transition group">
+                <div className="flex items-start gap-3">
+                  <span className="w-10 h-10 rounded-lg bg-sky-50 text-[#1593d4] grid place-items-center shrink-0"><Ico name={s.icon} size={19}/></span>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[14px] font-semibold text-slate-800">{s.name}</div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">{s.cat}</div>
+                    <p className="text-[12.5px] text-slate-500 mt-1.5 leading-snug">{s.desc}</p>
+                  </div>
+                </div>
+                <div className="mt-3 pt-3 border-t border-slate-100 flex items-center gap-1.5 text-[12px] font-medium text-[#1180c1]">
+                  <Ico name="sliders" size={14}/> Configure item
+                </div>
+              </button>)}
+            {list.length===0 && <p className="col-span-3 text-[13px] text-slate-400 text-center py-10">No catalog items match “{q}”.</p>}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+// Item-config header (replaces the Request-Form header) — keeps the service context visible the whole time.
+function ServiceHeader({service, onBack}){
+  return (
+    <div className="px-6 pt-4 pb-3 flex items-center justify-between bg-slate-50">
+      <div className="flex items-center gap-3 min-w-0">
+        <button onClick={onBack} className="w-8 h-8 grid place-items-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-600 shrink-0" title="Back to Service Catalog"><Ico name="back" size={17}/></button>
+        <span className="w-9 h-9 rounded-lg bg-sky-50 text-[#1593d4] grid place-items-center shrink-0"><Ico name={service.icon} size={18}/></span>
+        <div className="min-w-0">
+          <h1 className="text-[17px] font-semibold text-slate-800 truncate">{service.name}</h1>
+          <div className="text-[11.5px] text-slate-400">Configure item · {service.cat}</div>
+        </div>
+      </div>
+      <nav className="text-[12px] text-slate-400 flex items-center gap-1.5 shrink-0">
+        <span className="text-[#1593d4] font-medium cursor-pointer hover:underline" onClick={onBack}>Service Catalog</span>
+        <Ico name="chevdown" size={12} cls="-rotate-90 text-slate-300"/>
+        <span className="text-slate-600 truncate max-w-[180px]">{service.name}</span>
+      </nav>
+    </div>
+  );
+}
+// Custom Rules tab landing — opens the governance drawer + previews the 5 families.
+function CustomRulesLanding({service, onOpen}){
+  return (
+    <div className="h-full overflow-y-auto bg-slate-50 px-8 py-6">
+      <div className="max-w-3xl mx-auto">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="w-8 h-8 rounded-lg bg-sky-50 text-[#1593d4] grid place-items-center"><Ico name="shield" size={16}/></span>
+          <h3 className="text-[18px] font-semibold text-slate-800">Custom Rules</h3>
+        </div>
+        <p className="text-[13px] text-slate-500 mb-4">Governance &amp; compliance policies for <span className="font-medium text-slate-700">{service.name}</span> — control what must be satisfied before tickets are resolved or closed, when notes or dialogs are required, and who can add worklogs.</p>
+        <button onClick={onOpen} className="inline-flex items-center gap-1.5 h-10 px-4 rounded-lg text-[13px] font-medium text-white shadow-sm" style={{background:BRAND}}>
+          <Ico name="sliders" size={16}/> Configure Custom Rules
+        </button>
+        <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mt-6 mb-2">Policy families</div>
+        <div className="grid grid-cols-2 gap-2.5">
+          {CR_FAMILIES.map(f=>
+            <button key={f.id} onClick={onOpen} className="text-left rounded-xl border border-slate-200 bg-white p-3.5 flex items-start gap-2.5 hover:border-sky-300 hover:shadow-sm transition">
+              <span className="w-8 h-8 rounded-lg bg-sky-50 text-[#1593d4] grid place-items-center shrink-0"><Ico name={f.icon} size={16}/></span>
+              <div className="min-w-0">
+                <div className="text-[13px] font-semibold text-slate-800">{f.label}</div>
+                <div className="text-[12px] text-slate-500 mt-0.5 leading-snug">{f.desc}</div>
+              </div>
+            </button>)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ============================================================ APP */
 function AppV10(){
+  const [service, setService]   = useState(null);   // V10.1: selected Service Catalog item (null = catalog list)
   const [tab, setTab]           = useState("builder");
   const [selField, setSelField] = useState(null);
   const [intent, setIntent]     = useState(null);
   const [flash, setFlash]       = useState(null);
   const [flow, setFlow]         = useState(null);   // field-driven rule-attachment flow
-  const [customOpen, setCustomOpen] = useState(false); // Create Custom Rule drawer
+  const [customOpen, setCustomOpen] = useState(false); // Custom Rule drawer (opened from inside Form Rules)
+  // Lifted Custom Rules selections → drives the governance summary. Seeded so the last two families are configured by default.
+  const [customSel, setCustomSel] = useState({
+    "d-fields": ["category","assignee"], "d-act": ["confirm"],   // Show Dialog Rules — configured
+    "w-who": ["either"], "w-act": ["restrict"],                  // Add Worklog Rules — configured
+  });
+  const [customFamily, setCustomFamily] = useState(null);        // family to open the drawer directly into (null = dashboard)
   const [toast, setToast]       = useState("");
 
   const openFlow   = (fieldId) => { setSelField(null); setFlash(fieldId); setFlow({ field:fieldId, mode:null, ruleId:null, dir:null, entered:false, creating:false }); };
   const closeFlow  = () => { setFlow(null); setFlash(null); };
   // Create Form Rule → open the existing form-rule builder straight into "create new" for a default field.
   const createForm = () => { setSelField(null); setFlash(null); setFlow({ field: ALL_FIELDS[0].id, mode:"new", ruleId:null, dir:null, entered:false, creating:true }); };
-  const openCustom = () => setCustomOpen(true);
+  const openCustom = () => { setCustomFamily(null); setCustomOpen(true); };                 // dashboard
+  const openCustomFamily = (famId) => { setFlow(null); setFlash(null); setCustomFamily(famId); setCustomOpen(true); };  // jump straight to a family
   const closeCustom= () => setCustomOpen(false);
+  const backToCatalog = () => { setService(null); setTab("builder"); setSelField(null); setIntent(null); setFlow(null); setCustomOpen(false); };
   // Save Custom Rules: persist the session (mock), close the drawer, refresh the Form Rules view + toast.
-  const saveCustom = () => { setCustomOpen(false); setTab("rules"); setToast("Custom rules saved successfully."); };
+  const saveCustom = () => { setCustomOpen(false); setToast("Custom rules saved successfully."); };
   useEffect(()=>{ if(!toast) return; const t=setTimeout(()=>setToast(""), 3000); return ()=>clearTimeout(t); }, [toast]);
   // "Add rule" launches the guided attach flow; View / Edit go to the Form Rules tab.
   const goRules    = (fieldId) => openFlow(fieldId);   // field-centric: one action opens the rule sidebar
@@ -1855,20 +2055,24 @@ function AppV10(){
       <TopBar/>
       <div className="flex flex-1 min-h-0">
         <IconRail/>
-        <main className="flex-1 flex flex-col min-w-0">
-          <HeaderRow/>
-          <TabsRow tab={tab} onBuilder={openBuilder} onRules={openTab} total={totalRules()}/>
-          <div className="flex-1 min-h-0 overflow-hidden">
-            <div key={tab} className={(tab==="rules" ? "v10-slide" : "v10-fade") + " h-full"}>
-              {tab==="builder"
-                ? <FormBuilder flash={flash} goRules={goRules}/>
-                : <FormRulesHome field={selField} intent={intent} onBack={openBuilder} onOpen={onOpen} onClear={onClear} onCreateForm={createForm} onCreateCustom={openCustom}/>}
-            </div>
-          </div>
-        </main>
+        {!service
+          ? <main className="flex-1 flex flex-col min-w-0"><ServiceCatalogList onOpen={setService}/></main>
+          : <main className="flex-1 flex flex-col min-w-0">
+              <ServiceHeader service={service} onBack={backToCatalog}/>
+              <TabsRow tab={tab} onSelect={setTab} total={totalRules()}/>
+              <div className="flex-1 min-h-0 overflow-hidden">
+                <div key={tab} className={(tab==="builder" ? "v10-fade" : "v10-slide") + " h-full"}>
+                  {tab==="builder"
+                    ? <FormBuilder flash={flash} goRules={goRules}/>
+                    : tab==="rules"
+                      ? <FormRulesHome field={selField} intent={intent} onBack={openBuilder} onOpen={onOpen} onClear={onClear} onCreateForm={createForm} onCreateCustom={openCustom} customSel={customSel}/>
+                      : <SCTabPlaceholder tabId={tab} service={service}/>}
+                </div>
+              </div>
+            </main>}
       </div>
-      {flow && <RuleFlow flow={flow} setFlow={setFlow} onClose={closeFlow}/>}
-      {customOpen && <CustomRuleDrawer onClose={closeCustom} onSaved={saveCustom}/>}
+      {service && flow && <RuleFlow flow={flow} setFlow={setFlow} onClose={closeFlow} onCustom={openCustomFamily}/>}
+      {service && customOpen && <CustomRuleDrawer initialFamily={customFamily} sel={customSel} setSel={setCustomSel} onClose={closeCustom} onSaved={saveCustom}/>}
       {toast && <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[60] rounded-lg bg-slate-900 text-white text-[13px] px-4 py-2.5 shadow-lg flex items-center gap-2"><Ico name="check" size={15} cls="text-emerald-400"/>{toast}</div>}
     </div>
   );
@@ -1880,7 +2084,7 @@ try {
   var _err = document.createElement("pre");
   _err.id = "v10err";
   _err.style.cssText = "white-space:pre-wrap;background:#fff1f2;color:#9f1239;padding:14px 16px;margin:0;font:13px/1.5 ui-monospace,Menlo,Consolas,monospace;border-bottom:3px solid #e11d48;";
-  _err.textContent = "V10 runtime error:\n\n" + ((e && e.stack) ? e.stack : (e && e.message ? e.message : e));
+  _err.textContent = "V10.1 runtime error:\n\n" + ((e && e.stack) ? e.stack : (e && e.message ? e.message : e));
   document.body.insertBefore(_err, document.body.firstChild);
 }
 </script>
@@ -1903,7 +2107,7 @@ try {
           if (s) Babel.transform(s.textContent, { presets:["react"] });
           msg = "Scripts loaded and compiled OK, but nothing rendered — likely a runtime error.\nOpen DevTools (F12) and copy the red Console error.";
         } catch(err){
-          msg = "V10 failed to compile:\n\n" + (err && err.message ? err.message : err);
+          msg = "V10.1 failed to compile:\n\n" + (err && err.message ? err.message : err);
         }
       }
       var pre = document.createElement("pre");
