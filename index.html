@@ -85,7 +85,7 @@
 
   // bump on each deploy to bust the browser cache of the iframed prototype (stale cache was loading
   // an old version that still pointed at blocked CDNs → blank iframe)
-  var BUILD = "20260619c";
+  var BUILD = "20260619e";
   function select(id, push){
     var v = vlookup(id);
     frame.src = v.src + "?b=" + BUILD;
