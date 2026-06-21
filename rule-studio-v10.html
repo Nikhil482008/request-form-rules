@@ -259,7 +259,8 @@ const condPhrase = c => {
   return f + " " + (OP_PHRASE[c.op] || "is") + " " + (v || "a value");
 };
 const actionPhrase = a => {
-  const f = labelOf(a.fieldId);
+  const ids = (a.fieldIds && a.fieldIds.length) ? a.fieldIds : (a.fieldId ? [a.fieldId] : []);
+  const f = ids.length ? ids.map(labelOf).join(" & ") : "the field";
   if (a.behavior==="Show") return "show " + f;
   if (a.behavior==="Hide") return "hide " + f;
   if (a.behavior==="Mandate") return "make " + f + " mandatory";
@@ -1108,6 +1109,48 @@ function CustomRuleCard({fam, count, detail, onClick}){
     </button>
   );
 }
+// --- Resizable side drawers (V10) -------------------------------------------------------------------
+// Right-anchored drawers can be widened/narrowed by dragging their LEFT edge. Default width is unchanged
+// (each drawer seeds the hook with its existing width); width is clamped to sensible min/max + viewport.
+function useDrawerResize(initialWidth, min, max){
+  const [width, setWidth] = useState(initialWidth);
+  const [dragging, setDragging] = useState(false);
+  const onMouseDown = e => {
+    e.preventDefault();
+    const startX = e.clientX, startW = width;
+    setDragging(true);
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
+    const onMove = ev => {
+      const hi = Math.min(max, window.innerWidth - 40);
+      let w = startW + (startX - ev.clientX);   // right-anchored: drag left → wider, drag right → narrower
+      w = Math.max(min, Math.min(hi, w));
+      setWidth(w);
+    };
+    const onUp = () => {
+      setDragging(false);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+  return { width, dragging, onMouseDown };
+}
+// Visual cue on the drawer's left edge: a hairline that brightens on hover, plus a small grip pill (3 dots).
+function DrawerResizer({onMouseDown, dragging}){
+  return (
+    <div onMouseDown={onMouseDown} title="Drag to resize" role="separator" aria-orientation="vertical"
+      className="group absolute top-0 -left-1.5 z-[60] h-full w-3 cursor-col-resize select-none">
+      <div className={"absolute left-1/2 top-0 h-full w-px -translate-x-1/2 transition-colors " + (dragging ? "bg-sky-400" : "bg-transparent group-hover:bg-sky-300")}/>
+      <div className={"absolute left-1/2 top-1/2 flex h-9 w-[7px] -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center gap-[3px] rounded-full border shadow-sm transition-colors " + (dragging ? "border-sky-300 bg-sky-50" : "border-slate-200 bg-white group-hover:border-sky-300")}>
+        {[0,1,2].map(i=> <span key={i} className={"h-[3px] w-[3px] rounded-full " + (dragging ? "bg-sky-500" : "bg-slate-300 group-hover:bg-sky-400")}/>)}
+      </div>
+    </div>
+  );
+}
 // One right-side drawer: pick a custom-rule type, then the SAME drawer transitions to the existing config UI.
 function CustomRuleDrawer({onClose, onSaved, initialFamily, sel, setSel}){
   const [selected, setSelected] = useState(initialFamily || null);   // open straight into a family when launched from a field rule
@@ -1124,10 +1167,12 @@ function CustomRuleDrawer({onClose, onSaved, initialFamily, sel, setSel}){
   const cancelCat = () => { if(snap) setSel(s=> ({...s, ...snap})); setSnap(null); setSelected(null); };  // revert, back to dashboard
   // Save Custom Rules = finalize the whole config: persist, close, refresh + toast (parent handles).
   const saveAll = () => { setSaving(true); setTimeout(()=> onSaved && onSaved(), 700); };
+  const rz = useDrawerResize(620, 480, 1200);
   return (
     <>
       <div className="fixed inset-0 z-40 bg-slate-900/10" onClick={onClose}/>
-      <aside className="fixed top-0 right-0 z-50 h-full w-[620px] max-w-[94vw] bg-white shadow-2xl border-l border-slate-200 flex flex-col v10-drawer">
+      <aside style={{width: rz.width}} className="fixed top-0 right-0 z-50 h-full max-w-[94vw] bg-white shadow-2xl border-l border-slate-200 flex flex-col v10-drawer">
+        <DrawerResizer onMouseDown={rz.onMouseDown} dragging={rz.dragging}/>
         <div className="px-5 py-4 border-b border-slate-100 flex items-start justify-between gap-3 shrink-0">
           <div className="min-w-0">
             {fam
@@ -1395,7 +1440,7 @@ const itemPhrase = it => it.group
   : condPhrase(it);
 function summarizeBlock(block, people){
   const conds = (block.conditions||[]).filter(it=> it.group ? (it.conditions||[]).some(c=>c.fieldId) : it.fieldId);
-  const acts  = (block.actions||[]).filter(a=>a.fieldId);
+  const acts  = (block.actions||[]).filter(a=> a.fieldId || (a.fieldIds && a.fieldIds.length));
   if (!acts.length) return null;
   const join = block.match==="any" ? " or " : " and ";
   const condText = conds.length ? "when " + conds.map(itemPhrase).join(join) + ", " : "";
@@ -1995,10 +2040,12 @@ function RuleFlow({flow, setFlow, onClose, onCustom}){
   const showPreview = f.dir && f.mode==="existing" && f.ruleId && !f.entered;
   const showHow = !f.dir;                                  // Step 1: Condition / Action
   const showList = f.dir && !inEditor && !showPreview;     // Step 2: role-filtered rules + Create New
+  const rz = useDrawerResize(Math.round(window.innerWidth*0.40), 560, 1400);
   return (
     <>
       <div className="fixed inset-0 z-40 bg-slate-900/10" onClick={onClose}/>
-      <aside className="fixed top-0 right-0 z-50 h-full w-[40vw] min-w-[560px] max-w-[96vw] bg-white shadow-2xl border-l border-slate-200 flex flex-col v10-drawer">
+      <aside style={{width: rz.width}} className="fixed top-0 right-0 z-50 h-full min-w-[560px] max-w-[96vw] bg-white shadow-2xl border-l border-slate-200 flex flex-col v10-drawer">
+        <DrawerResizer onMouseDown={rz.onMouseDown} dragging={rz.dragging}/>
         <div className="px-5 py-4 border-b border-slate-100 flex items-start justify-between gap-3 shrink-0">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
@@ -2036,6 +2083,9 @@ const V7_FIELD_GROUPS = [
   { label:"Request Details",     ids:["fill_template","transition_model","subject","description","status","priority","urgency","impact","category","tags","attachment"] },
   { label:"People & Assignment", ids:["requester","cc_emails","assignee","tech_group","department","location","vendor"] },
 ];
+// Flat, deduped field index (built once) — the source list for the dual-pane target selector. Scales to
+// 500+ fields: filtering is a single linear pass and the available list is render-capped.
+const V7_FIELD_FLAT = V7_FIELD_GROUPS.flatMap(g=> g.ids.map(id=>{ const f=ALL_FIELDS.find(x=>x.id===id); return f ? {id, label:f.label, group:g.label} : null; }).filter(Boolean));
 // Grouped + searchable field picker (V7 field organisation over V10's form fields).
 function V7FieldPicker({value, onChange, placeholder}){
   const [open, setOpen] = useState(false);
@@ -2089,53 +2139,184 @@ function V7FieldPicker({value, onChange, placeholder}){
     </>
   );
 }
+// Action target selector — collapsed control. Empty → "Choose fields"; 1 → the field; many → "Status + N more".
+// Opens the dual-pane transfer modal; NEVER renders the full selection as chips.
+function V7TargetSelect({ ids, onChange }){
+  const [open, setOpen] = useState(false);
+  const n = ids.length;
+  const label = n===0 ? "Choose fields" : (n===1 ? labelOf(ids[0]) : labelOf(ids[0]) + " + " + (n-1) + " more");
+  return (
+    <>
+      <button type="button" onClick={()=>setOpen(true)}
+        className={"cursor-pointer rounded-md px-3 py-1.5 text-[13px] font-medium transition inline-flex items-center gap-1.5 " + (n ? "bg-slate-100 text-slate-700 hover:bg-slate-200" : "border border-dashed border-slate-300 italic text-slate-400 hover:bg-slate-50")}>
+        {label}<span className="text-[10px] opacity-50">▾</span>
+      </button>
+      {open && <V7TargetModal ids={ids} onApply={next=>{ onChange(next); setOpen(false); }} onClose={()=>setOpen(false)}/>}
+    </>
+  );
+}
+// Dual-pane transfer: LEFT = available (click → moves right), RIGHT = selected (remove → returns left).
+// Independent search per pane; Clear all + live count on the right. Edits a local draft; commits on Apply.
+function V7TargetModal({ ids, onApply, onClose }){
+  const [sel, setSel] = useState(ids || []);
+  const [lq, setLq] = useState("");
+  const [rq, setRq] = useState("");
+  const selSet = useMemo(()=> new Set(sel), [sel]);
+  const add    = id => setSel(s=> s.indexOf(id)>=0 ? s : [...s, id]);
+  const remove = id => setSel(s=> s.filter(x=>x!==id));
+  const lql = lq.trim().toLowerCase();
+  const rql = rq.trim().toLowerCase();
+  const available = V7_FIELD_FLAT.filter(f=> !selSet.has(f.id) && (!lql || f.label.toLowerCase().indexOf(lql)>=0));
+  const LCAP = 200;                                   // render cap keeps the left pane fast for 500+ fields
+  const availShown = available.slice(0, LCAP);
+  const selected = sel.map(id=> V7_FIELD_FLAT.find(f=>f.id===id) || {id, label:labelOf(id)})
+                      .filter(f=> !rql || f.label.toLowerCase().indexOf(rql)>=0);
+  const pane = "flex flex-col min-h-0";
+  const fld  = "w-full h-8 px-2.5 rounded-md bg-slate-50 text-[12.5px] text-slate-700 outline-none focus:bg-white focus:ring-1 focus:ring-sky-300 placeholder:text-slate-400";
+  return ReactDOM.createPortal(
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-slate-900/30" onClick={onClose}/>
+      <div className="relative v10-pop w-[660px] max-w-[95vw] bg-white rounded-xl shadow-2xl ring-1 ring-slate-200 flex flex-col h-[600px] max-h-[calc(100vh-64px)]">
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100">
+          <div>
+            <h3 className="text-[14px] font-semibold text-slate-800">Select target fields</h3>
+            <p className="text-[12px] text-slate-400">{sel.length} field{sel.length===1?"":"s"} selected</p>
+          </div>
+          <button onClick={onClose} className="w-7 h-7 grid place-items-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-600" title="Close"><Ico name="x" size={16}/></button>
+        </div>
+        <div className="grid grid-cols-2 flex-1 min-h-0 divide-x divide-slate-100">
+          {/* LEFT — available */}
+          <div className={pane}>
+            <div className="px-4 pt-3 pb-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-2">Available fields</p>
+              <input value={lq} onChange={e=>setLq(e.target.value)} placeholder="Search fields" className={fld}/>
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto px-2 pb-2">
+              {availShown.map(f=>(
+                <button key={f.id} type="button" onClick={()=>add(f.id)}
+                  className="group w-full text-left px-2.5 py-1.5 rounded-md text-[13px] text-slate-700 hover:bg-sky-50 flex items-center justify-between">
+                  <span>{f.label}</span>
+                  <span className="text-sky-500 opacity-0 group-hover:opacity-100 text-[15px] leading-none">+</span>
+                </button>
+              ))}
+              {available.length===0 && <p className="px-2.5 py-6 text-center text-[12px] text-slate-400">{lql ? "No matching fields" : "All fields selected"}</p>}
+              {available.length>LCAP && <p className="px-2.5 py-2 text-center text-[11px] text-slate-400">Showing {LCAP} of {available.length} — keep typing to narrow</p>}
+            </div>
+          </div>
+          {/* RIGHT — selected */}
+          <div className={pane}>
+            <div className="px-4 pt-3 pb-2">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Selected · {sel.length}</p>
+                {sel.length>0 && <button onClick={()=>setSel([])} className="text-[11.5px] font-medium text-rose-500 hover:underline">Clear all</button>}
+              </div>
+              <input value={rq} onChange={e=>setRq(e.target.value)} placeholder="Search selected" className={fld}/>
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto px-2 pb-2">
+              {selected.map(f=>(
+                <div key={f.id} className="w-full px-2.5 py-1.5 rounded-md text-[13px] text-slate-700 hover:bg-slate-50 flex items-center justify-between">
+                  <span>{f.label}</span>
+                  <button onClick={()=>remove(f.id)} className="text-slate-300 hover:text-rose-500" title="Remove"><Ico name="x" size={13}/></button>
+                </div>
+              ))}
+              {sel.length===0 && <p className="px-2.5 py-6 text-center text-[12px] text-slate-400">No fields selected yet</p>}
+              {sel.length>0 && selected.length===0 && <p className="px-2.5 py-6 text-center text-[12px] text-slate-400">No selected fields match</p>}
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-slate-100">
+          <button onClick={onClose} className="rounded-md px-3.5 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-100">Cancel</button>
+          <button onClick={()=>onApply(sel)} className="rounded-md bg-[#1180c1] px-4 py-1.5 text-[13px] font-semibold text-white hover:bg-[#0f72ab]">Apply</button>
+        </div>
+      </div>
+    </div>, document.body);
+}
 // Step identity (numbered badge + tag) + tinted step card with a colored left accent bar — V7 styling.
 const V7_BADGE = { when:"bg-sky-50 text-sky-600 ring-sky-100", if:"bg-amber-50 text-amber-600 ring-amber-100", then:"bg-emerald-50 text-emerald-600 ring-emerald-100", review:"bg-slate-100 text-slate-500 ring-slate-200" };
 const V7_BAR   = { when:"before:bg-sky-300", if:"before:bg-amber-300", then:"before:bg-emerald-300", review:"before:bg-slate-300" };
 const V7_CARD  = "relative overflow-hidden rounded-xl border border-slate-200 bg-slate-50/50 p-4 pl-5 before:absolute before:left-0 before:top-0 before:h-full before:w-1 before:content-['']";
-function V7StepHead({n, tone, tag, title, hint}){
+function V7StepHead({tone, tag, title, hint}){
   return (
     <div className="mb-3 flex items-center gap-2.5">
-      <span className={"flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ring-1 " + V7_BADGE[tone]}>{n}</span>
-      <span className={"rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ring-1 " + V7_BADGE[tone]}>{tag}</span>
+      <span className={"rounded px-2 py-0.5 text-[10.5px] font-bold uppercase tracking-wider ring-1 " + V7_BADGE[tone]}>{tag}</span>
       <span className="text-[14px] font-semibold text-slate-800">{title}</span>
       {hint && <span className="ml-auto text-[12px] text-slate-400">{hint}</span>}
     </div>
   );
 }
-function V7Match({match, onChange}){
-  return (
+// Two-level match logic (V9 model): "conditions" = inside a group / flat list (group.match | block.match),
+// "groups" = across groups (block.match). divider → centered pill on a rule line, between group cards.
+function V7Logic({match, onChange, level, divider}){
+  const L = level==="groups"
+    ? { all:"Match ALL Groups", any:"Match ANY Group", allHelp:"Every group must match.", anyHelp:"At least one group must match." }
+    : { all:"Match ALL Conditions", any:"Match ANY Condition", allHelp:"All conditions must be true.", anyHelp:"At least one condition must be true." };
+  const toggle = (
     <div className="inline-flex items-center gap-0.5 rounded-md border border-slate-200 bg-white p-0.5 text-[12px]">
-      {[["all","Match ALL"],["any","Match ANY"]].map(([m,label])=>(
+      {[["all",L.all],["any",L.any]].map(([m,label])=>(
         <button key={m} onClick={()=>onChange(m)}
           className={"rounded px-2.5 py-1 font-medium transition " + (match===m ? "bg-sky-50 text-[#1180c1] ring-1 ring-sky-100" : "text-slate-500 hover:text-slate-700")}>{label}</button>
       ))}
     </div>
   );
+  const help = <p className="text-[11px] italic text-slate-400">{match==="all" ? L.allHelp : L.anyHelp}</p>;
+  if(divider) return (
+    <div className="my-1 flex flex-col items-center gap-1.5">
+      <div className="flex w-full items-center gap-3"><span className="h-px flex-1 bg-slate-200"/>{toggle}<span className="h-px flex-1 bg-slate-200"/></div>
+      {help}
+    </div>
+  );
+  return <div className="mt-2.5 flex flex-col gap-1">{toggle}{help}</div>;
 }
+// Condition row opens ready-to-fill: field · operator · value placeholders all visible immediately.
 function V7CondRow({c, onChange, onRemove}){
   return (
     <div className="flex items-center gap-2">
       <div className="flex flex-1 flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-white p-1.5">
-        <V7FieldPicker value={c.fieldId} onChange={v=>onChange({fieldId:v, op:"", value:""})}/>
-        {c.fieldId && <div className="w-36"><GuidedDropdown value={c.op} onChange={v=>onChange({op:v, value: OPS_MULTI.indexOf(v)>=0 ? [] : ""})} options={OPS} guide={OP_GUIDE} placeholder="choose"/></div>}
-        {c.fieldId && c.op && OPS_NOVALUE.indexOf(c.op)<0 && <div className="w-44"><ValueControl fieldId={c.fieldId} op={c.op} value={c.value} onChange={v=>onChange({value:v})}/></div>}
-        {c.fieldId && c.op && OPS_NOVALUE.indexOf(c.op)>=0 && <span className="px-1 text-[12px] italic text-slate-400">no value needed</span>}
+        <V7FieldPicker value={c.fieldId} onChange={v=>onChange({fieldId:v, value:""})} placeholder="Choose field"/>
+        <div className="w-36"><GuidedDropdown value={c.op} onChange={v=>onChange({op:v, value: OPS_MULTI.indexOf(v)>=0 ? [] : ""})} options={OPS} guide={OP_GUIDE} placeholder="Choose"/></div>
+        {OPS_NOVALUE.indexOf(c.op)>=0
+          ? <span className="px-1 text-[12px] italic text-slate-400">no value needed</span>
+          : <div className="w-44"><ValueControl fieldId={c.fieldId} op={c.op} value={c.value} onChange={v=>onChange({value:v})}/></div>}
       </div>
       <button onClick={onRemove} title="Remove condition" className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-rose-500 text-white transition hover:bg-rose-600"><Ico name="x" size={13}/></button>
     </div>
   );
 }
-function V7ActRow({a, onChange, onRemove}){
+// A nested condition group inside IF — its own conditions + its own Match-ALL/ANY Conditions logic
+// (V9 model). The group's match is separate from the group-level (block.match) logic in V7Block.
+function V7Group({g, n, onChange, onRemove}){
+  const setLeaf = (i,p)=> onChange({conditions: g.conditions.map((c,j)=> j===i?{...c,...p}:c)});
+  const addLeaf = ()=> onChange({conditions:[...g.conditions, {fieldId:"", op:"", value:""}]});
+  const rmLeaf  = i => onChange({conditions: g.conditions.filter((_,j)=>j!==i)});
   return (
-    <div className="flex items-center gap-2">
-      <div className="flex flex-1 flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-white p-1.5">
-        <div className="w-44"><GuidedDropdown value={a.behavior} onChange={v=>onChange({behavior:v})} options={BEHAVIORS} guide={ACTION_GUIDE} placeholder="choose action"/></div>
-        {a.behavior && <V7FieldPicker value={a.fieldId} onChange={v=>onChange({fieldId:v})} placeholder="choose field"/>}
-        {a.behavior==="Set Value" && a.fieldId && <span className="text-[12px] text-slate-400">to</span>}
-        {a.behavior==="Set Value" && a.fieldId && <div className="w-40"><ValueControl fieldId={a.fieldId} op="Equals" value={a.value} onChange={v=>onChange({value:v})}/></div>}
+    <div className="rounded-lg bg-slate-50/70 ring-1 ring-slate-200/70 p-2.5">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">{n ? "Condition group " + n : "Condition group"}</span>
+        <button onClick={onRemove} className="text-slate-300 hover:text-rose-500 p-0.5" title="Remove group"><Ico name="x" size={14}/></button>
       </div>
-      <button onClick={onRemove} title="Remove action" className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-rose-500 text-white transition hover:bg-rose-600"><Ico name="x" size={13}/></button>
+      <div className="space-y-2">
+        {g.conditions.map((c,i)=> <V7CondRow key={i} c={c} onChange={p=>setLeaf(i,p)} onRemove={()=>rmLeaf(i)}/>)}
+      </div>
+      {g.conditions.length>1 && <V7Logic level="conditions" match={g.match||"all"} onChange={v=>onChange({match:v})}/>}
+      <button onClick={addLeaf} className="mt-2.5 inline-flex items-center gap-1.5 text-[12.5px] font-medium text-[#1180c1] hover:underline"><Ico name="plus" size={12}/> Add condition to group</button>
+    </div>
+  );
+}
+// Action row: ONE behavior applied to ONE OR MANY target fields. Targets are chosen in a dual-pane modal
+// and shown collapsed ("Status + N more") — never as chips. fieldIds[] is the source of truth; fieldId
+// mirrors the first for back-compat with the shared summary/conflict helpers.
+function V7ActRow({a, onChange, onRemove}){
+  const ids = (a.fieldIds && a.fieldIds.length) ? a.fieldIds : (a.fieldId ? [a.fieldId] : []);
+  const setIds = next => onChange({fieldIds:next, fieldId:next[0]||""});
+  return (
+    <div className="flex items-start gap-2">
+      <div className="flex flex-1 flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-white p-1.5">
+        <div className="w-44"><GuidedDropdown value={a.behavior} onChange={v=>onChange({behavior:v})} options={BEHAVIORS} guide={ACTION_GUIDE} placeholder="Choose action"/></div>
+        <V7TargetSelect ids={ids} onChange={setIds}/>
+        {a.behavior==="Set Value" && ids.length>0 && <span className="text-[12px] text-slate-400">to</span>}
+        {a.behavior==="Set Value" && ids.length>0 && <div className="w-40"><ValueControl fieldId={ids[0]} op="Equals" value={a.value} onChange={v=>onChange({value:v})}/></div>}
+      </div>
+      <button onClick={onRemove} title="Remove action" className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-rose-500 text-white transition hover:bg-rose-600"><Ico name="x" size={13}/></button>
     </div>
   );
 }
@@ -2144,9 +2325,22 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
   const ctxReady = !!(block.time && block.people);
   const setCond = (i,p)=> onChange({conditions: block.conditions.map((c,j)=> j===i?{...c,...p}:c)});
   const addCond = ()=> onChange({conditions:[...block.conditions, {fieldId:"", op:"", value:""}]});
+  // V9 model: adding a group wraps any existing flat conditions into their OWN group first, so
+  // condition-level logic and group-level logic (block.match) get separate, unambiguous state.
+  const addGroup= ()=> {
+    const its = block.conditions || [];
+    const bare = its.filter(x=> x && !x.group);
+    const grp  = ()=> ({group:true, match:"all", conditions:[{fieldId:"", op:"", value:""}]});
+    if(bare.length){
+      const groups = its.filter(x=> x && x.group);
+      onChange({ conditions:[{group:true, match:(block.match||"all"), conditions:bare}, ...groups, grp()], match:"all" });
+    } else {
+      onChange({ conditions:[...its, grp()] });
+    }
+  };
   const rmCond  = i => onChange({conditions: block.conditions.filter((_,j)=>j!==i)});
   const setAct  = (i,p)=> onChange({actions: block.actions.map((a,j)=> j===i?{...a,...p}:a)});
-  const addAct  = ()=> onChange({actions:[...block.actions, {behavior:"", fieldId:"", value:""}]});
+  const addAct  = ()=> onChange({actions:[...block.actions, {behavior:"", fieldIds:[], value:""}]});
   const rmAct   = i => onChange({actions: block.actions.filter((_,j)=>j!==i)});
   const sum = summarizeBlock(block, block.people) || "New rule block — start with When";
   return (
@@ -2168,31 +2362,52 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
         <div className="border-t border-slate-100 px-4 py-5 space-y-4">
           {/* STEP 1 — WHEN (always shown first) */}
           <div className={V7_CARD + " " + V7_BAR.when}>
-            <V7StepHead n={1} tone="when" tag="When" title="When this runs" hint="and who it’s for"/>
+            <V7StepHead tone="when" tag="When" title="When this runs" hint="and who it’s for"/>
             <div className="flex flex-wrap items-center gap-2">
               <div className="w-56"><GuidedDropdown value={block.time} onChange={v=>onChange({time:v})} options={WHENS} guide={WHEN_GUIDE} placeholder="Choose a time"/></div>
               <div className="w-48"><GuidedDropdown value={block.people} onChange={v=>onChange({people:v})} options={AUDS} guide={AUD_GUIDE} placeholder="Choose people"/></div>
             </div>
-            {!ctxReady && <p className="mt-2 text-[12px] text-slate-400">Start by choosing when this runs and who it’s for — the next steps appear as you go.</p>}
           </div>
-          {/* STEP 2 — IF (revealed once context is set) */}
-          {ctxReady &&
+          {/* IF — V9 two-level logic tree: group-level (block.match) between groups, condition-level inside each group / flat list */}
+          {(()=>{
+            const items = block.conditions || [];
+            const hasGroups = items.some(it=> it && it.group);
+            let gNo = 0;
+            return (
             <div className={V7_CARD + " " + V7_BAR.if}>
-              <V7StepHead n={2} tone="if" tag="If" title="What needs to be true" hint="conditions"/>
+              <V7StepHead tone="if" tag="If" title="What needs to be true" hint="conditions"/>
               <p className="text-[12px] text-slate-500 mb-2">When the rule runs, check:</p>
-              {block.conditions.length===0 && <p className="text-[13px] italic text-slate-400 mb-2">No conditions — this rule always runs.</p>}
+              {items.length===0 && <p className="text-[13px] italic text-slate-400 mb-2">No conditions — this rule always runs.</p>}
               <div className="space-y-2">
-                {block.conditions.map((c,i)=> <V7CondRow key={i} c={c} onChange={p=>setCond(i,p)} onRemove={()=>rmCond(i)}/>)}
+                {items.map((c,i)=>{
+                  if(c && c.group){
+                    gNo += 1;
+                    const prevIsGroup = i>0 && items[i-1] && items[i-1].group;
+                    return (
+                      <React.Fragment key={i}>
+                        {prevIsGroup && <V7Logic level="groups" divider match={block.match||"all"} onChange={v=>onChange({match:v})}/>}
+                        <V7Group g={c} n={gNo} onChange={p=>setCond(i,p)} onRemove={()=>rmCond(i)}/>
+                      </React.Fragment>
+                    );
+                  }
+                  return <V7CondRow key={i} c={c} onChange={p=>setCond(i,p)} onRemove={()=>rmCond(i)}/>;
+                })}
               </div>
-              {block.conditions.length>1 && <div className="mt-2.5"><V7Match match={block.match} onChange={v=>onChange({match:v})}/></div>}
-              <button onClick={addCond} className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[13px] font-medium text-[#1180c1] transition hover:bg-sky-50">
-                <span className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 text-[11px] leading-none text-white">+</span> Add Condition
-              </button>
-            </div>}
-          {/* STEP 3 — THEN (revealed after the first condition) */}
-          {ctxReady && block.conditions.length>0 &&
+              {!hasGroups && items.length>1 && <div className="mt-2.5"><V7Logic level="conditions" match={block.match||"all"} onChange={v=>onChange({match:v})}/></div>}
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                {!hasGroups && <button onClick={addCond} className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[13px] font-medium text-[#1180c1] transition hover:bg-sky-50">
+                  <span className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 text-[11px] leading-none text-white">+</span> Add Condition
+                </button>}
+                <button onClick={addGroup} className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[13px] font-medium text-slate-600 transition hover:bg-slate-50">
+                  <span className="text-sky-500">⊕</span> Add Condition Group
+                </button>
+              </div>
+            </div>);
+          })()}
+          {/* THEN — always available so Add Action is immediately reachable */}
+          {
             <div className={V7_CARD + " " + V7_BAR.then}>
-              <V7StepHead n={3} tone="then" tag="Then" title="What should happen" hint="actions"/>
+              <V7StepHead tone="then" tag="Then" title="What should happen" hint="one action can target several fields"/>
               {block.actions.length===0 && <p className="text-[13px] italic text-slate-400 mb-2">No actions yet — add one to define what happens.</p>}
               <div className="space-y-2">
                 {block.actions.map((a,i)=> <V7ActRow key={i} a={a} onChange={p=>setAct(i,p)} onRemove={()=>rmAct(i)}/>)}
@@ -2201,17 +2416,17 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
                 <span className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 text-[11px] leading-none text-white">+</span> Add Action
               </button>
             </div>}
-          {/* STEP 4 — REVIEW (revealed after the first action) */}
-          {ctxReady && block.actions.length>0 &&
+          {/* REVIEW — shown once an action is complete */}
+          {block.actions.some(a=> a.behavior && ((a.fieldIds&&a.fieldIds.length) || a.fieldId)) &&
             <div>
-              <V7StepHead n={4} tone="review" tag="Review" title="This rule will…"/>
+              <V7StepHead tone="review" tag="Review" title="This rule will…"/>
               <div className="rounded-lg border border-slate-200 bg-white p-3 text-[13px] text-slate-700 flex items-start gap-2">
                 <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500"/>
                 <span>{summarizeBlock(block, block.people) || "Complete an action to see the summary."}</span>
               </div>
             </div>}
           {/* Advanced — optional, collapsed */}
-          {ctxReady &&
+          {
             <div className="border-t border-slate-100 pt-3">
               <button onClick={()=>onChange({advOpen: !block.advOpen})} className="flex items-center gap-2 text-[12px] font-medium text-slate-500 transition hover:text-slate-700">
                 <Ico name="chevdown" size={12} cls={block.advOpen?"":"-rotate-90"}/> Advanced behavior for this block
@@ -2232,6 +2447,32 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
     </div>
   );
 }
+// Lightweight conflict detection: the draft's action targets vs other saved rules' action targets.
+const OPP_BEHAVIOR = { "Show":"Hide", "Hide":"Show", "Mandate":"Non-Mandate", "Non-Mandate":"Mandate", "Enable":"Disable", "Disable":"Enable" };
+function v10Conflicts(draft, selfId){
+  const out = []; const seen = new Set();
+  const acts = [];
+  (draft.blocks||[]).forEach(b=> (b.actions||[]).forEach(a=>{
+    if(!a.behavior) return;
+    const ids = (a.fieldIds && a.fieldIds.length) ? a.fieldIds : (a.fieldId ? [a.fieldId] : []);
+    ids.forEach(f=> acts.push({behavior:a.behavior, fieldId:f}));
+  }));
+  if(!acts.length) return out;
+  RULE_DB.forEach(r=>{
+    if(selfId && r.id===selfId) return;
+    (r.actions||[]).forEach(ra=>{
+      acts.forEach(da=>{
+        if(ra.fieldId!==da.fieldId) return;
+        let reason = null;
+        if(OPP_BEHAVIOR[da.behavior]===ra.behavior) reason = "Contradicts — “" + r.name + "” sets " + labelOf(da.fieldId) + " to “" + ra.behavior + "”, the opposite of this rule’s “" + da.behavior + "”.";
+        else if(ra.behavior===da.behavior) reason = "Overlaps — “" + r.name + "” already applies “" + da.behavior + "” to " + labelOf(da.fieldId) + ".";
+        else if(da.behavior==="Set Value" && ra.behavior==="Set Value") reason = "Both set a value on " + labelOf(da.fieldId) + " — the last rule to run wins.";
+        if(reason){ const k=r.id+"|"+da.fieldId+"|"+da.behavior; if(!seen.has(k)){ seen.add(k); out.push({rule:r, field:da.fieldId, reason}); } }
+      });
+    });
+  });
+  return out;
+}
 function FormRuleEditorV7({baseRule, onClose, onSaved}){
   const init = useMemo(()=>{
     if(baseRule){
@@ -2241,8 +2482,8 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
         conditions: (baseRule.conditions||[]).map(c=>({...c})), actions: (baseRule.actions||[]).map(a=>({...a})) };
       return { name: baseRule.name, exec: "", description: baseRule.description||"", tags: (baseRule.tags||[]).slice(), blocks:[block] };
     }
-    // New rule → one empty block; steps reveal as the user configures them.
-    return { name:"", exec:"", description:"", tags:[], blocks:[{ match:"all", advanced:false, advOpen:false, time:"", people:"", conditions:[], actions:[] }] };
+    // New rule → one block with a ready-to-fill condition + action row already open (default-open).
+    return { name:"", exec:"", description:"", tags:[], blocks:[{ match:"all", advanced:false, advOpen:false, time:"", people:"", conditions:[{fieldId:"", op:"", value:""}], actions:[{behavior:"", fieldIds:[], value:""}] }] };
   }, [baseRule]);
   const [draft, setDraft] = useState(init);
   const [saved, setSaved] = useState(false);
@@ -2258,14 +2499,18 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
   const setBlock = (i,p)=> setDraft(d=>({...d, blocks: d.blocks.map((b,j)=> j===i?{...b,...p}:b)}));
   const dupBlock = i => setDraft(d=>{ const src=d.blocks[i]; const copy={...src, conditions:src.conditions.map(c=>({...c})), actions:src.actions.map(a=>({...a}))}; const blocks=d.blocks.slice(); blocks.splice(i+1,0,copy); return {...d, blocks}; });
   const rmBlock = i => setDraft(d=>({...d, blocks: d.blocks.filter((_,j)=>j!==i)}));
-  const addBlock = ()=> setDraft(d=>{ const blocks=[...d.blocks, {match:"all", advanced:false, advOpen:false, time:"", people:"", conditions:[], actions:[]}]; setExpandedIdx(blocks.length-1); return {...d, blocks}; });
-  const canSave = (draft.name||"").trim().length>0 && draft.blocks.some(b=> b.actions.some(a=>a.fieldId && a.behavior));
+  const addBlock = ()=> setDraft(d=>{ const blocks=[...d.blocks, {match:"all", advanced:false, advOpen:false, time:"", people:"", conditions:[{fieldId:"", op:"", value:""}], actions:[{behavior:"", fieldIds:[], value:""}]}]; setExpandedIdx(blocks.length-1); return {...d, blocks}; });
+  const canSave = (draft.name||"").trim().length>0 && draft.blocks.some(b=> b.actions.some(a=> a.behavior && ((a.fieldIds&&a.fieldIds.length) || a.fieldId)));
+  const conflicts = v10Conflicts(draft, baseRule && baseRule.id);
+  const [showConflicts, setShowConflicts] = useState(false);
   const save = ()=>{ setSaved(true); setTimeout(()=> onSaved && onSaved(), 750); };
+  const rz = useDrawerResize(940, 560, 1600);
   const Crumb = ({children, last}) => <><span className={last?"text-slate-700":"text-slate-500"}>{children}</span>{!last && <span className="text-slate-300">›</span>}</>;
   return (
     <>
       <div className="fixed inset-0 z-40 bg-slate-900/20" onClick={onClose}/>
-      <aside className="fixed top-0 right-0 z-50 h-full w-[940px] max-w-[97vw] bg-white shadow-2xl border-l border-slate-200 flex flex-col v10-drawer">
+      <aside style={{width: rz.width}} className="fixed top-0 right-0 z-50 h-full max-w-[97vw] bg-white shadow-2xl border-l border-slate-200 flex flex-col v10-drawer">
+        <DrawerResizer onMouseDown={rz.onMouseDown} dragging={rz.dragging}/>
         <div className="border-b border-slate-200 px-7 py-4 flex items-start justify-between gap-4 shrink-0">
           <div>
             <nav className="flex items-center gap-2 text-[12px]"><Crumb>Admin</Crumb><Crumb>Request Management</Crumb><Crumb>Request Form Rules</Crumb><Crumb last>{baseRule?"Edit":"Create"}</Crumb></nav>
@@ -2327,6 +2572,25 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
               <p className="mt-2 text-[12px] text-slate-400">Each block is one independent IF → THEN rule.</p>
             </div>
           </div>
+        </div>
+        {/* sticky conflict bar — always visible while editing; expands to a scannable list */}
+        <div className="shrink-0 border-t border-slate-200 bg-white">
+          {showConflicts && conflicts.length>0 &&
+            <div className="max-h-56 overflow-y-auto px-6 py-3 border-b border-slate-100 bg-slate-50/60 space-y-2">
+              {conflicts.map((c,i)=>(
+                <div key={i} className="rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2">
+                  <div className="flex items-center gap-1.5 text-[12.5px] font-semibold text-amber-800"><Ico name="flag" size={12}/> {c.rule.name}</div>
+                  <p className="mt-0.5 text-[12px] text-amber-700 leading-snug">{c.reason}</p>
+                </div>
+              ))}
+            </div>}
+          <button type="button" onClick={()=> conflicts.length && setShowConflicts(s=>!s)}
+            className={"w-full flex items-center justify-between px-6 py-2.5 transition " + (conflicts.length ? "hover:bg-amber-50/50" : "cursor-default")}>
+            {conflicts.length>0
+              ? <span className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-amber-700"><span className="w-2 h-2 rounded-full bg-amber-500"/>{conflicts.length} conflict{conflicts.length>1?"s":""} with existing rules</span>
+              : <span className="inline-flex items-center gap-1.5 text-[12.5px] font-medium text-emerald-600"><span className="w-2 h-2 rounded-full bg-emerald-500"/>No conflicts</span>}
+            {conflicts.length>0 && <span className="inline-flex items-center gap-1 text-[12.5px] font-medium text-amber-700">{showConflicts?"Hide":"View"} conflicts <Ico name="chevdown" size={13} cls={showConflicts?"":"-rotate-90"}/></span>}
+          </button>
         </div>
         <div className="flex items-center justify-between border-t border-slate-200 bg-white px-6 py-3 shrink-0">
           <span className="text-[12.5px] text-slate-400">{draft.blocks.length} block{draft.blocks.length>1?"s":""}</span>
