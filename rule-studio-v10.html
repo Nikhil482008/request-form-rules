@@ -2710,7 +2710,79 @@ function duplicateRule(id){
   saveStoredRules();
   return copy;
 }
-function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate, onRemove}){
+// Hover tooltip for a rule block's title — PORTALED (escapes the drawer's overflow so it never clips) and
+// pointer-transparent. Structured into sections so complex rules stay scannable: Title · Summary · Triggers
+// (compact line) · Conditions (bulleted, group hierarchy) · Actions (bulleted, nested field targets) · Example.
+function BlockTip({title, summary, started, triggers, condItems, actItems, example, children}){
+  const [pos, setPos] = useState(null);
+  const ref = useRef(null);
+  const show = () => {
+    if(!ref.current) return;
+    const r = ref.current.getBoundingClientRect();
+    const W = 340;
+    let left = r.left - 4; if(left + W > window.innerWidth - 8) left = window.innerWidth - W - 8; if(left < 8) left = 8;
+    // Prefer below; flip above when there isn't room (and there is above) so it never runs off-screen.
+    const placeBelow = (r.bottom + 300 <= window.innerHeight) || (r.top < 300);
+    setPos({ left, W, top: placeBelow ? r.bottom + 8 : null, bottom: placeBelow ? null : (window.innerHeight - r.top + 8) });
+  };
+  const Section = ({label, children}) => (
+    <div className="mt-2 border-t border-slate-100 pt-2">
+      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{label}</div>
+      <div className="mt-1">{children}</div>
+    </div>
+  );
+  const Bullet = ({tone="slate", children}) => (
+    <li className="flex gap-1.5 text-[12px] leading-snug text-slate-700">
+      <span className={"mt-[7px] h-1 w-1 shrink-0 rounded-full " + (tone==="sky"?"bg-sky-400":"bg-slate-300")}/><span className="min-w-0">{children}</span>
+    </li>
+  );
+  return (
+    <span ref={ref} onMouseEnter={show} onMouseLeave={()=>setPos(null)} className="block min-w-0">
+      {children}
+      {pos && ReactDOM.createPortal(
+        <div style={{left:pos.left, width:pos.W, ...(pos.top!=null?{top:pos.top}:{bottom:pos.bottom})}}
+          className="fixed z-[60] pointer-events-none max-h-[78vh] overflow-hidden rounded-lg border border-slate-200 bg-white p-3 shadow-xl v10-fade">
+          {/* 1 Title · 2 Summary */}
+          {title && <div className="text-[13px] font-bold leading-snug text-slate-800">{title}</div>}
+          <div className={(title?"mt-0.5 ":"") + "text-[12px] leading-snug text-slate-600"}>{summary}</div>
+          {started && <>
+            {/* 3 Triggers — compact, comma-separated is fine here */}
+            {triggers && <Section label="Triggers"><div className="text-[12px] leading-snug text-slate-700">{triggers}</div></Section>}
+            {/* 4 Conditions — bulleted; groups show their label then nested items */}
+            <Section label="Conditions">
+              {condItems && condItems.length
+                ? <div className="space-y-1.5">
+                    {condItems.map((c,i)=> c.group
+                      ? <div key={i}>
+                          <div className="text-[11px] font-semibold text-slate-500">Group {c.no} — Match {c.match==="any"?"ANY":"ALL"}</div>
+                          <ul className="mt-0.5 space-y-0.5 pl-1">{c.leaves.map((t,j)=><Bullet key={j}>{t}</Bullet>)}</ul>
+                        </div>
+                      : <ul key={i}><Bullet>{c.text}</Bullet></ul>)}
+                  </div>
+                : <div className="text-[12px] italic text-slate-400">Always runs (no conditions)</div>}
+            </Section>
+            {/* 5 Actions — bulleted; each action's target field(s) nested underneath */}
+            <Section label="Actions">
+              {actItems && actItems.length
+                ? <div className="space-y-1">
+                    {actItems.map((a,i)=>
+                      <div key={i}>
+                        <ul><Bullet tone="sky"><span className="font-medium text-slate-700">{a.behavior}</span></Bullet></ul>
+                        {a.targets.length>0 &&
+                          <ul className="ml-3.5 mt-0.5 space-y-0.5">{a.targets.map((t,j)=>
+                            <li key={j} className="flex gap-1.5 text-[12px] leading-snug text-slate-600"><span className="text-slate-300">–</span><span className="min-w-0">{t}</span></li>)}</ul>}
+                      </div>)}
+                  </div>
+                : <div className="text-[12px] italic text-slate-400">No actions yet</div>}
+            </Section>
+            {/* 6 Example — one short readable line */}
+            {example && <Section label="Example"><div className="text-[12px] italic leading-snug text-slate-500">{example}</div></Section>}
+          </>}
+        </div>, document.body)}
+    </span>
+  );
+}
+function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate, onRemove, exec, ruleName}){
   // Disclosure gates: WHEN → IF → add-buttons → THEN → add-action → Advanced.
   const whenReady     = !!(block.time && block.people);
   const firstCondDone = (block.conditions||[]).some(leafComplete);
@@ -2756,15 +2828,65 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
     if(acts.length) s += " then " + acts.map(actionPhrase).join(", and ");
     return cap(s);
   })();
+  // Structured tooltip data — bulleted conditions (with group hierarchy) + actions (with nested field targets),
+  // so multi-condition / multi-action rules stay scannable instead of collapsing into a comma sentence.
+  let tipGNo = 0;
+  const tipCondItems = (block.conditions||[]).map(it=>{
+    if(it && it.group){
+      const leaves = (it.conditions||[]).filter(condComplete).map(condPhrase);
+      if(!leaves.length) return null;
+      tipGNo += 1;
+      return { group:true, no:tipGNo, match: it.match||"all", leaves };
+    }
+    return condComplete(it) ? { group:false, text: condPhrase(it) } : null;
+  }).filter(Boolean);
+  const tipActItems = (block.actions||[]).filter(actComplete).map(a=>{
+    const ids = (a.fieldIds && a.fieldIds.length) ? a.fieldIds : (a.fieldId ? [a.fieldId] : []);
+    let targets;
+    if(a.behavior==="Filter Data"){
+      const ent = (FD_PERSONS.find(p=>p.value===a.entity)||{}).label || a.entity || "";
+      const sf  = (FD_USER_FIELDS.find(p=>p.value===a.srcField)||{}).label || a.srcField || "";
+      targets = [ (ent ? ent + "’s " : "") + sf + (a.value ? " = " + a.value : "") ];
+    } else if(a.behavior==="Set Value"){
+      targets = ids.map(id => labelOf(id) + (a.value ? " → " + a.value : ""));
+    } else if(a.behavior==="Show Options" || a.behavior==="Hide Options"){
+      targets = ids.map(id => labelOf(id) + (Array.isArray(a.value)&&a.value.length ? " (" + a.value.join(", ") + ")" : ""));
+    } else if(a.behavior==="Run Custom Script"){
+      targets = ["Runs a custom script"];
+    } else {
+      targets = ids.map(labelOf);
+    }
+    return { behavior: a.behavior, targets };
+  });
+  const tipTriggers = ([exec, block.time].filter(Boolean).join(", ") || "Not set yet") + " · " + (block.people || "Everyone");
+  const tipHasContent = !!(block.time || block.people || tipCondItems.length || tipActItems.length);
+  // Short, concrete one-line example.
+  const lc = s => s ? s.charAt(0).toLowerCase()+s.slice(1) : s;
+  const tipExample = (()=>{
+    if(!tipActItems.length) return "";
+    const a0 = tipActItems[0];
+    const actTxt = a0.behavior + (a0.targets.length ? " " + a0.targets[0] : "");
+    if(tipCondItems.length){
+      const c0 = tipCondItems[0].group ? tipCondItems[0].leaves[0] : tipCondItems[0].text;
+      return "When " + lc(c0 || "the conditions are met") + ", " + lc(actTxt) + ".";
+    }
+    return "Always applies: " + lc(actTxt) + ".";
+  })();
   return (
     <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
-      {/* collapsible-group row: chevron + name on the LEFT (no index badge); title expands on hover */}
+      {/* collapsible-group row: numbered indicator (→ chevron on hover) + status dot + title (tooltip on hover) */}
       <div className="flex items-center gap-2.5 px-4 py-3">
-        <button onClick={onToggle} className="group flex min-w-0 flex-1 items-center gap-2.5 text-left">
-          <Ico name="chevdown" size={16} cls={"shrink-0 text-slate-400 transition-transform " + (expanded?"":"-rotate-90")}/>
+        <button onClick={onToggle} className="flex min-w-0 flex-1 items-center gap-2.5 text-left">
+          {/* number by default; swaps to an expand/collapse chevron when the indicator is hovered (never both at once) */}
+          <span className="group/ind relative grid h-6 w-6 shrink-0 place-items-center" title={expanded ? "Collapse block" : "Expand block"}>
+            <span className="text-[12.5px] font-semibold text-slate-400 transition-opacity group-hover/ind:opacity-0">{index+1}</span>
+            <Ico name="chevdown" size={16} cls={"absolute text-slate-500 opacity-0 transition-opacity group-hover/ind:opacity-100 " + (expanded?"":"-rotate-90")}/>
+          </span>
           <span className={"h-2 w-2 shrink-0 rounded-full " + (firstActDone ? "bg-emerald-400" : whenReady ? "bg-amber-400" : "bg-slate-300")}/>
           <span className="min-w-0">
-            <span className="block truncate group-hover:whitespace-normal text-[13.5px] font-medium text-slate-800">{sum}</span>
+            <BlockTip title={ruleName} summary={sum} started={tipHasContent} triggers={tipTriggers} condItems={tipCondItems} actItems={tipActItems} example={tipExample}>
+              <span className="block truncate text-[13.5px] font-medium text-slate-800">{sum}</span>
+            </BlockTip>
             <span className="block text-[12px] text-slate-400">{block.time || "When…"} · {block.people || "Everyone"}</span>
           </span>
         </button>
@@ -3117,6 +3239,7 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
             <div className="space-y-3">
               {draft.blocks.map((b,i)=>
                 <V7Block key={i} block={b} index={i} total={draft.blocks.length} expanded={expandedIdx===i}
+                  exec={draft.exec} ruleName={draft.name}
                   onToggle={()=>setExpandedIdx(expandedIdx===i?null:i)} onChange={p=>setBlock(i,p)}
                   onDuplicate={()=>dupBlock(i)} onRemove={()=>rmBlock(i)}/>)}
             </div>
