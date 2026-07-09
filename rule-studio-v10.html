@@ -4,12 +4,16 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Motadata ServiceOps — Request Form (V10 · Form Builder)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdn.tailwindcss.com"></script>
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
 <style>
-  body { font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  body { font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+         -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility; }
   .v10 ::-webkit-scrollbar { width: 9px; height: 9px; }
   .v10 ::-webkit-scrollbar-thumb { background:#d7dee7; border-radius: 8px; }
   .v10 ::-webkit-scrollbar-thumb:hover { background:#c2ccd8; }
@@ -54,6 +58,7 @@ const ICON = {
   layers:    <><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5M2 12l10 5 10-5"/></>,
   x:         <path d="M18 6L6 18M6 6l12 12"/>,
   trash:     <><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/></>,
+  ban:       <><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></>,
   copy:      <><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></>,
   lock:      <><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></>,
   star:      <path d="M12 2.5l2.9 5.9 6.6.9-4.8 4.6 1.1 6.5L12 17.8 6.2 20.9l1.1-6.5L2.5 9.3l6.6-.9z" fill="currentColor" stroke="none"/>,
@@ -264,7 +269,7 @@ const RULE_DB = [
     conditions:[], actions:[{behavior:"Mandate", fieldId:"category"}] },
   { id:"r6",  name:"Default Department from Requester", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:6, recommended:false,
     conditions:[{fieldId:"requester", op:"Is Not Empty"}], actions:[{behavior:"Set Value", fieldId:"department", value:"the requester's department"}] },
-  { id:"r7",  name:"Lock Priority after assignment", status:"Active", when:"While the form is being filled", audience:"Technicians only", usedInForms:3, recommended:false,
+  { id:"r7",  name:"Lock Priority after assignment", status:"Active", when:"While the form is being filled", audience:"Technicians only", usedInForms:3, recommended:false, advanced:true,
     conditions:[{fieldId:"assignee", op:"Is Not Empty"}], actions:[{behavior:"Disable", fieldId:"priority"}] },
   { id:"r8",  name:"Require Urgency for High Impact", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:2, recommended:false,
     conditions:[{fieldId:"impact", op:"Equals", value:"High"}], actions:[{behavior:"Mandate", fieldId:"urgency"}] },
@@ -280,6 +285,29 @@ const RULE_DB = [
     conditions:[{fieldId:"status", op:"Equals", value:"On Hold"}], actions:[{behavior:"Show", fieldId:"cc_emails"}] },
   { id:"r14", name:"Clear Assignee when reopened", status:"Draft", when:"While the form is being filled", audience:"Technicians only", usedInForms:1, recommended:false,
     conditions:[{fieldId:"status", op:"Equals", value:"Reopened"}], actions:[{behavior:"Clear Value", fieldId:"assignee"}] },
+  // Multi-block rule (3 blocks) — only the middle block touches Priority, so it's the one that conflicts with
+  // other Priority rules. Demonstrates the block inspector: all 3 blocks shown, block 2 flagged + auto-expanded.
+  { id:"r15", name:"Priority & assignment workflow", status:"Active", when:"While the form is being filled", audience:"Technicians only", usedInForms:2, recommended:false,
+    conditions:[{fieldId:"status", op:"Equals", value:"In Progress"}], actions:[{behavior:"Mandate", fieldId:"assignee"}],
+    blocks:[
+      { match:"all", time:"While the form is being filled", people:"Technicians only",
+        conditions:[{fieldId:"status", op:"Equals", value:"In Progress"}], actions:[{behavior:"Mandate", fieldId:"assignee"}] },
+      { match:"all", time:"While the form is being filled", people:"Technicians only",
+        conditions:[{fieldId:"impact", op:"Equals", value:"High"}], actions:[{behavior:"Set Value", fieldId:"priority", value:"High"}] },
+      { match:"all", time:"While the form is being filled", people:"Technicians only",
+        conditions:[], actions:[{behavior:"Show", fieldId:"cc_emails"}] },
+    ] },
+  // Part 2 demo — the "current rule" whose conflict inspector shows the 4 fixture scenarios (touches all 7 fields).
+  { id:"r16", name:"Major incident form behavior", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:2, recommended:false,
+    conditions:[{fieldId:"impact", op:"Equals", value:"High"}], actions:[{behavior:"Set Value", fieldId:"priority", value:"High"},{behavior:"Mandate", fieldId:"assignee"}],
+    blocks:[
+      { match:"all", time:"While the form is being filled", people:"Everyone",
+        conditions:[{fieldId:"impact", op:"Equals", value:"High"}], actions:[{behavior:"Set Value", fieldId:"priority", value:"High"},{behavior:"Mandate", fieldId:"assignee"}] },
+      { match:"all", time:"While the form is being filled", people:"Everyone", advanced:true,
+        conditions:[{fieldId:"impact", op:"Equals", value:"High"}], actions:[{behavior:"Mandate", fieldId:"description"},{behavior:"Show", fieldId:"cc_emails"},{behavior:"Show", fieldId:"vendor"}] },
+      { match:"all", time:"While the form is being filled", people:"Everyone",
+        conditions:[], actions:[{behavior:"Mandate", fieldId:"category"},{behavior:"Mandate", fieldId:"tech_group"}] },
+    ] },
 ];
 
 const cap = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
@@ -539,11 +567,67 @@ function FieldControl({field}){
     </div>
   );
 }
-function FieldRow({field, flash, goRules}){
+/* Demo fixture (Part 2) — the Status field's "Rules applying to field" drawer is populated from
+   these 6 rules, hand-authored to exercise every state: action-only, condition-only, and a
+   multi-block rule where Status is a condition in one block, an action in another, and BOTH in a
+   third. Real rule shape, so every drawer helper works unchanged. All other fields stay
+   engine-driven off RULE_DB. */
+const STATUS_FIELD_RULES = [
+  // 1 — action only, no conditions
+  { id:"sf1", name:"Hides Status on the portal", audience:"Requesters only",
+    conditions:[], actions:[{behavior:"Hide", fieldId:"status"}] },
+  // 2 — condition only → triggers an action on another field
+  { id:"sf2", name:"Reveal Cc Emails when On Hold", audience:"Everyone",
+    conditions:[{fieldId:"status", op:"Equals", value:"On Hold"}], actions:[{behavior:"Show", fieldId:"cc_emails"}] },
+  // 3 — condition only → clears another field
+  { id:"sf3", name:"Clear Assignee when reopened", audience:"Technicians only",
+    conditions:[{fieldId:"status", op:"Equals", value:"Reopened"}], actions:[{behavior:"Clear Value", fieldId:"assignee"}] },
+  // 4 — KEY example: Status in all 3 blocks, a different role in each (condition / action / both)
+  { id:"sf4", name:"Priority & assignment workflow", audience:"Technicians only",
+    blocks:[
+      { conditions:[{fieldId:"status", op:"Equals", value:"In Progress"}], actions:[{behavior:"Mandate", fieldId:"assignee"}] },
+      { conditions:[{fieldId:"impact",  op:"Equals", value:"High"}],        actions:[{behavior:"Set Value", fieldId:"status", value:"On Hold"}] },
+      { conditions:[{fieldId:"status", op:"Equals", value:"Resolved"}],    actions:[{behavior:"Set Value", fieldId:"status", value:"Closed"},{behavior:"Clear Value", fieldId:"cc_emails"}] },
+    ] },
+  // 5 — condition only → locks another field
+  { id:"sf5", name:"Lock Priority after assignment", audience:"Technicians only",
+    conditions:[{fieldId:"status", op:"Equals", value:"Assigned"}], actions:[{behavior:"Disable", fieldId:"priority"}] },
+  // 6 — action only, opposite behavior to rule 1
+  { id:"sf6", name:"Show Status on the portal", audience:"Everyone",
+    conditions:[], actions:[{behavior:"Show", fieldId:"status"}] },
+];
+// Description (scalability stress test) — a single action gated by TWO condition groups of three
+// conditions each, i.e. (a AND b AND c) AND (d AND e AND f) → make Description mandatory.
+const DESCRIPTION_FIELD_RULES = [
+  { id:"df1", name:"Require Description for major incidents", audience:"Everyone",
+    conditions:[
+      { group:true, conditions:[
+        {fieldId:"priority", op:"Equals", value:"High"},
+        {fieldId:"impact",   op:"Equals", value:"High"},
+        {fieldId:"urgency",  op:"Equals", value:"High"},
+      ] },
+      { group:true, conditions:[
+        {fieldId:"category",       op:"Equals", value:"Incident"},
+        {fieldId:"location",       op:"Equals", value:"Surat"},
+        {fieldId:"requester_type", op:"Equals", value:"Employee"},
+      ] },
+    ],
+    actions:[{behavior:"Mandate", fieldId:"description"}] },
+];
+const FIELD_RULE_FIXTURES = { status: STATUS_FIELD_RULES, description: DESCRIPTION_FIELD_RULES };
+const fxBlocks = r => (r.blocks && r.blocks.length) ? r.blocks : [{conditions:r.conditions||[], actions:r.actions||[]}];
+const fxLeaves = b => { const raw=b.conditions||[]; return raw.some(c=>c&&c.group) ? raw.filter(c=>c&&c.group).reduce((a,g)=>a.concat(g.conditions||[]),[]) : raw; };
+const fixtureUses = (r, fid, kind) => fxBlocks(r).some(b => kind==="cond"
+  ? fxLeaves(b).some(c=> c && c.fieldId===fid)
+  : (b.actions||[]).some(a=> a.fieldId===fid || (a.fieldIds||[]).indexOf(fid)>=0));
+
+function FieldRow({field, flash, goRules, viewFieldRules}){
   const id = field.id;
-  const count = ruleCount(id);
-  const cCount = condRulesFor(id).length;
-  const aCount = actRulesFor(id).length;
+  // Some fields (Status, Description) are demo-populated from fixtures, so their chip counts read from there.
+  const sfr = FIELD_RULE_FIXTURES[id] || null;
+  const count  = sfr ? sfr.length : ruleCount(id);
+  const cCount = sfr ? sfr.filter(r=> fixtureUses(r,id,"cond")).length : condRulesFor(id).length;
+  const aCount = sfr ? sfr.filter(r=> fixtureUses(r,id,"act")).length  : actRulesFor(id).length;
   const isFlash = flash===id;
   return (
     <div className={"group relative rounded-lg px-3 py-2.5 transition-all duration-150 " +
@@ -563,7 +647,7 @@ function FieldRow({field, flash, goRules}){
         <label className="text-[13px] font-medium text-slate-600">{field.label}</label>
         {field.required && <span className="text-rose-500 -ml-1">*</span>}
         {count>0
-          ? <RuleBadge count={count} cCount={cCount} aCount={aCount} onClick={()=>goRules(id)}/>
+          ? <RuleBadge count={count} cCount={cCount} aCount={aCount} onClick={()=>viewFieldRules(id)}/>
           : <button onClick={()=>goRules(id)} title="No rules yet — configure rules for this field"
               className="text-slate-300 hover:text-[#1593d4] opacity-70 hover:opacity-100 transition">
               <Ico name="flag" size={12}/>
@@ -573,15 +657,15 @@ function FieldRow({field, flash, goRules}){
     </div>
   );
 }
-function FormRow({row, flash, goRules}){
+function FormRow({row, flash, goRules, viewFieldRules}){
   if(row.length===2){
     return (
       <div className="grid grid-cols-2 gap-x-10">
-        {row.map(f=> <FieldRow key={f.id} field={f} flash={flash} goRules={goRules}/>)}
+        {row.map(f=> <FieldRow key={f.id} field={f} flash={flash} goRules={goRules} viewFieldRules={viewFieldRules}/>)}
       </div>
     );
   }
-  return <FieldRow field={row[0]} flash={flash} goRules={goRules}/>;
+  return <FieldRow field={row[0]} flash={flash} goRules={goRules} viewFieldRules={viewFieldRules}/>;
 }
 
 /* ============================================================ LEFT PALETTE */
@@ -633,7 +717,7 @@ function Palette(){
 }
 
 /* ============================================================ CANVAS */
-function Canvas({flash, goRules}){
+function Canvas({flash, goRules, viewFieldRules}){
   return (
     <div className="max-w-5xl mx-auto">
       <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -645,18 +729,18 @@ function Canvas({flash, goRules}){
           <button className="text-slate-400 hover:text-slate-600 transition"><Ico name="gear" size={17}/></button>
         </div>
         <div className="px-7 py-6 space-y-3">
-          {FORM_ROWS.map((row,i)=> <FormRow key={i} row={row} flash={flash} goRules={goRules}/>)}
+          {FORM_ROWS.map((row,i)=> <FormRow key={i} row={row} flash={flash} goRules={goRules} viewFieldRules={viewFieldRules}/>)}
         </div>
       </div>
     </div>
   );
 }
-function FormBuilder({flash, goRules}){
+function FormBuilder({flash, goRules, viewFieldRules}){
   return (
     <div className="h-full flex min-h-0 bg-slate-50">
       <Palette/>
       <section className="flex-1 min-w-0 overflow-y-auto px-8 py-6">
-        <Canvas flash={flash} goRules={goRules}/>
+        <Canvas flash={flash} goRules={goRules} viewFieldRules={viewFieldRules}/>
       </section>
     </div>
   );
@@ -749,12 +833,17 @@ const RULE_CREATED = ["02 Jun 2026","27 May 2026","14 Jun 2026","18 May 2026","0
 RULE_DB.forEach((r,i)=>{ if(!r.exec) r.exec = RULE_EXEC[i % RULE_EXEC.length]; if(!r.created) r.created = RULE_CREATED[i % RULE_CREATED.length]; });
 // ---- Local persistence: ONE inventory shared by Form Builder + Form Rules, surviving refresh/navigation ----
 // The store key is versioned — bump it to discard saved rules and fall back to the seeds above.
-const RULE_STORE_KEY = "v10_form_rules_v1";
+const RULE_STORE_KEY = "v10_form_rules_v2";
 function saveStoredRules(){ try { localStorage.setItem(RULE_STORE_KEY, JSON.stringify(RULE_DB)); } catch(_){} }
 (function hydrateRules(){
   try {
     const raw = localStorage.getItem(RULE_STORE_KEY);
-    if(raw){ const arr = JSON.parse(raw); if(Array.isArray(arr) && arr.length){ RULE_DB.length = 0; arr.forEach(r=> RULE_DB.push(r)); } }
+    if(raw){ const arr = JSON.parse(raw); if(Array.isArray(arr) && arr.length){
+      // Merge-by-id: stored rules win (preserve user edits), but any in-code seed missing from storage is
+      // spliced back in — so newly-added seed rules always surface without discarding what the user saved.
+      const seeds = RULE_DB.slice(); RULE_DB.length = 0; arr.forEach(r=> RULE_DB.push(r));
+      seeds.forEach(s=>{ if(!RULE_DB.some(r=> r.id===s.id)) RULE_DB.push(s); });
+    } }
   } catch(_){}
 })();
 // --- Listing conflict model: a rule's actions/conditions vs every other saved rule. -----------------
@@ -787,7 +876,7 @@ function conflictsFor(rule){
   if(!rule) return [];
   const out = []; const myAct = actTargets(rule), myCond = condTargets(rule);
   RULE_DB.forEach(o=>{
-    if(o.id===rule.id) return;
+    if(o.id===rule.id || o.disabled) return;   // a disabled rule can't conflict — it won't run
     const oAct = actTargets(o), oCond = condTargets(o);
     const reasons = []; const seen = {};
     const push = (field, reason) => { const key=field+"|"+reason; if(!seen[key]){ seen[key]=1; reasons.push({field, reason}); } };
@@ -851,7 +940,7 @@ function RulesListing({customSel, onEditRule, onCustom, onToast}){
   const formRows = RULE_DB.map((r,i)=>({
     kind:"form", id:r.id, name:r.name, summary:summarize(r),
     exec: r.exec || RULE_EXEC[i % RULE_EXEC.length], applicable: r.audience, event: r.when,
-    created: r.created || RULE_CREATED[i % RULE_CREATED.length], enabledDef: r.status==="Active", rule:r,
+    created: r.created || RULE_CREATED[i % RULE_CREATED.length], enabledDef: r.status==="Active" && !r.disabled, rule:r,
   }));
   // Only CONFIGURED custom rules appear — unconfigured categories stay in the drawer, not the list.
   const customRows = CR_FAMILIES
@@ -2990,11 +3079,12 @@ const OPP_BEHAVIOR = { "Show":"Hide", "Hide":"Show", "Mandate":"Non-Mandate", "N
 // ---- Conflict inspector (opened from the editor's conflict bar) -----------------------------------
 // Inspect → view-only → edit. Reuses the conflict helpers; classifies overlaps into meaningful kinds
 // (Action Conflict / Condition Conflict / Contradiction / Scope Conflict / Partial Overlap — no "Duplicate").
-const CITagTone = { "Contradiction":"rose", "Action Conflict":"amber", "Condition Conflict":"sky", "Scope Conflict":"slate", "Partial Overlap":"slate" };
+const CITagTone = { "Contradiction":"rose", "Action Conflict":"amber", "Condition Conflict":"sky", "Reverse behavior":"violet", "Scope Conflict":"slate", "Partial Overlap":"slate" };
 const CITag = ({label}) => {
   const t = CITagTone[label] || "slate";
-  const cls = { rose:"bg-rose-50 text-rose-700 ring-rose-200", amber:"bg-amber-50 text-amber-700 ring-amber-200", sky:"bg-sky-50 text-[#1180c1] ring-sky-200", slate:"bg-slate-100 text-slate-600 ring-slate-200" }[t];
-  return <span className={"inline-flex items-center rounded-full px-2 py-0.5 text-[10.5px] font-semibold ring-1 " + cls}>{label}</span>;
+  const cls = { rose:"bg-rose-50 text-rose-700 ring-rose-200", amber:"bg-amber-50 text-amber-700 ring-amber-200", sky:"bg-sky-50 text-[#1180c1] ring-sky-200", violet:"bg-violet-50 text-violet-700 ring-violet-200", slate:"bg-slate-100 text-slate-600 ring-slate-200" }[t];
+  const icon = label==="Reverse behavior" ? <Ico name="history" size={10} cls="mr-0.5"/> : null;
+  return <span className={"inline-flex items-center rounded-full px-2 py-0.5 text-[10.5px] font-semibold ring-1 " + cls}>{icon}{label}</span>;
 };
 const CIMeta = ({label, value}) => (
   <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
@@ -3024,89 +3114,663 @@ function inspectConflict(draft, rule){
   Object.keys(oA).forEach(f=>{ if(HIDE_LIKE[oA[f]] && (f in dC)) pushAct(f, "Contradiction", "“" + rule.name + "” " + actVerb(oA[f],f) + ", which this rule needs in its conditions."); });
   const conditionConflicts = [];
   Object.keys(dC).forEach(f=>{ if(f in oC) conditionConflicts.push({field:f, reason:"Both rules check " + labelOf(f) + " in their conditions."}); });
+  // Reverse (advanced) behavior — an execution-TIME conflict: a rule undoes its own change when the condition
+  // stops matching, so the final value of a shared field depends on which rule runs last (not just conditions/actions).
+  const reversesField = (rl, field) => {
+    const blocks = (rl.blocks && rl.blocks.length) ? rl.blocks : [{advanced: rl.advanced, actions: rl.actions||[]}];
+    return blocks.some(b => b.advanced && (b.actions||[]).some(a=>{ const ids=(a.fieldIds&&a.fieldIds.length)?a.fieldIds:(a.fieldId?[a.fieldId]:[]); return ids.indexOf(field)>=0; }));
+  };
+  const sharedField = actionConflicts.length ? actionConflicts[0].field : null;
+  const mineRev = sharedField ? reversesField(me, sharedField) : false;
+  const theirsRev = sharedField ? reversesField(rule, sharedField) : false;
+  let reverse = null;
+  if(sharedField && (mineRev || theirsRev)){
+    const F = labelOf(sharedField);
+    const revName   = theirsRev ? "“"+rule.name+"”" : "Your rule";
+    const otherName = theirsRev ? "“"+(draft.name||"your rule")+"”" : "“"+rule.name+"”";
+    const revVerb   = theirsRev ? actVerb(oA[sharedField], sharedField) : actVerb(dA[sharedField], sharedField);
+    reverse = { field: sharedField,
+      impact: revName + " " + revVerb + " while its condition holds, then restores " + F + " when it no longer does — but " + otherName + " also changes " + F + ", so the final state depends on run order." };
+  }
   const kinds = [];
   if(actionConflicts.length) kinds.push("Action Conflict");
   if(conditionConflicts.length) kinds.push("Condition Conflict");
   actionConflicts.forEach(a=>{ if(a.kind && kinds.indexOf(a.kind)<0) kinds.push(a.kind); });
+  if(reverse) kinds.push("Reverse behavior");
+  // Single row tag — only two exist. Duplicate = same behaviour on the same field; everything else
+  // (opposite / different / set-value clash / hide-vs-condition / reverse) = Contradicting. Contradiction wins.
+  const hasContradiction = !!reverse || actionConflicts.some(a=> a.kind==="Contradiction" || a.kind==="Scope Conflict" || a.kind==="Partial Overlap");
+  const hasDuplicate = actionConflicts.some(a=> a.kind==="");
+  const tag = hasContradiction ? "Contradicting" : (hasDuplicate ? "Duplicate" : "Contradicting");
   const total = actionConflicts.length + conditionConflicts.length;
   const where = (actionConflicts.length && conditionConflicts.length) ? "conditions and actions" : actionConflicts.length ? "actions" : conditionConflicts.length ? "conditions" : "scope";
-  return { actionConflicts, conditionConflicts, kinds, total, where };
+  return { actionConflicts, conditionConflicts, kinds, reverse, tag, total, where };
 }
-function ConflictInspector({draft, conflicts, onClose, onEdit, parentWidth}){
-  const [openId, setOpenId] = useState(null);   // which row is expanded inline (one at a time)
-  // Nested second-level panel: sit ON TOP of the open Form Rule drawer, inset so the editor peeks behind.
+// Part 2 — fixture scenarios for the "Major incident form behavior" demo rule. Four data states of the SAME
+// Rule → Block → Field → Comparison component (action-only · single-field+condition · multi-field shared · multi-block).
+const DEMO_CONFLICT_FIELDS = ["Priority","Assignee","Description","Cc Emails","Category","Technician Group","Vendor"];
+// Each conflicting field carries two independent sides — cur (the rule being edited) and con (this
+// listed rule) — each describing the field's role (Condition / Action / Both), its own check/change,
+// the other conditions (grouped: AND within a group, OR between groups), and the resulting actions.
+// The comparison component adapts per side, so asymmetric conflicts (Condition ↔ Action, Both ↔ Action)
+// render correctly. Authored to stress-test grouped logic and long action lists.
+const DEMO_CONFLICT_ROWS = [
+  // S1 — Action ↔ Action (baseline compact)
+  { id:"dz1", name:"Lock Priority after assignment", audience:"Signed-in users only",
+    blocks:[ { label:"Block 1", trigger:"While the form is being filled · On Create and Edit", reverse:false,
+      fields:[
+        { id:"priority", label:"Priority",
+          cur:{ role:"Action", action:"Set value → Urgent", cgroups:[["Request Type is Incident","Impact is High"]] },
+          con:{ role:"Action", action:"Set value → High",   cgroups:[["Assignee is not empty"]] },
+          why:"Priority cannot be set to two different values at once.",
+          runtime:"If both rules run, the older rule wins." },
+      ] } ] },
+  // S2 — Condition ↔ Action (field checked on one side, changed on the other)
+  { id:"dz2", name:"Clear Assignee when reopened", audience:"Technicians only",
+    blocks:[ { label:"Block 1", trigger:"While the form is being filled · On Edit", reverse:false,
+      fields:[
+        { id:"status", label:"Status",
+          cur:{ role:"Condition", check:"Status = Reopened", cgroups:[["Request Type is Incident","Assignee is not empty"]], then:["Clear Assignee","Notify Technician"] },
+          con:{ role:"Action", action:"Set value → In Progress", cgroups:[["Priority is High","Technician Group is not empty"]] },
+          why:"Changing Status to In Progress can prevent the Current Rule's 'Status = Reopened' condition from being met." },
+      ] } ] },
+  // S3 — Action ↔ Condition with two condition groups + a long action list (main scalability test)
+  { id:"dz3", name:"Portal field visibility controls", audience:"Requesters only",
+    blocks:[ { label:"Block 2", trigger:"While the form is being filled · On Create and Edit", reverse:true, reverseNote:"Restores these fields when the condition is no longer true.",
+      fields:[
+        { id:"description", label:"Description",
+          cur:{ role:"Action", action:"Make mandatory", cgroups:[["Priority is High","Impact is High","Urgency is Critical"],["Category is Incident","Location is Surat","Requester Type is Employee"]] },
+          con:{ role:"Condition", check:"Description is empty", cgroups:[["Status is In Progress","Assignee is not empty","Technician Group is Major Incident Team"],["Impact is Critical","Category is Service Request","Source is Email"]],
+                then:["Hide Description","Clear Cc Emails","Make Vendor mandatory","Set Priority → High","Notify Technician","Set Technician Group → Escalation Team"] },
+          why:"The Current Rule makes Description mandatory while this rule depends on Description being empty and can also hide it." },
+        { id:"cc_emails", label:"Cc Emails",
+          cur:{ role:"Action", action:"Make mandatory", cgroups:[["Requester Type is External"]] },
+          con:{ role:"Action", action:"Hide field",     cgroups:[["Portal view is enabled"]] },
+          why:"Cc Emails cannot be required while it is hidden." },
+        { id:"vendor", label:"Vendor",
+          cur:{ role:"Action", action:"Show field",  cgroups:[["Category is Hardware"]] },
+          con:{ role:"Action", action:"Clear value", cgroups:[["Requester Type is External"]] },
+          why:"Vendor cannot show a value while it is being cleared." },
+      ] } ] },
+  // S4 — Both ↔ Action across a 3-block rule (field is checked AND changed on the current side)
+  { id:"dz4", name:"Major incident automation", audience:"Technicians only",
+    blocks:[
+      { label:"Block 1", trigger:"While the form is being filled · On Create and Edit", reverse:false,
+        fields:[
+          { id:"priority", label:"Priority",
+            cur:{ role:"Both", check:"Priority = High", cgroups:[["Impact is Critical","Urgency is Critical"]], changeTo:"Urgent",
+                  others:["Notify Incident Manager","Make Assignee mandatory","Set Technician Group → Major Incident Team","Show Resolution Notes","Lock Category","Add Major Incident tag"] },
+            con:{ role:"Action", action:"Set value → Low", cgroups:[["Location is Surat","Category is Incident","Requester Type is Employee"],["Source is Email","Status is In Progress","Assignee is not empty"]] },
+            why:"Setting Priority to Low can prevent the Current Rule's 'Priority = High' condition from being met, while both rules can also assign different values to Priority.",
+            runtime:"If both rules run, the older rule wins." },
+          { id:"assignee", label:"Assignee",
+            cur:{ role:"Action", action:"Make mandatory", cgroups:[["Impact is Critical"]] },
+            con:{ role:"Action", action:"Clear value",    cgroups:[["Status is In Progress"]] },
+            why:"Assignee cannot be required while it is being cleared." },
+        ] },
+      { label:"Block 2", trigger:"While the form is being filled · On Create and Edit", reverse:true, reverseNote:"Restores Description when the condition is no longer true.",
+        fields:[
+          { id:"description", label:"Description",
+            cur:{ role:"Action", action:"Make mandatory", cgroups:[["Status is Resolved"]] },
+            con:{ role:"Action", action:"Hide field",     cgroups:[["Portal view is enabled"]] },
+            why:"Description cannot be required while it is hidden." },
+        ] },
+      { label:"Block 3", trigger:"While the form is being filled · On Create and Edit", reverse:false,
+        fields:[
+          { id:"category", label:"Category",
+            cur:{ role:"Action", action:"Make read-only",       cgroups:null },
+            con:{ role:"Action", action:"Set value → Incident", cgroups:null },
+            why:"Category cannot be set to 'Incident' while it is read-only." },
+          { id:"tech_group", label:"Technician Group",
+            cur:{ role:"Action", action:"Make mandatory",                  cgroups:null },
+            con:{ role:"Action", action:"Set value → Major Incident Team", cgroups:null },
+            why:"Technician Group cannot be user-selected while its value is set automatically." },
+        ] },
+    ] },
+];
+// Collapsed-row roles for a demo conflicting rule: the field is an Action if the conflicting rule
+// changes it (a `their` behavior), and a Condition if its label heads any of that block's condition
+// tokens. Aggregated across all blocks and de-duplicated to one entry per field.
+// A field's role across the conflict: Both if either side is Both, or if it's a condition on one
+// side and an action on the other; otherwise the shared role.
+const combineRole = (a,b) => (a==="Both"||b==="Both") ? "Both" : (a!==b ? "Both" : a);
+const demoRuleFields = fx => {
+  const map = {}, order = [];
+  fx.blocks.forEach(blk=> blk.fields.forEach(f=>{
+    const role = combineRole(f.cur.role, f.con.role);
+    if(!map[f.id]){ map[f.id] = {id:f.id, label:f.label, role}; order.push(f.id); }
+    else map[f.id].role = combineRole(map[f.id].role, role);
+  }));
+  return order.map(id=> map[id]);
+};
+// one-line behaviour summary for a side, used by the collapsed rule-creation warning
+const sideBrief = side => side.role==="Action" ? side.action : side.role==="Both" ? ("Set value → " + side.changeTo) : ("Requires " + side.check);
+const ROLE_TINT = { Condition:"text-violet-600", Action:"text-sky-600", Both:"text-amber-600" };
+function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onToggle, parentWidth}){
+  // Rule-first hierarchy — Conflicting rule → OUR blocks that clash → per-block field comparison. Levels independent.
+  const [openRule, setOpenRule] = useState(null);   // one conflicting rule expanded at a time
+  const [openBlk, setOpenBlk] = useState({});       // "<ruleId>:<blockIdx>" → expanded
+  const [selField, setSelField] = useState({});     // "<ruleId>:<blockIdx>" → selected field for the comparison
+  const [openFields, setOpenFields] = useState({});   // field-centric map (first-4 rules): fieldId → expanded
+  const [seeMore, setSeeMore] = useState({});         // progressive disclosure for long action lists in the comparison
+  const [q, setQ] = useState("");
+  const [tagFilter, setTagFilter] = useState("ALL");   // ALL | Contradicting | Duplicate
+  const [cuOpen, setCuOpen] = useState(false);   // Current Rule summary — collapsed by default
   const width = Math.max(480, (parentWidth || 940) - 56);
-  const seen = {}; const rules = [];
-  conflicts.forEach(c=>{ if(c.rule && !seen[c.rule.id]){ seen[c.rule.id]=1; rules.push(c.rule); } });
-  const execOf = r => r.exec || RULE_EXEC[Math.max(0, RULE_DB.findIndex(x=>x.id===r.id)) % RULE_EXEC.length];   // same exec scope the listing shows
-  const metaLine = r => execOf(r) + " · " + (r.when||"—") + " · " + (r.audience||"Everyone");
-  const condText = c => labelOf(c.fieldId) + " " + (OP_PHRASE[c.op]||c.op||"") + (c.value ? " " + (Array.isArray(c.value)?c.value.join(" / "):c.value) : "");
-  const Lbl = ({children}) => <div className="text-[10.5px] font-bold uppercase tracking-wide text-slate-400 mb-1">{children}</div>;
-  return (
-    <>
-      {/* dim ONLY the rule drawer beneath — it stays visible so the user knows they're still in this rule */}
-      <div className="fixed inset-0 z-[55] bg-slate-900/25" onClick={onClose}/>
-      {/* nested panel: inset 56px from the editor's left edge (editor peeks behind), pulled from the drawer edge */}
-      <aside style={{width}} className="fixed top-0 right-0 z-[56] h-full max-w-[97vw] bg-white shadow-[-24px_0_48px_-12px_rgba(15,23,42,0.25)] border-l-2 border-amber-300 flex flex-col v10-drawer">
-        <div className="border-b border-slate-200 px-6 py-3 flex items-start justify-between gap-3 shrink-0">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2"><Ico name="warn" size={15} cls="text-amber-500"/><h2 className="text-[15px] font-bold text-slate-800">Conflict Inspector</h2></div>
-            <p className="mt-0.5 text-[12px] text-slate-500">Review conflicts for: <span className="font-semibold text-slate-700">{draft.name || "this rule"}</span></p>
+  const seen = {}; const baseRules = [];
+  conflicts.forEach(c=>{ if(c.rule && !seen[c.rule.id]){ seen[c.rule.id]=1; baseRules.push(c.rule); } });
+  const condText  = c => labelOf(c.fieldId) + " " + (OP_PHRASE[c.op]||c.op||"") + (c.value ? " " + (Array.isArray(c.value)?c.value.join(" / "):c.value) : "");
+  const actFields = a => (a.fieldIds&&a.fieldIds.length)?a.fieldIds:(a.fieldId?[a.fieldId]:[]);
+  const flatConds = b => (b.conditions||[]).flatMap(c=> (c&&c.group)?(c.conditions||[]):[c]).filter(c=> c && c.fieldId);
+  const blockHasField = (b,F) => flatConds(b).some(c=>c.fieldId===F) || (b.actions||[]).some(a=>actFields(a).indexOf(F)>=0);
+  const revFieldOfBlock = b => { for(const a of (b.actions||[])){ const ids=actFields(a); if(ids.length) return ids[0]; } return null; };
+  const audienceOf = r => { const bl=(r.blocks&&r.blocks.length)?r.blocks:[{people:r.audience}]; const set=[...new Set(bl.map(b=>b.people).filter(Boolean))]; return set.length===1?set[0]:(set.length>1?"Multiple":"Everyone"); };
+  // What the rule DOES to a field, plainly: "Make mandatory", "Hide field", …
+  const behaviorLabel = a => { switch(a.behavior){
+    case "Show": return "Show field"; case "Hide": return "Hide field";
+    case "Mandate": return "Make mandatory"; case "Non-Mandate": return "Make optional";
+    case "Enable": return "Enable field"; case "Disable": return "Disable field";
+    case "Set Value": return "Set value" + (a.value?" ("+a.value+")":""); case "Clear Value": return "Clear value";
+    case "Show Options": return "Show options"; case "Hide Options": return "Hide options";
+    case "Run Custom Script": return "Run script"; case "Filter Data": return "Filter data";
+    default: return a.behavior||"Change field"; } };
+  // How field F shows up in block b: "Action: Make mandatory" / "Condition: triggers the rule".
+  const roleOfField = (b, F) => { const a=(b.actions||[]).find(x=>actFields(x).indexOf(F)>=0); if(a) return "Action: " + behaviorLabel(a); if(flatConds(b).some(c=>c.fieldId===F)) return "Condition: triggers the rule"; return ""; };
+  // What the CURRENT rule does to F in a block, field name omitted (it's the subject): "Set value → High".
+  const fieldDoes = (b, F) => { const a=(b.actions||[]).find(x=>actFields(x).indexOf(F)>=0); if(!a) return flatConds(b).some(c=>c.fieldId===F) ? "Used in a condition" : "—"; switch(a.behavior){
+    case "Set Value": return "Set value → " + (a.value||"a value"); case "Mandate": return "Make mandatory"; case "Non-Mandate": return "Make optional";
+    case "Hide": return "Hide field"; case "Show": return "Show field"; case "Enable": return "Make editable"; case "Disable": return "Make read-only";
+    case "Clear Value": return "Clear value"; case "Show Options": return "Show options"; case "Hide Options": return "Hide options";
+    case "Run Custom Script": return "Run script"; case "Filter Data": return "Filter data"; default: return a.behavior||"Change field"; } };
+  // What ANOTHER rule does to F, field named so the clash reads on its own: "Sets Priority → Critical".
+  const ruleFieldBehavior = (R, F) => { const acts=ruleActions(R).filter(a=>actFields(a).indexOf(F)>=0); const L=labelOf(F); if(!acts.length) return "Uses " + L + " in a condition"; const a=acts[0]; switch(a.behavior){
+    case "Set Value": return "Sets " + L + " → " + (a.value||"a value"); case "Mandate": return "Makes " + L + " mandatory"; case "Non-Mandate": return "Makes " + L + " optional";
+    case "Hide": return "Hides " + L; case "Show": return "Shows " + L; case "Enable": return "Makes " + L + " editable"; case "Disable": return "Makes " + L + " read-only";
+    case "Clear Value": return "Clears " + L; case "Show Options": return "Sets " + L + " options"; case "Hide Options": return "Limits " + L + " options";
+    case "Run Custom Script": return "Runs a script on " + L; case "Filter Data": return "Filters " + L; default: return "Changes " + L; } };
+  // Present-tense phrase for the CURRENT rule's action on F, field named: "sets Priority to High".
+  const doesVerb = (b, F) => { const a=(b.actions||[]).find(x=>actFields(x).indexOf(F)>=0); const L=labelOf(F); if(!a) return "uses " + L + " in a condition"; switch(a.behavior){
+    case "Set Value": return "sets " + L + " to " + (a.value||"a value"); case "Mandate": return "makes " + L + " mandatory"; case "Non-Mandate": return "makes " + L + " optional";
+    case "Hide": return "hides " + L; case "Show": return "shows " + L; case "Enable": return "makes " + L + " editable"; case "Disable": return "makes " + L + " read-only";
+    case "Clear Value": return "clears " + L; case "Show Options": return "sets " + L + " options"; case "Hide Options": return "limits " + L + " options";
+    case "Run Custom Script": return "runs a script on " + L; case "Filter Data": return "filters " + L; default: return "changes " + L; } };
+  // The exact behavior on F, for the side-by-side clash: "Makes Assignee mandatory" / "Clears Assignee".
+  const draftActOn = (b, F) => (b.actions||[]).find(x=>actFields(x).indexOf(F)>=0);
+  const ruleActOn  = (R, F) => ruleActions(R).find(x=>actFields(x).indexOf(F)>=0);
+  const clash = (a, F) => { const L=labelOf(F); if(!a) return "Uses " + L + " in a condition"; switch(a.behavior){
+    case "Set Value": return "Sets " + L + " to " + (a.value||"a value"); case "Mandate": return "Makes " + L + " mandatory"; case "Non-Mandate": return "Makes " + L + " optional";
+    case "Hide": return "Hides " + L; case "Show": return "Shows " + L; case "Enable": return "Makes " + L + " editable"; case "Disable": return "Makes " + L + " read-only";
+    case "Clear Value": return "Clears " + L; case "Show Options": return "Sets " + L + " options"; case "Hide Options": return "Limits " + L + " options";
+    case "Run Custom Script": return "Runs a script on " + L; case "Filter Data": return "Filters " + L; default: return "Changes " + L; } };
+  // Compact capped field list: "Priority, Cc Emails" or "Priority, Cc Emails, +3 more".
+  const fieldsCapped = (ids, cap) => ids.length<=cap ? ids.map(labelOf).join(", ") : ids.slice(0,cap).map(labelOf).join(", ") + ", +" + (ids.length-cap) + " more";
+  // A block's condition GROUPS (each an array of leaf conditions) for the "conditions that trigger" section.
+  const condGroupsOf = b => { const items=(b.conditions||[]).filter(Boolean); if(items.some(c=>c.group)){ return items.map(c=> c.group ? (c.conditions||[]).filter(x=>x&&x.fieldId) : (c.fieldId?[c]:[])).filter(g=>g.length); } const flat=flatConds(b); return flat.length?[flat]:[]; };
+
+  const db = draft.blocks || [];
+  const draftAud = (()=>{ const set=[...new Set(db.map(b=>b.people).filter(Boolean))]; return set.length===1?set[0]:(set.length>1?"Multiple":"Everyone"); })();
+  // Per conflicting rule → the fields it clashes with the current rule on (action conflicts include hide-vs-cond).
+  const ruleCF = baseRules.map(r=>{ const ci=inspectConflict(draft, r); let cf=new Set(ci.actionConflicts.map(x=>x.field)); if(!cf.size) cf=new Set(ci.conditionConflicts.map(x=>x.field)); return { r, ci, cf }; });
+  const allFields = new Set(); ruleCF.forEach(x=> x.cf.forEach(f=> allFields.add(f)));
+  const demo = (draft.name||"").trim()==="Major incident form behavior";   // Part 2 fixture scenario
+  const N = demo ? 7 : allFields.size;   // total conflicting fields — the "… of N fields" denominator (always 7 in the demo)
+  const chipLabels = demo ? DEMO_CONFLICT_FIELDS : [...allFields].map(labelOf);
+  // RULE-FIRST — one row per conflicting rule: the fields it clashes on, and which of OUR blocks those live in.
+  const rows = ruleCF.map(({r, ci, cf})=>{
+    const rFields = [...cf];
+    const ourBlocks = db.map((b,i)=>({b,i})).filter(({b}) => rFields.some(F=> blockHasField(b, F)));
+    return { r, ci, cf, rFields, ourBlocks, tag: ci.tag };
+  }).sort((a,b)=> (b.rFields.length-a.rFields.length) || (b.ourBlocks.length-a.ourBlocks.length));
+  const ql = q.trim().toLowerCase();
+  const rulesView = rows.filter(row=>{
+    if(tagFilter!=="ALL" && row.tag!==tagFilter) return false;
+    if(!ql) return true;
+    const hay = (row.r.name + " " + row.rFields.map(labelOf).join(" ") + " " + row.ourBlocks.map(x=>"block "+(x.i+1)).join(" ") + " " + row.ourBlocks.flatMap(x=>flatConds(x.b)).map(condText).join(" ") + " " + row.ourBlocks.flatMap(x=>(x.b.actions||[])).map(behaviorLabel).join(" ")).toLowerCase();
+    return hay.indexOf(ql)>=0;
+  });
+  // First-4 rules open the FIELD-CENTRIC map (field → the current rule's blocks → detail + conflicting rules).
+  const FIELD_CENTRIC_RULES = ["Require Assignee before In Progress","Auto-set Priority from Impact & Urgency","Capture resolution when Resolved","Hide Status on the portal"];
+  const fieldCentric = FIELD_CENTRIC_RULES.indexOf((draft.name||"").trim())>=0;
+  const fieldMap = [...allFields].map(F=>{
+    const blocks = db.map((b,i)=>({b,i})).filter(x=> blockHasField(x.b, F));
+    const fr = ruleCF.filter(x=> x.cf.has(F));
+    const related = new Set(); fr.forEach(x=> x.cf.forEach(f=>{ if(f!==F) related.add(f); }));
+    return { F, blocks, rules: fr.map(x=>x.r), related:[...related], reverse: blocks.some(x=> x.b.advanced) };
+  }).sort((a,b)=> (b.blocks.length-a.blocks.length) || (b.rules.length-a.rules.length));
+  const joinAnd = arr => arr.length<=1 ? (arr[0]||"") : (arr.length===2 ? arr[0]+" and "+arr[1] : arr.slice(0,-1).join(", ")+", and "+arr[arr.length-1]);
+  const summarySentence = allFields.size===0 ? "No conflicting fields."
+    : (allFields.size<=3 ? "This rule conflicts on " + joinAnd([...allFields].map(labelOf)) + "."
+    : allFields.size + " fields are conflicting · " + labelOf(fieldMap[0].F) + " is the most affected.");
+  const fmShown = !ql ? fieldMap : fieldMap.filter(fm=>{
+    const hay = (labelOf(fm.F) + " " + fm.related.map(labelOf).join(" ") + " " + fm.rules.map(r=>r.name).join(" ") + " " + fm.blocks.map(x=>"block "+(x.i+1)).join(" ") + " " + fm.blocks.flatMap(x=>flatConds(x.b)).map(condText).join(" ")).toLowerCase();
+    return hay.indexOf(ql)>=0;
+  });
+  // Per-block field comparison — a compact field selector, then OUR vs CONFLICTING on the selected field + condition.
+  const BlockCompare = ({r, b, bk, bFields})=>{
+    const sel = (selField[bk] && bFields.indexOf(selField[bk])>=0) ? selField[bk] : bFields[0];
+    if(!sel) return null;
+    const yc = flatConds(b).map(condText);
+    const tc = ruleConditions(r).filter(c=>c&&c.fieldId).map(condText);
+    return (
+      <div className="pb-3">
+        {/* FIELD SELECTOR — this block's conflicting fields only: strip for ≤4, dropdown for more (no tabs) */}
+        {bFields.length>1 && (bFields.length<=4
+          ? <div className="mb-2.5 flex flex-wrap gap-1.5">
+              {bFields.map(F=>(
+                <button key={F} type="button" onClick={()=>setSelField(t=>({...t,[bk]:F}))} className={"rounded-md px-2.5 py-1 text-[12px] transition " + (sel===F ? "bg-white font-semibold text-slate-800 ring-1 ring-slate-300 shadow-sm" : "text-slate-500 hover:text-slate-700")}>{labelOf(F)}</button>
+              ))}
+            </div>
+          : <select value={sel} onChange={e=>setSelField(t=>({...t,[bk]:e.target.value}))} className="mb-2.5 h-8 w-full rounded-md border border-slate-200 px-2 text-[12.5px] text-slate-700 outline-none focus:border-sky-300">
+              {bFields.map(F=><option key={F} value={F}>{labelOf(F)}</option>)}
+            </select>)}
+        {/* COMPARISON — our rule vs the conflicting rule on the selected field, then the overlapping condition */}
+        <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Our rule</div>
+              <div className="mt-0.5 text-[13px] font-semibold text-slate-800">{clash(draftActOn(b,sel), sel)}</div>
+            </div>
+            <div className="border-l border-slate-100 pl-3">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Conflicting rule</div>
+              <div className="mt-0.5 text-[13px] font-semibold text-slate-800">{clash(ruleActOn(r,sel), sel)}</div>
+            </div>
           </div>
-          <button onClick={onClose} className="w-8 h-8 grid place-items-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-600 shrink-0" title="Back to rule"><Ico name="x" size={18}/></button>
+          <div className="mt-3 border-t border-slate-100 pt-2">
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Condition</div>
+            <div className="mt-1 text-[11.5px] leading-snug text-slate-600">Our rule runs when: <span className="text-slate-700">{yc.length?yc.join(", "):"Always"}</span></div>
+            <div className="mt-0.5 text-[11.5px] leading-snug text-slate-600">Conflicting rule runs when: <span className="text-slate-700">{tc.length?tc.join(", "):"Always"}</span></div>
+          </div>
+          {!!b.advanced &&
+            <div className="mt-3 flex gap-1.5 border-t border-slate-100 pt-2 text-[11.5px] leading-snug text-slate-500"><Ico name="history" size={12} cls="mt-0.5 shrink-0 text-blue-500"/><span>Reverse behavior — restores <span className="font-medium">{labelOf(sel)}</span> when the condition no longer holds.</span></div>}
         </div>
-        <div className="flex-1 overflow-y-auto px-6 py-4">
-          <div className="space-y-2">
-            {rules.map(r=>{
-              const ci = inspectConflict(draft, r);
-              const nc = (r.conditions||[]).length, na = (r.actions||[]).length;
-              const conds = r.conditions||[], acts = r.actions||[];
-              const isOpen = openId===r.id;
+      </div>
+    );
+  };
+  // Part 2 demo comparison — trigger → labeled field selector → FIELD / CURRENT RULE vs <conflicting rule> →
+  // WHY (subtly emphasised) → <conflicting rule> runs when (or NO CONDITIONS) → reverse. Switching a field
+  // updates the comparison + why in place; the block title/count/Reverse already live on the row above.
+  const DemoCompare = ({blk, bk, ruleName})=>{
+    const fields = blk.fields;
+    const sel = (selField[bk] && fields.some(f=>f.id===selField[bk])) ? selField[bk] : fields[0].id;
+    const F = fields.find(f=>f.id===sel) || fields[0];
+    const L = F.label, cur = F.cur, con = F.con;
+
+    // plain-language statement of what a rule does with THIS field — no rule-builder fragments, no arrows
+    const checkVal = c => { if(!c) return ""; const eq=c.indexOf(" = "); if(eq>=0) return c.slice(eq+3); let r=(c.indexOf(L+" ")===0)?c.slice(L.length+1):c; return r.replace(/^is /,""); };
+    const actLine = a => { if(!a) return "Changes " + L;
+      if(a.indexOf("Set value → ")===0) return "Changes " + L + " to " + a.slice(("Set value → ").length);
+      switch(a){ case "Make mandatory": return "Makes " + L + " mandatory"; case "Make optional": return "Makes " + L + " optional"; case "Hide field": return "Hides " + L; case "Show field": return "Shows " + L; case "Clear value": return "Clears " + L; case "Make read-only": return "Locks " + L; case "Make editable": return "Unlocks " + L; default: return a + " " + L; } };
+    const glance = side => side.role==="Action" ? actLine(side.action)
+      : side.role==="Both" ? ("Checks if " + L + " is " + checkVal(side.check) + ", then changes it to " + side.changeTo)
+      : ("Checks if " + L + " is " + checkVal(side.check));
+
+    // field-first heading (role is understood from the wording, never tagged separately)
+    const Lbl = ({children}) => <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{children}</div>;
+    // the field's own check/change value — the prominent line under each heading
+    const Val = ({children}) => <div className="mt-0.5 text-[13px] font-medium text-slate-900">{children}</div>;
+    // condition groups: AND within a group (bullets), OR between groups (labelled), light indent — no cards
+    const Groups = ({groups}) => (
+      <div className="mt-1.5 space-y-2">
+        {groups.map((g,gi)=>(
+          <div key={gi}>
+            {gi>0 && <div className="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400"><span>Or</span><div className="h-px flex-1 bg-slate-100"/></div>}
+            {groups.length>1 && <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-slate-400">Group {gi+1}</div>}
+            <div className={(groups.length>1 ? "border-l border-slate-200 pl-2.5 " : "") + "space-y-0.5"}>
+              {g.map((c,ci)=><div key={ci} className="flex items-start gap-1.5 text-[12.5px] leading-snug text-slate-600"><span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-slate-300"/><span>{c}</span></div>)}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+    // secondary action lists (Then / Other actions) — first 3, then progressive disclosure
+    const Actions = ({items, k, label}) => {
+      if(!items || !items.length) return null;
+      const open = !!seeMore[k]; const shown = open ? items : items.slice(0,3); const more = items.length - 3;
+      return (
+        <div>
+          <Lbl>{label}</Lbl>
+          <div className="mt-1 space-y-0.5">
+            {shown.map((a,i)=><div key={i} className="flex items-start gap-1.5 text-[12.5px] leading-snug text-slate-700"><span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-slate-300"/><span>{a}</span></div>)}
+          </div>
+          {more>0 && <button type="button" onClick={()=>setSeeMore(t=>({...t,[k]:!open}))} className="mt-1 text-[11.5px] font-medium text-sky-600 hover:text-sky-700">{open ? "Show fewer" : ("Show " + more + " more actions")}</button>}
+        </div>
+      );
+    };
+    // one rule's complete logic story — full width, field-first, adapts to the field's role in THAT rule
+    const Story = ({owner, side, kp}) => (
+      <div>
+        <div className="text-[11.5px] font-bold uppercase tracking-wide text-slate-700">{owner}</div>
+        <div className="mt-2 space-y-3">
+          {side.role==="Action" ? <>
+            <div><Lbl>{"What happens to " + L}</Lbl><Val>{side.action}</Val></div>
+            <div><Lbl>When</Lbl>{side.cgroups && side.cgroups.length ? <Groups groups={side.cgroups}/> : <div className="mt-0.5 text-[11.5px] text-slate-400">No conditions · runs whenever this block is triggered.</div>}</div>
+            <Actions items={side.others} k={kp+":oth"} label="Other actions"/>
+          </> : side.role==="Condition" ? <>
+            <div><Lbl>{"How " + L + " is checked"}</Lbl><Val>{side.check}</Val></div>
+            {side.cgroups && side.cgroups.length>0 && <div><Lbl>Along with</Lbl><Groups groups={side.cgroups}/></div>}
+            <Actions items={side.then} k={kp+":then"} label="Then"/>
+          </> : <>
+            <div><Lbl>{"How " + L + " is checked"}</Lbl><Val>{side.check}</Val></div>
+            {side.cgroups && side.cgroups.length>0 && <div><Lbl>Along with</Lbl><Groups groups={side.cgroups}/></div>}
+            <div><Lbl>{"Then " + L + " changes to"}</Lbl><Val>{side.changeTo}</Val></div>
+            <Actions items={side.others} k={kp+":oth"} label="Other actions"/>
+          </>}
+        </div>
+      </div>
+    );
+
+    return (
+      <div className="pt-0.5 pb-2.5">
+        {blk.trigger && <div className="text-[11px] text-slate-400">{blk.trigger}</div>}
+        {/* field selector — pick which conflicting field to compare; each carries a subtle role cue */}
+        {fields.length>1 &&
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {fields.map(f=>{ const active=f.id===sel; const role=combineRole(f.cur.role, f.con.role);
               return (
-                <div key={r.id} className={"rounded-lg border bg-white overflow-hidden transition " + (isOpen ? "border-amber-300 shadow-sm" : "border-slate-200")}>
-                  {/* COLLAPSED ROW HEADER — name + tag · exec metadata · counts · expand chevron */}
-                  <button onClick={()=>setOpenId(isOpen?null:r.id)} className="group w-full text-left px-3 py-2 flex items-start gap-2 transition hover:bg-slate-50/70">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="text-[13px] font-semibold text-slate-800 truncate">{r.name}</span>
-                        <span className="flex items-center gap-1 shrink-0">{ci.kinds.map((k,i)=><CITag key={i} label={k}/>)}</span>
-                      </div>
-                      <div className="mt-1 text-[12px] font-medium text-slate-600 truncate">{metaLine(r)}</div>
-                      <div className="mt-1.5 flex items-center gap-1.5">
-                        <span className="inline-flex items-center rounded bg-slate-100 px-1.5 py-0.5 text-[10.5px] font-medium text-slate-600">Conditions: {nc}</span>
-                        <span className="inline-flex items-center rounded bg-slate-100 px-1.5 py-0.5 text-[10.5px] font-medium text-slate-600">Actions: {na}</span>
-                      </div>
-                    </div>
-                    <Ico name="chevdown" size={15} cls={"shrink-0 mt-0.5 text-slate-300 group-hover:text-slate-500 transition-transform " + (isOpen?"":"-rotate-90")}/>
-                  </button>
-                  {/* EXPANDED INLINE VIEW-ONLY — dense: conflict reason first → conditions/actions → edit */}
-                  {isOpen &&
-                    <div className="border-t border-slate-100 bg-slate-50/40 px-3 py-2.5 space-y-2.5">
-                      {/* Conditions + Actions — compact, side-by-side tight lists (no per-item cards) */}
-                      <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-                        <div>
-                          <Lbl>Conditions · {nc}</Lbl>
-                          {conds.length
-                            ? <ul className="space-y-0.5">{conds.map((c,i)=><li key={i} className="text-[12px] text-slate-700 leading-snug flex gap-1.5"><span className="mt-[6px] h-1 w-1 rounded-full bg-slate-300 shrink-0"/><span>{condText(c)}</span></li>)}</ul>
-                            : <p className="text-[12px] italic text-slate-400">None — always runs.</p>}
-                        </div>
-                        <div>
-                          <Lbl>Actions · {na}</Lbl>
-                          {acts.length
-                            ? <ul className="space-y-0.5">{acts.map((a,i)=><li key={i} className="text-[12px] text-slate-700 leading-snug flex gap-1.5"><span className="mt-[6px] h-1 w-1 rounded-full bg-slate-300 shrink-0"/><span>{cap(actionPhrase(a))}</span></li>)}</ul>
-                            : <p className="text-[12px] italic text-slate-400">None.</p>}
-                        </div>
-                      </div>
-                      {/* Edit + read-only — compact footer, thin divider */}
-                      <div className="flex items-center justify-between border-t border-slate-200/70 pt-2">
-                        <span className="text-[11px] text-slate-400 inline-flex items-center gap-1"><Ico name="eye" size={12}/> Read-only</span>
-                        <button onClick={()=>onEdit(r)} className="h-8 rounded-full px-4 text-[12.5px] font-semibold text-white shadow-sm inline-flex items-center gap-1.5" style={{background:BRAND}}><Ico name="pencil" size={13}/> Edit rule</button>
-                      </div>
-                    </div>}
-                </div>
+                <button key={f.id} type="button" onClick={()=>setSelField(t=>({...t,[bk]:f.id}))}
+                  className={"inline-flex items-baseline gap-1.5 rounded-lg px-2.5 py-1 ring-1 transition " + (active ? "bg-white ring-slate-300 shadow-sm" : "bg-slate-50 ring-slate-200/70 hover:bg-white")}>
+                  <span className={"text-[12px] " + (active ? "font-semibold text-slate-900" : "text-slate-600")}>{f.label}</span>
+                  <span className={"text-[9.5px] font-semibold uppercase tracking-wide " + ROLE_TINT[role]}>{role}</span>
+                </button>
               );
             })}
+          </div>}
+        {/* one shared field-detail surface — field name, then two stacked rule stories, then why / runtime */}
+        <div className="mt-3 rounded-xl border border-slate-200/80 bg-white px-4 py-3.5">
+          <div className="text-[15px] font-semibold text-slate-900">{L}</div>
+          {/* what each rule does with this field, in plain language + the one-line reason, before any detail */}
+          <div className="mt-2 rounded-lg bg-slate-50 px-3.5 py-3">
+            <div className="space-y-2">
+              <div><div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Current Rule</div><div className="mt-0.5 text-[12.5px] font-medium text-slate-800">{glance(cur)}</div></div>
+              <div><div className="truncate text-[10px] font-semibold uppercase tracking-wide text-slate-500" title={ruleName}>{ruleName}</div><div className="mt-0.5 text-[12.5px] font-medium text-slate-800">{glance(con)}</div></div>
+            </div>
+            {F.why &&
+              <div className="mt-2.5 border-t border-slate-200/70 pt-2.5">
+                <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400"><Ico name="warn" size={11} cls="text-amber-500"/><span>Why this conflicts</span></div>
+                <div className="mt-0.5 text-[12px] leading-snug text-slate-600">{F.why}</div>
+              </div>}
           </div>
+          {/* detailed, self-contained rule stories — a subtle separator, not a late VERSUS break */}
+          <div className="mt-3.5"><Story owner="Current Rule" side={cur} kp={bk+":cur"}/></div>
+          <div className="my-3 border-t border-slate-100"/>
+          <Story owner={ruleName} side={con} kp={bk+":con"}/>
+          {/* runtime outcome — what the system actually does (why is already anchored at the top) */}
+          {F.runtime &&
+            <div className="mt-3.5 border-t border-slate-100 pt-3">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Runtime outcome</div>
+              <div className="mt-1 text-[12.5px] leading-snug text-slate-600">{F.runtime}</div>
+            </div>}
+          {blk.reverseNote &&
+            <div className="mt-2.5 flex items-start gap-1.5 text-[11.5px] leading-snug text-slate-500"><Ico name="history" size={12} cls="mt-0.5 shrink-0 text-blue-500"/><span>{blk.reverseNote}</span></div>}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <>
+      <div className="fixed inset-0 z-[55] bg-slate-900/25" onClick={onClose}/>
+      <aside style={{width}} className="fixed top-0 right-0 z-[56] h-full max-w-[97vw] bg-white shadow-2xl border-l border-slate-200 flex flex-col v10-drawer">
+        {/* header */}
+        <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-6 py-3.5 shrink-0">
+          <h2 className="text-[16px] font-bold text-slate-800">Review Conflict</h2>
+          <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-600" title="Close"><Ico name="x" size={18}/></button>
+        </div>
+        {/* CURRENT RULE — compact, collapsible (collapsed by default): name · audience · blocks + field preview */}
+        <div className="border-b border-slate-100 bg-slate-50/50 px-6 py-3 shrink-0">
+          {fieldCentric
+            ? <>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Current Rule</div>
+                    <div className="mt-0.5 truncate text-[14px] font-semibold text-slate-800">{draft.name || "Untitled rule"}</div>
+                  </div>
+                  <span className="shrink-0 text-[11.5px] text-slate-500">{draftAud + " · " + db.length + " block" + (db.length===1?"":"s")}</span>
+                </div>
+                <div className="mt-1 text-[12.5px] leading-snug text-slate-600">{summarySentence}</div>
+              </>
+            : <>
+                <button onClick={()=>setCuOpen(o=>!o)} className="w-full text-left">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <Ico name="chevdown" size={14} cls={"shrink-0 text-slate-400 transition-transform " + (cuOpen?"":"-rotate-90")}/>
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Current Rule</span>
+                    </div>
+                    <span className="shrink-0 text-[11.5px] text-slate-500">{draftAud + " · " + db.length + " block" + (db.length===1?"":"s")}</span>
+                  </div>
+                  <div className="mt-1 truncate text-[14px] font-semibold text-slate-800">{draft.name || "Untitled rule"}</div>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Conflicting fields:</span>
+                    {chipLabels.slice(0,3).map((lbl,ci)=> <span key={ci} className="inline-flex items-center rounded bg-amber-50 px-2 py-0.5 text-[11.5px] font-medium text-amber-700">{lbl}</span>)}
+                    {N>3 && <span className="text-[11.5px] font-medium text-slate-500">+{N-3} more</span>}
+                    {N===0 && <span className="text-[11.5px] text-slate-400">None</span>}
+                  </div>
+                </button>
+                {cuOpen &&
+                  <div className="mt-2 border-t border-slate-100 pt-2">
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">All conflicting fields</div>
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {chipLabels.map((lbl,ci)=> <span key={ci} className="inline-flex items-center rounded bg-amber-50 px-2 py-0.5 text-[11.5px] font-medium text-amber-700">{lbl}</span>)}
+                      {N===0 && <span className="text-[11.5px] text-slate-400">None</span>}
+                    </div>
+                  </div>}
+              </>}
+        </div>
+        {/* filter tabs (left) + search (right) */}
+        <div className="flex items-center gap-3 border-b border-slate-100 px-6 py-2.5 shrink-0">
+          {!fieldCentric &&
+            <div className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-slate-100 p-1 text-[12px]">
+              {[["ALL","All"],["Contradicting","Contradicting"],["Duplicate","Duplicate"]].map(([v,l])=>(
+                <button key={v} onClick={()=>setTagFilter(v)} className={"rounded-md px-3 py-1 transition " + (tagFilter===v ? "bg-blue-500 font-semibold text-white shadow-sm" : "text-slate-600 hover:text-slate-800")}>{l}</button>
+              ))}
+            </div>}
+          <div className="relative flex-1">
+            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><Ico name="search" size={14}/></span>
+            <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search rules, fields, or blocks…" className="h-9 w-full rounded-lg border border-slate-200 pl-9 pr-3 text-[12.5px] outline-none focus:border-sky-300 focus:ring-1 focus:ring-sky-200"/>
+          </div>
+        </div>
+        {/* CONFLICTING RULES → OUR blocks → per-block field comparison */}
+        <div className="flex-1 overflow-y-auto px-6 py-3">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{fieldCentric ? "Conflicting Fields" : "Conflicting Rules"}</span>
+            <span className="text-[11px] text-slate-400">{fieldCentric ? (fmShown.length + " field" + (fmShown.length===1?"":"s")) : ((demo?DEMO_CONFLICT_ROWS.length:rulesView.length) + " rule" + ((demo?DEMO_CONFLICT_ROWS.length:rulesView.length)===1?"":"s"))}</span>
+          </div>
+          {fieldCentric &&
+            <div className="space-y-2.5">
+              {fmShown.map(fm=>{
+                const F = fm.F; const fo = !!openFields[F];
+                const pb = fm.blocks[0];
+                const statement = pb ? ("This rule " + doesVerb(pb.b, F) + " in Block " + (pb.i+1) + ".") : ("This rule involves " + labelOf(F) + ".");
+                const ruleNames = fm.rules.map(r=>r.name);
+                const rulesLine = ruleNames.length<=2 ? ruleNames.join(", ") : (ruleNames.slice(0,2).join(", ") + ", +" + (ruleNames.length-2) + " more");
+                return (
+                  <div key={F} className={"overflow-hidden rounded-xl border bg-white transition " + (fo?"border-slate-300 shadow-sm":"border-slate-200/80 hover:border-slate-300")}>
+                    {/* FIELD CARD — field name · one-line statement · quiet metadata footer */}
+                    <button onClick={()=>setOpenFields(t=>({...t,[F]:!fo}))} className="flex w-full items-start gap-3 px-4 py-3.5 text-left">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[14px] font-semibold text-slate-900">{labelOf(F)}</span>
+                          {fm.reverse && <span className="inline-flex items-center rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600">Reverse</span>}
+                        </div>
+                        <div className="mt-1 text-[12.5px] leading-snug text-slate-500">{statement}</div>
+                        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-400">
+                          <span className="font-medium text-slate-500">{fm.blocks.length + " block" + (fm.blocks.length===1?"":"s")}</span>
+                          {ruleNames.length>0 && <span className="h-1 w-1 shrink-0 rounded-full bg-slate-300"/>}
+                          {ruleNames.length>0 && <span className="min-w-0 truncate">Conflicts with {rulesLine}</span>}
+                        </div>
+                      </div>
+                      <Ico name="chevdown" size={15} cls={"mt-0.5 shrink-0 text-slate-400 transition-transform " + (fo?"":"-rotate-90")}/>
+                    </button>
+                    {fo &&
+                      <div className="border-t border-slate-100 bg-slate-50/50 px-3 py-3">
+                        <div className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Blocks affected</div>
+                        <div className="space-y-1.5">
+                          {fm.blocks.map(({b,i})=>{
+                            const bk = F+":"+i; const bo = !!openBlk[bk];
+                            const groups = condGroupsOf(b); const multi = groups.length>1;
+                            const fRules = ruleCF.filter(x=> x.cf.has(F)).map(x=>x.r);
+                            const rev = !!b.advanced && (b.actions||[]).some(a=>actFields(a).indexOf(F)>=0);
+                            return (
+                              <div key={i} className="overflow-hidden rounded-lg border border-slate-200/80 bg-white">
+                                {/* BLOCK ROW — Block N · what the field does here */}
+                                <button onClick={()=>setOpenBlk(t=>({...t,[bk]:!bo}))} className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition hover:bg-slate-50/60">
+                                  <Ico name="chevdown" size={12} cls={"shrink-0 text-slate-400 transition-transform " + (bo?"":"-rotate-90")}/>
+                                  <span className="shrink-0 text-[12.5px] font-semibold text-slate-800">Block {i+1}</span>
+                                  <span className="min-w-0 flex-1 truncate text-[12px] text-slate-500">{doesVerb(b, F)}</span>
+                                  {rev && <span className="inline-flex shrink-0 items-center rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600">Reverse</span>}
+                                </button>
+                                {/* BLOCK DETAIL — hairline-divided sections, generous whitespace */}
+                                {bo &&
+                                  <div className="border-t border-slate-100">
+                                    {/* what this block does */}
+                                    <div className="px-4 pb-3.5 pt-3">
+                                      <div className="text-[11px] text-slate-400">{(b.time||"—") + (draft.exec ? " · " + draft.exec : "")}</div>
+                                      <div className="mt-2.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">{"What this block does to " + labelOf(F)}</div>
+                                      <div className="mt-1 text-[13px] font-semibold text-slate-900">{fieldDoes(b, F)}</div>
+                                    </div>
+                                    {/* when this happens — inline condition chips */}
+                                    {groups.length>0 &&
+                                      <div className="border-t border-slate-100 px-4 py-3">
+                                        <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">When this happens</div>
+                                        <div className="mt-2 space-y-2.5">
+                                          {groups.map((g,gi)=>(
+                                            <div key={gi}>
+                                              {gi>0 && <div className="my-2 flex items-center gap-2.5 text-[10px] font-semibold uppercase tracking-wider text-slate-300"><div className="h-px flex-1 bg-slate-100"/><span>Or</span><div className="h-px flex-1 bg-slate-100"/></div>}
+                                              {multi && <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wider text-slate-400">Group {gi+1}</div>}
+                                              <div className="flex flex-wrap gap-x-4 gap-y-1">{g.map((c,ci2)=><div key={ci2} className="flex items-center gap-1.5 text-[12.5px] text-slate-600"><span className="h-1 w-1 shrink-0 rounded-full bg-slate-300"/><span>{condText(c)}</span></div>)}</div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>}
+                                    {/* reverse */}
+                                    {rev &&
+                                      <div className="flex items-start gap-2 border-t border-slate-100 px-4 py-3 text-[11.5px] leading-snug text-slate-500"><Ico name="history" size={12} cls="mt-0.5 shrink-0 text-blue-500"/><span>Restores <span className="font-medium text-slate-600">{labelOf(F)}</span> when the condition is no longer true.</span></div>}
+                                    {/* conflicting rules — quiet rows */}
+                                    {fRules.length>0 &&
+                                      <div className="border-t border-slate-100 px-4 py-3">
+                                        <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Conflicting rules</div>
+                                        <div className="mt-2 space-y-3">
+                                          {fRules.map(rr=>(
+                                            <div key={rr.id} className="flex items-start gap-3">
+                                              <div className="min-w-0 flex-1">
+                                                <div className="truncate text-[12.5px] font-medium text-slate-800">{rr.name}</div>
+                                                <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[11.5px] text-slate-500"><span>{ruleFieldBehavior(rr, F)}</span><span className="h-1 w-1 shrink-0 rounded-full bg-slate-300"/><span className="text-slate-400">{audienceOf(rr)}</span></div>
+                                              </div>
+                                              <div className="flex shrink-0 items-center gap-0.5">
+                                                <button type="button" onClick={()=>onEdit(rr)} className="grid h-7 w-7 place-items-center rounded-md text-slate-400 transition hover:bg-slate-100 hover:text-slate-600" title="Edit rule"><Ico name="pencil" size={13}/></button>
+                                                <button type="button" onClick={()=>(onToggle||onDisable) && (onToggle||onDisable)(rr)} className="grid h-7 w-7 place-items-center rounded-md text-slate-400 transition hover:bg-rose-50 hover:text-rose-500" title="Disable rule"><Ico name="ban" size={13}/></button>
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>}
+                                  </div>}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>}
+                  </div>
+                );
+              })}
+              {fmShown.length===0 && <div className="py-10 text-center text-[12.5px] text-slate-400">No fields match.</div>}
+            </div>}
+          {!fieldCentric && <div className="divide-y divide-slate-100">
+            {demo && DEMO_CONFLICT_ROWS.map(fx=>{
+              const ro = openRule===fx.id;
+              const fr = demoRuleFields(fx);
+              const roleGroups = ["Action","Condition","Both"]
+                .map(k=>({ k, names: fr.filter(f=>f.role===k).map(f=>f.label) })).filter(g=> g.names.length>0);
+              return (
+                <React.Fragment key={fx.id}>
+                  {/* RULE ROW (demo) — which rule · X of 7 fields · N blocks */}
+                  <div onClick={()=>setOpenRule(ro?null:fx.id)} className="flex cursor-pointer items-start gap-3 py-2.5 transition hover:bg-slate-50/50">
+                    <Ico name="chevdown" size={14} cls={"mt-0.5 shrink-0 text-slate-400 transition-transform " + (ro?"":"-rotate-90")}/>
+                    <div className="min-w-0 flex-1">
+                      {/* primary line — rule name + audience */}
+                      <div className="flex items-baseline justify-between gap-3">
+                        <span className="min-w-0 truncate text-[13px] font-semibold text-slate-800">{fx.name}</span>
+                        <span className="shrink-0 text-[11px] text-slate-400">{fx.audience}</span>
+                      </div>
+                      {/* secondary — fields grouped by role; block count trails the final role line */}
+                      {roleGroups.length>0 &&
+                        <div className="mt-0.5 space-y-0.5">
+                          {roleGroups.map((g,gi)=>{
+                            const shown = g.names.slice(0,4); const more = g.names.length - shown.length;
+                            return (
+                              <div key={g.k} className="flex items-baseline gap-2.5 leading-snug">
+                                <span className={"w-[68px] shrink-0 text-[10px] font-semibold uppercase tracking-wide " + ROLE_TINT[g.k]}>{g.k}</span>
+                                <span className="min-w-0 truncate text-[12px] text-slate-700">{shown.join(", ")}{more>0 && <span className="text-slate-400"> +{more} more</span>}</span>
+                                {gi===roleGroups.length-1 && <span className="shrink-0 whitespace-nowrap text-[11px] text-slate-400">· {fx.blocks.length + " block" + (fx.blocks.length===1?"":"s")}</span>}
+                              </div>
+                            );
+                          })}
+                        </div>}
+                    </div>
+                  </div>
+                  {/* RULE EXPANSION (demo) → this rule's blocks */}
+                  {ro &&
+                    <div className="bg-slate-50/40 pl-8 pr-2 pb-2 pt-2">
+                      {fx.blocks.map((blk,bi)=>{
+                        const bk = fx.id+":"+bi; const bo = !!openBlk[bk];
+                        return (
+                          <div key={bi} className="border-b border-slate-100 last:border-b-0">
+                            {/* BLOCK ROW (demo) — which block · X of 7 fields · reverse label */}
+                            <button onClick={()=>setOpenBlk(t=>({...t,[bk]:!bo}))} className="flex w-full items-center gap-2 py-2 text-left">
+                              <Ico name="chevdown" size={12} cls={"shrink-0 text-slate-400 transition-transform " + (bo?"":"-rotate-90")}/>
+                              <span className="shrink-0 text-[12.5px] font-medium text-slate-700">{blk.label}</span>
+                              <span className="ml-auto shrink-0 text-[11.5px] text-slate-500">{blk.fields.length + " of " + N + " fields"}</span>
+                              {blk.reverse && <span className="shrink-0 text-[11px] font-medium text-blue-600">Reverse</span>}
+                            </button>
+                            {/* BLOCK EXPANSION (demo) → field selector + comparison */}
+                            {bo && <DemoCompare blk={blk} bk={bk} ruleName={fx.name}/>}
+                          </div>
+                        );
+                      })}
+                    </div>}
+                </React.Fragment>
+              );
+            })}
+            {!demo && rulesView.map(row=>{
+              const { r, rFields, ourBlocks } = row;
+              const ro = openRule===r.id;
+              return (
+                <React.Fragment key={r.id}>
+                  {/* RULE ROW — which rule · how many of the N fields · how many blocks */}
+                  <div onClick={()=>setOpenRule(ro?null:r.id)} className="flex cursor-pointer items-center gap-3 py-3 transition hover:bg-slate-50/50">
+                    <Ico name="chevdown" size={14} cls={"shrink-0 text-slate-400 transition-transform " + (ro?"":"-rotate-90")}/>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[13px] font-semibold text-slate-800">{r.name}</div>
+                      <div className="mt-0.5 text-[11.5px] text-slate-500">{rFields.length + " of " + N + " field" + (N===1?"":"s") + " · " + ourBlocks.length + " block" + (ourBlocks.length===1?"":"s")}</div>
+                    </div>
+                    <span className="shrink-0 text-[11px] text-slate-400">{audienceOf(r)}</span>
+                  </div>
+                  {/* RULE EXPANSION → OUR blocks that clash with this rule */}
+                  {ro &&
+                    <div className="bg-slate-50/40 pl-8 pr-2 pb-2">
+                      {ourBlocks.map(({b,i})=>{
+                        const bk = r.id+":"+i; const bo = !!openBlk[bk];
+                        const bFields = rFields.filter(F=> blockHasField(b, F));
+                        return (
+                          <div key={i} className="border-b border-slate-100 last:border-b-0">
+                            {/* BLOCK ROW — which block · how many of the N fields · reverse label */}
+                            <button onClick={()=>setOpenBlk(t=>({...t,[bk]:!bo}))} className="flex w-full items-center gap-2 py-2 text-left">
+                              <Ico name="chevdown" size={12} cls={"shrink-0 text-slate-400 transition-transform " + (bo?"":"-rotate-90")}/>
+                              <span className="shrink-0 text-[12.5px] font-medium text-slate-700">Block {i+1}</span>
+                              <span className="ml-auto shrink-0 text-[11.5px] text-slate-500">{bFields.length + " of " + N + " field" + (N===1?"":"s")}</span>
+                              {!!b.advanced && <span className="shrink-0 text-[11px] font-medium text-blue-600">Reverse</span>}
+                            </button>
+                            {/* BLOCK EXPANSION → field selector + comparison */}
+                            {bo && <BlockCompare r={r} b={b} bk={bk} bFields={bFields}/>}
+                          </div>
+                        );
+                      })}
+                    </div>}
+                </React.Fragment>
+              );
+            })}
+            {!demo && rulesView.length===0 && <div className="py-10 text-center text-[12.5px] text-slate-400">No conflicts match.</div>}
+          </div>}
         </div>
       </aside>
     </>
@@ -3153,8 +3817,13 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
   const canSave  = nameOk && execOk && actionOk;
   const missing  = []; if(!nameOk) missing.push("rule name"); if(!execOk) missing.push("execution trigger"); if(!actionOk) missing.push("a When → Then action");
   // Single source of truth: evaluate the SAME normalized rule the listing/inspector use, excluding this rule's own id.
+  const [, bumpRules] = useReducer(x=>x+1, 0);   // recompute conflicts after disabling a conflicting rule
   const conflicts = conflictsFor(draftToRule(draft, baseRule));
   const [inspectOpen, setInspectOpen] = useState(false);
+  // Disable a conflicting rule from the inspector → it stops running (excluded from conflicts) and persists.
+  const disableRule = rule => { rule.disabled = true; persistRule(rule); bumpRules(); };
+  // Inspector Action toggle — enable/disable a conflicting rule inline; disabling drops it from conflictsFor on recompute.
+  const toggleRule = rule => { rule.disabled = !rule.disabled; persistRule(rule); bumpRules(); };
   const save = ()=>{
     if(!canSave){ setShowErrors(true); return; }
     setSaved(true);
@@ -3271,7 +3940,239 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
               style={{background: saved ? "#16a34a" : BRAND}}>{saved ? "Saved ✓" : (baseRule ? "Update rule" : "Save rule")}</button>
           </div>
         </div>
-        {inspectOpen && conflicts.length>0 && <ConflictInspector draft={draft} conflicts={conflicts} parentWidth={rz.width} onClose={()=>setInspectOpen(false)} onEdit={loadRule}/>}
+        {inspectOpen && conflicts.length>0 && <ConflictInspector draft={draft} conflicts={conflicts} parentWidth={rz.width} onClose={()=>setInspectOpen(false)} onEdit={loadRule} onDisable={disableRule} onToggle={toggleRule}/>}
+      </aside>
+    </>
+  );
+}
+
+/* ============================================================ FIELD RULES DRAWER
+   "Rules applying to a field" — a review surface (NOT the conflict inspector).
+   Hierarchy: FIELD → RULE → BLOCKS WHERE THIS FIELD APPEARS → WHAT THE BLOCK DOES
+   TO/WITH THE FIELD → CONDITIONS. A field may be a condition, an action, or both,
+   and may appear in several blocks of one rule. */
+function FieldRulesDrawer({fieldId, onClose}){
+  const F = fieldId, L = labelOf(F);
+  const [q, setQ]           = useState("");
+  const [filter, setFilter] = useState("all");
+  const [openRules, setOpenRules]   = useState({});
+  const [openBlocks, setOpenBlocks] = useState({});
+
+  // labels for known fields; title-cases any unknown id (e.g. requester_type → Requester Type)
+  const flabel = id => { const l = labelOf(id); return l!==id ? l : id.split("_").map(w=> w.charAt(0).toUpperCase()+w.slice(1)).join(" "); };
+  // --- per-field/block helpers ------------------------------------------------
+  const blocksOf   = r => (r.blocks && r.blocks.length) ? r.blocks : [{conditions:r.conditions||[], actions:r.actions||[]}];
+  const actFieldsOf = a => (a.fieldIds && a.fieldIds.length) ? a.fieldIds : (a.fieldId ? [a.fieldId] : []);
+  const blkActs    = b => (b.actions||[]).filter(a=> actFieldsOf(a).indexOf(F)>=0);
+  // conditions may be grouped ({group:true, conditions:[...]}) — expose the groups and a flat leaf list
+  const condGroups = b => { const raw=b.conditions||[]; const g=raw.filter(c=>c&&c.group); return g.length ? g.map(x=> x.conditions||[]) : [raw]; };
+  const leafConds  = b => condGroups(b).reduce((a,g)=> a.concat(g), []);
+  const blkFCond   = b => leafConds(b).filter(c=> c && c.fieldId===F);
+  const blkUses    = b => blkActs(b).length>0 || blkFCond(b).length>0;
+
+  const condText = c => flabel(c.fieldId) + " " + (OP_PHRASE[c.op]||c.op||"") + (c.value ? " " + (Array.isArray(c.value)?c.value.join(" / "):c.value) : "");
+  const condEq   = c => { if(OPS_NOVALUE.indexOf(c.op)>=0) return flabel(c.fieldId)+" "+(OP_PHRASE[c.op]||c.op); const v=Array.isArray(c.value)?c.value.join(" / "):c.value; return flabel(c.fieldId)+" = "+(v||"—"); };
+  const actArrow = a => { switch(a.behavior){
+    case "Set Value": return "Set value → " + (a.value||"a value"); case "Mandate": return "Make mandatory"; case "Non-Mandate": return "Make optional";
+    case "Hide": return "Hide field"; case "Show": return "Show field"; case "Enable": return "Make editable"; case "Disable": return "Make read-only";
+    case "Clear Value": return "Clear value"; case "Show Options": return "Show options"; case "Hide Options": return "Limit options";
+    case "Run Custom Script": return "Run script"; case "Filter Data": return "Filter data"; default: return a.behavior||"Change field"; } };
+  // full action line for the block detail — names the target field (any field, not just the selected one)
+  const actLine = a => { const fL = actFieldsOf(a).map(flabel).join(" & ") || "field"; switch(a.behavior){
+    case "Set Value": return "Set " + fL + " → " + (a.value||"a value"); case "Mandate": return "Make " + fL + " mandatory"; case "Non-Mandate": return "Make " + fL + " optional";
+    case "Hide": return "Hide " + fL; case "Show": return "Show " + fL; case "Enable": return "Enable " + fL; case "Disable": return "Lock " + fL;
+    case "Clear Value": return "Clear " + fL; case "Show Options": return "Show " + fL + " options"; case "Hide Options": return "Limit " + fL + " options";
+    case "Run Custom Script": return "Run script"; case "Filter Data": return "Filter " + fL; default: return (a.behavior||"Change") + " " + fL; } };
+  // collapsed block-row summary (with field name), tolerant of condition / action / both
+  const rowVerb = b => { const acts=blkActs(b), isC=blkFCond(b).length>0;
+    if(acts.length && isC) return "Uses " + L + " as both condition and action";
+    if(acts.length){ const a=acts[0]; switch(a.behavior){
+      case "Set Value": return "Sets " + L + " → " + (a.value||"a value"); case "Mandate": return "Makes " + L + " mandatory"; case "Non-Mandate": return "Makes " + L + " optional";
+      case "Hide": return "Hides " + L; case "Show": return "Shows " + L; case "Enable": return "Makes " + L + " editable"; case "Disable": return "Makes " + L + " read-only";
+      case "Clear Value": return "Clears " + L; case "Show Options": return "Sets " + L + " options"; case "Hide Options": return "Limits " + L + " options"; default: return "Changes " + L; } }
+    return "Uses " + L + " as a condition"; };
+
+  // --- rule view-models -------------------------------------------------------
+  const source = FIELD_RULE_FIXTURES[F] || RULE_DB;   // Status & Description are demo-populated fixtures
+  const vms = source.map(r=>{
+    const all = blocksOf(r);
+    const appearing = all.map((b,i)=>({b,i})).filter(x=> blkUses(x.b));
+    if(!appearing.length) return null;
+    const hasAct  = appearing.some(x=> blkActs(x.b).length>0);
+    const hasCond = appearing.some(x=> blkFCond(x.b).length>0);
+    return { r, total: all.length, multi: !!(r.blocks && r.blocks.length>1), appearing, hasAct, hasCond };
+  }).filter(Boolean);
+
+  // multi-block rule → "appears in k of n blocks" (count is in the summary); single-block → the field's verb + a "1 of 1 blocks" count
+  const rowSummary = vm => vm.multi ? (L + " appears in " + vm.appearing.length + " of " + vm.total + " blocks") : rowVerb(vm.appearing[0].b);
+  const rowCount   = vm => vm.multi ? "" : (vm.appearing.length + " of " + vm.total + " blocks");
+  const haystack = vm => { const p=[vm.r.name, vm.r.audience||""];
+    vm.appearing.forEach(x=>{ p.push("block "+(x.i+1), rowVerb(x.b)); leafConds(x.b).forEach(c=>p.push(condText(c))); blkActs(x.b).forEach(a=>p.push(actArrow(a))); });
+    return p.join(" ").toLowerCase(); };
+
+  const ql = q.trim().toLowerCase();
+  const searched = vms.filter(vm=> !ql || haystack(vm).indexOf(ql)>=0);
+  // group by the field's role — mutually exclusive so a rule appears in exactly one section
+  const GROUPS = [
+    {k:"cond", title:"Used as a condition", rules: searched.filter(vm=> vm.hasCond && !vm.hasAct)},
+    {k:"act",  title:"Used as an action",   rules: searched.filter(vm=> vm.hasAct && !vm.hasCond)},
+    {k:"both", title:"Used as both",        rules: searched.filter(vm=> vm.hasCond && vm.hasAct)},
+  ];
+  const visGroups  = GROUPS.filter(g=> g.rules.length && (filter==="all" || filter===g.k));
+  const totalShown = visGroups.reduce((n,g)=> n+g.rules.length, 0);
+
+  const blockTotal = vms.reduce((n,vm)=> n+vm.appearing.length, 0);
+  const anyCond = vms.some(vm=>vm.hasCond), anyAct = vms.some(vm=>vm.hasAct);
+  const mixed = anyCond && anyAct;
+
+  const TABS = [{k:"all",label:"All"},{k:"cond",label:"Conditions"},{k:"act",label:"Actions"},{k:"both",label:"Both"}];
+  const Lbl = ({children}) => <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{children}</div>;
+
+  // Field-first detail card. The user clicked this field, so we lead with the field's own role,
+  // then the rest of the block's conditions, then the outcome. Conditions are never re-labelled
+  // as a separate "Runs when" concept — there are only conditions and actions.
+  const BlockDetail = ({b}) => {
+    const stActs=blkActs(b), allActs=b.actions||[];
+    const grps = condGroups(b);
+    const fC = grps.reduce((a,g)=> a.concat(g), []).filter(c=> c && c.fieldId===F);
+    const otherGroups = grps.map(g=> g.filter(c=> fC.indexOf(c)<0)).filter(g=> g.length>0);
+    const otherActs = allActs.filter(a=> actFieldsOf(a).indexOf(F)<0);
+    const role = (stActs.length>0 && fC.length>0) ? "both" : (stActs.length>0 ? "action" : "condition");
+    const Body  = ({children}) => <div className="text-[13px] font-medium text-slate-800">{children}</div>;
+    const Conds = ({items}) => <div className="space-y-0.5">{items.map((c,i)=><div key={i} className="flex gap-2 text-[12.5px] leading-snug text-slate-600"><span className="text-slate-300">•</span><span>{condText(c)}</span></div>)}</div>;
+    // one group → a plain list; several → each group reads as a unit, joined by AND
+    const Groups = ({groups}) => groups.length<=1
+      ? <Conds items={groups[0]||[]}/>
+      : <div>{groups.map((g,gi)=>(
+          <div key={gi}>
+            {gi>0 && <div className="my-2 flex items-center gap-2 text-[10px] font-semibold tracking-wide text-slate-400"><span>AND</span><div className="h-px flex-1 bg-slate-100"/></div>}
+            <div className="border-l-2 border-slate-100 pl-2.5">
+              <div className="mb-1 text-[10.5px] font-medium text-slate-400">Condition group {gi+1}</div>
+              <Conds items={g}/>
+            </div>
+          </div>
+        ))}</div>;
+    // one logical zone; a hairline separates zones (the first zone has no rule above it)
+    const Sec = ({label, children}) => <div className="border-t border-slate-100 pt-2.5 first:border-t-0 first:pt-0"><Lbl>{label}</Lbl><div className="mt-1">{children}</div></div>;
+    return (
+      <div className="px-3.5 py-3">
+        <div className="text-[15px] font-semibold text-slate-800">{L}</div>
+        <div className="mt-2.5 space-y-2.5">
+          {role==="condition" && <>
+            <Sec label={"How " + L + " is used"}><Body>{condEq(fC[0])}</Body></Sec>
+            {otherGroups.length>0 && <Sec label="Along with"><Groups groups={otherGroups}/></Sec>}
+            {allActs.length>0 && <Sec label="Then">{allActs.map((a,i)=><Body key={i}>{actLine(a)}</Body>)}</Sec>}
+          </>}
+          {role==="action" && <>
+            <Sec label={"What happens to " + L}>{stActs.map((a,i)=><Body key={i}>{actArrow(a)}</Body>)}</Sec>
+            {otherGroups.length>0
+              ? <Sec label="When"><Groups groups={otherGroups}/></Sec>
+              : <div className="border-t border-slate-100 pt-2.5 text-[11.5px] text-slate-400">This happens whenever the block runs.</div>}
+            {otherActs.length>0 && <Sec label="Other actions">{otherActs.map((a,i)=><Body key={i}>{actLine(a)}</Body>)}</Sec>}
+          </>}
+          {role==="both" && <>
+            <Sec label={"How " + L + " is checked"}><Body>{condEq(fC[0])}</Body></Sec>
+            {otherGroups.length>0 && <Sec label="Along with"><Groups groups={otherGroups}/></Sec>}
+            {stActs.map((a,i)=> a.behavior==="Set Value"
+              ? <Sec key={"o"+i} label={"Then " + L + " changes to"}><Body>{a.value||"a value"}</Body></Sec>
+              : <Sec key={"o"+i} label="Then"><Body>{actArrow(a)}</Body></Sec>)}
+            {otherActs.length>0 && <Sec label="Other actions">{otherActs.map((a,i)=><Body key={i}>{actLine(a)}</Body>)}</Sec>}
+          </>}
+        </div>
+      </div>
+    );
+  };
+
+  // one rule row — name + audience, a role/behavior summary + block count, and its expansion
+  const RuleCard = ({vm}) => {
+    const ro = !!openRules[vm.r.id];
+    return (
+      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+        <button onClick={()=>setOpenRules(t=>({...t,[vm.r.id]:!ro}))} className="flex w-full items-start gap-3 px-4 py-3 text-left transition hover:bg-slate-50/60">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center justify-between gap-3">
+              <span className="truncate text-[13.5px] font-semibold text-slate-800">{vm.r.name}</span>
+              {vm.r.audience && <span className="shrink-0 text-[11.5px] text-slate-400">{vm.r.audience}</span>}
+            </div>
+            <div className="mt-1 flex items-center justify-between gap-3">
+              <span className="min-w-0 truncate text-[12.5px] text-slate-600">{rowSummary(vm)}</span>
+              {rowCount(vm) && <span className="shrink-0 text-[11px] text-slate-400">{rowCount(vm)}</span>}
+            </div>
+          </div>
+          <Ico name="chevdown" size={15} cls={"mt-0.5 shrink-0 text-slate-400 transition-transform " + (ro?"":"-rotate-90")}/>
+        </button>
+        {/* rule expansion — always Rule → Block → field logic; a single-block rule auto-expands its one block */}
+        {ro &&
+          <div className="border-t border-slate-100 bg-slate-50/40 px-3 py-2.5 space-y-1.5">
+            {vm.multi && <div className="px-1 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">Blocks with {L} · {vm.appearing.length} of {vm.total}</div>}
+            {vm.appearing.map(x=>{
+              const bk = vm.r.id+":"+x.i;
+              // multi-block: collapsed by default. single-block: expanded by default until the user toggles it.
+              const bo = vm.multi ? !!openBlocks[bk] : (openBlocks[bk]===undefined ? true : openBlocks[bk]);
+              return (
+                <div key={bk} className="overflow-hidden rounded-md border border-slate-200 bg-white">
+                  <button onClick={()=>setOpenBlocks(t=>({...t,[bk]:!bo}))} className="flex w-full items-center gap-2 px-3 py-2 text-left transition hover:bg-slate-50">
+                    <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10.5px] font-semibold text-slate-500">Block {x.i+1}</span>
+                    <span className="min-w-0 flex-1 truncate text-[12.5px] text-slate-700">{rowVerb(x.b)}</span>
+                    <Ico name="chevdown" size={13} cls={"shrink-0 text-slate-400 transition-transform " + (bo?"":"-rotate-90")}/>
+                  </button>
+                  {bo && <div className="border-t border-slate-100"><BlockDetail b={x.b}/></div>}
+                </div>
+              );
+            })}
+          </div>}
+      </div>
+    );
+  };
+
+  return (
+    <>
+      <div className="fixed inset-0 z-[58] bg-slate-900/25" onClick={onClose}/>
+      <aside className="fixed top-0 right-0 z-[59] h-full w-[600px] max-w-[97vw] bg-white shadow-2xl border-l border-slate-200 flex flex-col v10-drawer">
+        {/* 1 — header */}
+        <div className="flex items-center justify-between gap-3 px-5 h-14 shrink-0 border-b border-slate-200">
+          <div className="min-w-0 flex items-baseline gap-1.5 text-[14px]">
+            <span className="text-slate-400">Rules applying to field</span>
+            <span className="text-slate-300">–</span>
+            <span className="truncate font-semibold text-slate-800">{L}</span>
+          </div>
+          <button onClick={onClose} className="shrink-0 text-slate-400 hover:text-slate-700 transition" title="Close"><Ico name="x" size={18}/></button>
+        </div>
+        {/* 2 — field summary */}
+        <div className="px-5 py-4 shrink-0 border-b border-slate-100">
+          <div className="text-[16px] font-semibold text-slate-800">{L}</div>
+          <div className="mt-1 text-[12.5px] text-slate-500">{vms.length===1 ? "1 rule applies" : (vms.length + " rules apply")} to this field</div>
+          {mixed && <div className="mt-1 text-[12px] leading-snug text-slate-400">Used as a condition, an action, or both across different rules.</div>}
+        </div>
+        {/* 3 — search + filters */}
+        <div className="px-5 py-3 shrink-0 border-b border-slate-100 space-y-2.5">
+          <div className="relative">
+            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"><Ico name="search" size={15}/></span>
+            <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search rules..."
+              className="w-full h-8 pl-8 pr-2 rounded-md border border-slate-200 text-[13px] outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100 transition"/>
+          </div>
+          <div className="inline-flex items-center gap-0.5 rounded-lg bg-slate-100 p-0.5">
+            {TABS.map(t=>(
+              <button key={t.k} type="button" onClick={()=>setFilter(t.k)}
+                className={"rounded-md px-3 py-1 text-[12px] transition " + (filter===t.k ? "bg-white font-semibold text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700")}>{t.label}</button>
+            ))}
+          </div>
+        </div>
+        {/* 4 — field usage sections (grouped by role) → 5/6/7 rule rows + expansion */}
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+          {visGroups.map(g=>(
+            <div key={g.k}>
+              <div className="mb-2 flex items-center gap-2 px-1">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{g.title}</span>
+                <span className="text-[11px] text-slate-300">{g.rules.length}</span>
+              </div>
+              <div className="space-y-2">
+                {g.rules.map(vm=> <RuleCard key={vm.r.id} vm={vm}/>)}
+              </div>
+            </div>
+          ))}
+          {totalShown===0 && <div className="py-12 text-center text-[12.5px] text-slate-400">No rules match.</div>}
+        </div>
       </aside>
     </>
   );
@@ -3284,6 +4185,7 @@ function AppV10(){
   const [intent, setIntent]     = useState(null);
   const [flash, setFlash]       = useState(null);
   const [flow, setFlow]         = useState(null);   // field-driven rule-attachment flow
+  const [fieldRules, setFieldRules] = useState(null); // "Rules applying to a field" review drawer (field id)
   const [customOpen, setCustomOpen] = useState(false); // Create Custom Rule drawer
   const [customFamily, setCustomFamily] = useState(null); // open the drawer straight into a family (null = dashboard)
   // Custom-rule selections lifted here so the Form Rules listing can show live Configured/Not-configured status.
@@ -3306,6 +4208,7 @@ function AppV10(){
   useEffect(()=>{ if(!toast) return; const t=setTimeout(()=>setToast(""), 3000); return ()=>clearTimeout(t); }, [toast]);
   // "Add rule" launches the guided attach flow; View / Edit go to the Form Rules tab.
   const goRules    = (fieldId) => openFlow(fieldId);   // field-centric: one action opens the rule sidebar
+  const viewFieldRules = (fieldId) => setFieldRules(fieldId); // review the rules already applying to this field
   const openTab    = () => { setTab("rules"); };
   const openBuilder= () => { setTab("builder"); };
   const onOpen     = (fieldId, it) => { setSelField(fieldId); setIntent(it); };
@@ -3331,7 +4234,7 @@ function AppV10(){
           <div className="flex-1 min-h-0 overflow-hidden">
             <div key={tab} className={(tab==="rules" ? "v10-slide" : "v10-fade") + " h-full"}>
               {tab==="builder"
-                ? <FormBuilder flash={flash} goRules={goRules}/>
+                ? <FormBuilder flash={flash} goRules={goRules} viewFieldRules={viewFieldRules}/>
                 : <FormRulesHome field={selField} intent={intent} onBack={openBuilder} onOpen={onOpen} onClear={onClear} onCreateForm={createForm} onCreateCustom={openCustom} onCustomFamily={openCustomFamily} customSel={customSel} onEditRule={openRule} onToast={setToast}/>}
             </div>
           </div>
@@ -3341,6 +4244,7 @@ function AppV10(){
         onSaved={(rule)=>{ if(rule){ const editing = RULE_DB.some(r=>r.id===rule.id); persistRule(rule); closeFlow(); setToast("“"+rule.name+"” "+(editing?"updated":"saved to Form Rules")+"."); } else { closeFlow(); } }}/>}
       {formRule && <FormRuleEditorV7 baseRule={formRule.baseRule} onClose={()=>setFormRule(null)} onSaved={(rule)=>{ const editing=!!(formRule&&formRule.baseRule); if(rule) persistRule(rule); setFormRule(null); setTab("rules"); setToast(rule ? ("“"+rule.name+"” "+(editing?"updated":"saved")+" in Form Rules.") : "Form rule saved successfully."); }}/>}
       {customOpen && <CustomRuleDrawer initialFamily={customFamily} sel={customSel} setSel={setCustomSel} onClose={closeCustom} onSaved={saveCustom}/>}
+      {fieldRules && <FieldRulesDrawer fieldId={fieldRules} onClose={()=>setFieldRules(null)}/>}
       {toast && <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[60] rounded-lg bg-slate-900 text-white text-[13px] px-4 py-2.5 shadow-lg flex items-center gap-2"><Ico name="check" size={15} cls="text-emerald-400"/>{toast}</div>}
     </div>
   );
