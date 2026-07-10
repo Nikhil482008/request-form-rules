@@ -3400,14 +3400,24 @@ function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onTogg
     const actLine = a => { if(!a) return "Changes " + L;
       if(a.indexOf("Set value → ")===0) return "Changes " + L + " to " + a.slice(("Set value → ").length);
       switch(a){ case "Make mandatory": return "Makes " + L + " mandatory"; case "Make optional": return "Makes " + L + " optional"; case "Hide field": return "Hides " + L; case "Show field": return "Shows " + L; case "Clear value": return "Clears " + L; case "Make read-only": return "Locks " + L; case "Make editable": return "Unlocks " + L; default: return a + " " + L; } };
-    const glance = side => side.role==="Action" ? actLine(side.action)
-      : side.role==="Both" ? ("Checks if " + L + " is " + checkVal(side.check) + ", then changes it to " + side.changeTo)
-      : ("Checks if " + L + " is " + checkVal(side.check));
+    // a key action this rule performs on the SELECTED field via its Then/Other actions (e.g. also hides it)
+    const fieldAct = side => (side.then||[]).concat(side.others||[]).find(a=> a.indexOf(L)>=0);
+    const glance = side => {
+      if(side.role==="Action") return actLine(side.action);
+      const base = side.role==="Both"
+        ? ("Checks if " + L + " is " + checkVal(side.check) + ", then changes it to " + side.changeTo)
+        : ("Checks if " + L + " is " + checkVal(side.check));
+      const hit = fieldAct(side);
+      return hit ? (base + " and can " + hit.charAt(0).toLowerCase() + hit.slice(1)) : base;
+    };
 
     // field-first heading (role is understood from the wording, never tagged separately)
     const Lbl = ({children}) => <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{children}</div>;
     // the field's own check/change value — the prominent line under each heading
     const Val = ({children}) => <div className="mt-0.5 text-[13px] font-medium text-slate-900">{children}</div>;
+    // Level-1 field-focused heading (explains the selected field's role) — sentence case, darker than the
+    // muted Level-2 structural labels (Lbl), but still lighter than the behavior value below it.
+    const FieldHead = ({children}) => <div className="text-[12px] font-medium text-slate-600">{children}</div>;
     // condition groups: AND within a group (bullets), OR between groups (labelled), light indent — no cards
     const Groups = ({groups}) => (
       <div className="mt-1.5 space-y-2">
@@ -3436,28 +3446,50 @@ function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onTogg
         </div>
       );
     };
-    // one rule's complete logic story — full width, field-first, adapts to the field's role in THAT rule
-    const Story = ({owner, side, kp}) => (
-      <div>
-        <div className="text-[11.5px] font-bold uppercase tracking-wide text-slate-700">{owner}</div>
-        <div className="mt-2 space-y-3">
-          {side.role==="Action" ? <>
-            <div><Lbl>{"What happens to " + L}</Lbl><Val>{side.action}</Val></div>
-            <div><Lbl>When</Lbl>{side.cgroups && side.cgroups.length ? <Groups groups={side.cgroups}/> : <div className="mt-0.5 text-[11.5px] text-slate-400">No conditions · runs whenever this block is triggered.</div>}</div>
-            <Actions items={side.others} k={kp+":oth"} label="Other actions"/>
-          </> : side.role==="Condition" ? <>
-            <div><Lbl>{"How " + L + " is checked"}</Lbl><Val>{side.check}</Val></div>
-            {side.cgroups && side.cgroups.length>0 && <div><Lbl>Along with</Lbl><Groups groups={side.cgroups}/></div>}
-            <Actions items={side.then} k={kp+":then"} label="Then"/>
-          </> : <>
-            <div><Lbl>{"How " + L + " is checked"}</Lbl><Val>{side.check}</Val></div>
-            {side.cgroups && side.cgroups.length>0 && <div><Lbl>Along with</Lbl><Groups groups={side.cgroups}/></div>}
-            <div><Lbl>{"Then " + L + " changes to"}</Lbl><Val>{side.changeTo}</Val></div>
-            <Actions items={side.others} k={kp+":oth"} label="Other actions"/>
-          </>}
-        </div>
+    // the field-first logic body for ONE rule — its own conditions + actions live here (never root-level)
+    const Detail = ({side, kp}) => (
+      <div className="space-y-3">
+        {side.role==="Action" ? <>
+          <div><FieldHead>{"What happens to " + L}</FieldHead><Val>{side.action}</Val></div>
+          <div><Lbl>When</Lbl>{side.cgroups && side.cgroups.length ? <Groups groups={side.cgroups}/> : <div className="mt-0.5 text-[11.5px] text-slate-400">No conditions · runs whenever this block is triggered.</div>}</div>
+          <Actions items={side.others} k={kp+":oth"} label="Other actions"/>
+        </> : side.role==="Condition" ? <>
+          <div><FieldHead>{"How " + L + " is checked"}</FieldHead><Val>{side.check}</Val></div>
+          {side.cgroups && side.cgroups.length>0 && <div><Lbl>Along with</Lbl><Groups groups={side.cgroups}/></div>}
+          <Actions items={side.then} k={kp+":then"} label="Then"/>
+        </> : <>
+          <div><FieldHead>{"How " + L + " is checked"}</FieldHead><Val>{side.check}</Val></div>
+          {side.cgroups && side.cgroups.length>0 && <div><Lbl>Along with</Lbl><Groups groups={side.cgroups}/></div>}
+          <div><FieldHead>{"Then " + L + " changes to"}</FieldHead><Val>{side.changeTo}</Val></div>
+          <Actions items={side.others} k={kp+":oth"} label="Other actions"/>
+        </>}
       </div>
     );
+    // compact, self-contained rule section: owner + one-line plain-language summary, expandable to full logic
+    // label = semantic side ("Current Rule" / "Conflicting Rule", shown uppercase); name = the actual
+    // rule name (normal case, after a middot) so a raw rule name never stands alone as a heading.
+    const RuleSection = ({label, name, side, kp}) => {
+      const open = !!seeMore[kp+":open"];
+      const isCur = !name;   // Current Rule (no rule name) gets a subtly filled neutral header surface
+      return (
+        <div className="overflow-hidden rounded-lg border border-slate-200/80">
+          <button type="button" onClick={()=>setSeeMore(t=>({...t,[kp+":open"]:!open}))} className={"flex w-full items-center gap-3 px-3 py-2.5 text-left transition " + (isCur ? "bg-slate-50/60 hover:bg-slate-50" : "hover:bg-slate-50/60")}>
+            <div className="min-w-0 flex-1">
+              {/* zone 1 — rule identity: semantic label (stronger) + quieter rule name */}
+              <div className="truncate text-[10px] leading-tight" title={name ? (label + " · " + name) : label}>
+                <span className="font-semibold uppercase tracking-wider text-slate-500">{label}</span>
+                {name && <span className="font-medium text-slate-400"> · {name}</span>}
+              </div>
+              {/* zone 2 — field behavior: the primary content, with clear breathing room above */}
+              <div className="mt-2 text-[13px] font-medium leading-snug text-slate-900">{glance(side)}</div>
+            </div>
+            {/* zone 3 — disclosure, centered against the whole identity + behavior group */}
+            <span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-medium text-sky-600">{open ? "Hide details" : "Show details"}<Ico name="chevdown" size={12} cls={"transition-transform " + (open?"":"-rotate-90")}/></span>
+          </button>
+          {open && <div className="border-t border-slate-100 px-3 py-3"><Detail side={side} kp={kp}/></div>}
+        </div>
+      );
+    };
 
     return (
       <div className="pt-0.5 pb-2.5">
@@ -3475,28 +3507,23 @@ function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onTogg
               );
             })}
           </div>}
-        {/* one shared field-detail surface — field name, then two stacked rule stories, then why / runtime */}
+        {/* compact first view — field name, short reason, then two collapsible self-contained rule sections */}
         <div className="mt-3 rounded-xl border border-slate-200/80 bg-white px-4 py-3.5">
           <div className="text-[15px] font-semibold text-slate-900">{L}</div>
-          {/* what each rule does with this field, in plain language + the one-line reason, before any detail */}
-          <div className="mt-2 rounded-lg bg-slate-50 px-3.5 py-3">
-            <div className="space-y-2">
-              <div><div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Current Rule</div><div className="mt-0.5 text-[12.5px] font-medium text-slate-800">{glance(cur)}</div></div>
-              <div><div className="truncate text-[10px] font-semibold uppercase tracking-wide text-slate-500" title={ruleName}>{ruleName}</div><div className="mt-0.5 text-[12.5px] font-medium text-slate-800">{glance(con)}</div></div>
-            </div>
-            {F.why &&
-              <div className="mt-2.5 border-t border-slate-200/70 pt-2.5">
-                <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400"><Ico name="warn" size={11} cls="text-amber-500"/><span>Why this conflicts</span></div>
-                <div className="mt-0.5 text-[12px] leading-snug text-slate-600">{F.why}</div>
-              </div>}
+          {/* short conflict reason — understandable at a glance, before any detail */}
+          {F.why &&
+            <div className="mt-1.5 flex items-start gap-1.5">
+              <Ico name="warn" size={13} cls="mt-px shrink-0 text-amber-500"/>
+              <div className="text-[12.5px] leading-snug text-slate-600">{F.why}</div>
+            </div>}
+          {/* two rule sections — each owns its conditions + actions; collapsed by default */}
+          <div className="mt-3 space-y-2">
+            <RuleSection label="Current Rule" side={cur} kp={bk+":"+sel+":cur"}/>
+            <RuleSection label="Conflicting Rule" name={ruleName} side={con} kp={bk+":"+sel+":con"}/>
           </div>
-          {/* detailed, self-contained rule stories — a subtle separator, not a late VERSUS break */}
-          <div className="mt-3.5"><Story owner="Current Rule" side={cur} kp={bk+":cur"}/></div>
-          <div className="my-3 border-t border-slate-100"/>
-          <Story owner={ruleName} side={con} kp={bk+":con"}/>
-          {/* runtime outcome — what the system actually does (why is already anchored at the top) */}
+          {/* runtime outcome — what the system actually does, when relevant */}
           {F.runtime &&
-            <div className="mt-3.5 border-t border-slate-100 pt-3">
+            <div className="mt-3 border-t border-slate-100 pt-2.5">
               <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Runtime outcome</div>
               <div className="mt-1 text-[12.5px] leading-snug text-slate-600">{F.runtime}</div>
             </div>}
@@ -3516,8 +3543,8 @@ function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onTogg
           <h2 className="text-[16px] font-bold text-slate-800">Review Conflict</h2>
           <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-600" title="Close"><Ico name="x" size={18}/></button>
         </div>
-        {/* CURRENT RULE — compact, collapsible (collapsed by default): name · audience · blocks + field preview */}
-        <div className="border-b border-slate-100 bg-slate-50/50 px-6 py-3 shrink-0">
+        {/* CONTEXT HEADER — the rule everything below is compared against, + the conflicting-field scope */}
+        <div className="border-b border-slate-200 bg-slate-50/70 px-6 py-3.5 shrink-0">
           {fieldCentric
             ? <>
                 <div className="flex items-start justify-between gap-3">
@@ -3529,32 +3556,24 @@ function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onTogg
                 </div>
                 <div className="mt-1 text-[12.5px] leading-snug text-slate-600">{summarySentence}</div>
               </>
-            : <>
-                <button onClick={()=>setCuOpen(o=>!o)} className="w-full text-left">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <Ico name="chevdown" size={14} cls={"shrink-0 text-slate-400 transition-transform " + (cuOpen?"":"-rotate-90")}/>
-                      <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Current Rule</span>
-                    </div>
-                    <span className="shrink-0 text-[11.5px] text-slate-500">{draftAud + " · " + db.length + " block" + (db.length===1?"":"s")}</span>
-                  </div>
-                  <div className="mt-1 truncate text-[14px] font-semibold text-slate-800">{draft.name || "Untitled rule"}</div>
-                  <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Conflicting fields:</span>
-                    {chipLabels.slice(0,3).map((lbl,ci)=> <span key={ci} className="inline-flex items-center rounded bg-amber-50 px-2 py-0.5 text-[11.5px] font-medium text-amber-700">{lbl}</span>)}
-                    {N>3 && <span className="text-[11.5px] font-medium text-slate-500">+{N-3} more</span>}
+            : <button onClick={()=>setCuOpen(o=>!o)} className="w-full text-left">
+                {/* primary anchor — the current rule, with its expand chevron on the name line */}
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Current Rule</div>
+                <div className="mt-0.5 flex items-start justify-between gap-3">
+                  <span className="min-w-0 truncate text-[16px] font-bold leading-tight text-slate-900">{draft.name || "Untitled rule"}</span>
+                  <Ico name="chevdown" size={16} cls={"mt-0.5 shrink-0 text-slate-400 transition-transform " + (cuOpen?"":"-rotate-90")}/>
+                </div>
+                <div className="mt-1 text-[11.5px] text-slate-500">{draftAud + " · " + db.length + " block" + (db.length===1?"":"s")}</div>
+                {/* secondary scope — the conflicting fields, separated from the rule identity */}
+                <div className="mt-2.5 border-t border-slate-200/70 pt-2.5">
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Conflicting fields</div>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                    {(cuOpen ? chipLabels : chipLabels.slice(0,3)).map((lbl,ci)=> <span key={ci} className="inline-flex items-center rounded-md bg-amber-50 px-2 py-0.5 text-[11.5px] font-medium text-amber-700 ring-1 ring-amber-100">{lbl}</span>)}
+                    {!cuOpen && N>3 && <span className="text-[11.5px] font-medium text-slate-600">+{N-3} more</span>}
                     {N===0 && <span className="text-[11.5px] text-slate-400">None</span>}
                   </div>
-                </button>
-                {cuOpen &&
-                  <div className="mt-2 border-t border-slate-100 pt-2">
-                    <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">All conflicting fields</div>
-                    <div className="mt-1.5 flex flex-wrap gap-1.5">
-                      {chipLabels.map((lbl,ci)=> <span key={ci} className="inline-flex items-center rounded bg-amber-50 px-2 py-0.5 text-[11.5px] font-medium text-amber-700">{lbl}</span>)}
-                      {N===0 && <span className="text-[11.5px] text-slate-400">None</span>}
-                    </div>
-                  </div>}
-              </>}
+                </div>
+              </button>}
         </div>
         {/* filter tabs (left) + search (right) */}
         <div className="flex items-center gap-3 border-b border-slate-100 px-6 py-2.5 shrink-0">
