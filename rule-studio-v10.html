@@ -159,32 +159,38 @@ const FORM_ROWS = [
   [ fld("attachment","Attachment","attach") ],
 ];
 const ALL_FIELDS = FORM_ROWS.flat();
-const labelOf = id => (ALL_FIELDS.find(f=>f.id===id) || {}).label || id;
+// Display labels for demo-only fields that aren't part of the form builder (used by the HR Rule UI Exp demo).
+const DEMO_FIELD_LABELS = { employee_id:"Employee ID", department:"Department", designation:"Designation", joining_date:"Joining Date" };
+const labelOf = id => (ALL_FIELDS.find(f=>f.id===id) || {}).label || DEMO_FIELD_LABELS[id] || id;
 
 // ---- Rule model (mock data; no engine in this step) ------------------------------------------
 // A rule = trigger (when) + audience + conditions (IF) + actions (THEN). Per-field rule awareness,
 // the insight-rich picker, and the plain-English summary are all DERIVED from this one model.
 // V9 operator / action vocabulary (reused verbatim so V9 and V10 read identically).
-// Operator sets are FIELD-TYPE-AWARE (mirrors V9's OP_SETS / fieldOps): a field's kind decides which
-// operators it offers — TEXT fields get text matches, CHOICE (select) fields get Match Any/All + empties,
-// MEMBERSHIP fields (tags / templates) get In / Not In.
+// Operator sets are FIELD-TYPE-AWARE: a field's kind decides which operators it offers —
+//   adder fields  (Tags, Cc Emails)                         → Match Any / Match All / Is Empty / Is Not Empty
+//   select fields (Status, Priority, Category, Department …) → In / Not In
+//   text fields   (Requester, Subject, Description, text …)  → Equals / Not Equals / Start With / End With / Contains / Is (Not) Blank
 const OP_SETS = {
   TEXT:       ["Equals","Not Equals","Start With","End With","Contains","Is Not Blank","Is Blank"],
   CHOICE:     ["Match Any","Match All","Is Empty","Is Not Empty"],
   MEMBERSHIP: ["In","Not In"],
 };
 const OPS = [...OP_SETS.TEXT, ...OP_SETS.CHOICE, ...OP_SETS.MEMBERSHIP];   // full set (fallback / lookups)
-const MEMBERSHIP_FIELDS = ["tags","fill_template","transition_model"];
-const opsetOf = id => { if(MEMBERSHIP_FIELDS.indexOf(id)>=0) return "MEMBERSHIP"; const f=ALL_FIELDS.find(x=>x.id===id); return (f && f.kind==="select") ? "CHOICE" : "TEXT"; };
+const opsetOf = id => { const f=ALL_FIELDS.find(x=>x.id===id)||{}; if(f.kind==="adder") return "CHOICE"; if(f.kind==="select") return "MEMBERSHIP"; return "TEXT"; };
 const fieldOps = id => OP_SETS[opsetOf(id)] || OP_SETS.TEXT;              // operators valid for this field
-// Keep a saved/legacy operator visible even if it isn't in the field's current set (so editing never blanks it).
-const condOps = c => { const set = fieldOps(c && c.fieldId); return (c && c.op && set.indexOf(c.op)<0) ? [c.op, ...set] : set; };
+// Strictly the field's own operator group — never mix operators from another group into the dropdown.
+// (A stored operator that isn't valid for the field simply shows unselected, prompting a re-pick.)
+const condOps = c => fieldOps(c && c.fieldId);
 const OPS_NOVALUE = ["Is Empty","Is Not Empty","Is Blank","Is Not Blank"];
 const OPS_MULTI = ["Match Any","Match All","In","Not In"];
 const OP_PHRASE = { "Equals":"is", "Not Equals":"is not", "Start With":"starts with", "End With":"ends with", "Contains":"contains", "Match Any":"is any of", "Match All":"is all of", "Is Empty":"is empty", "Is Not Empty":"is not empty", "Is Blank":"is blank", "Is Not Blank":"is not blank", "In":"is in", "Not In":"is not in" };
 const BEHAVIORS = ["Show","Hide","Mandate","Non-Mandate","Enable","Disable","Set Value","Clear Value","Show Options","Hide Options","Run Custom Script","Filter Data"];
 const WHENS = ["When the form opens","While the form is being filled","When the form is submitted"];
 const AUDS  = ["Everyone","Requesters only","Technicians only","Signed-in users only"];
+// Rules that drive the hardcoded field-level conflict demo — their conditions/actions surface the ⚠ indicator.
+const DEMO_CONFLICT_RULES = ["HR Rule UI Exp","Critical Incident Handling","R20 - Request Routing Demo","R21 - Request Routing Demo 2","R22 - Conflict Matrix Demo"];
+const isDemoConflictRule = n => DEMO_CONFLICT_RULES.indexOf(n)>=0;
 const EXEC_OPTS = ["On Create and Edit","On Create","On Edit"];   // rule-level execution scope (ss2 vocabulary)
 // Value pickers: fields with a known option set get a contextual picker instead of a free text box.
 const FIELD_OPTIONS = {
@@ -259,11 +265,11 @@ const ACTION_GUIDE = {
 
 const RULE_DB = [
   { id:"r1",  name:"Require Assignee before In Progress", status:"Active", when:"While the form is being filled", audience:"Technicians only", usedInForms:4, recommended:true,
-    conditions:[{fieldId:"status", op:"Equals", value:"In Progress"}], actions:[{behavior:"Mandate", fieldId:"assignee"}] },
+    conditions:[{fieldId:"status", op:"In", value:"In Progress"}], actions:[{behavior:"Mandate", fieldId:"assignee"}] },
   { id:"r2",  name:"Auto-set Priority from Impact & Urgency", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:7, recommended:true,
     conditions:[{fieldId:"impact", op:"Is Not Empty"},{fieldId:"urgency", op:"Is Not Empty"}], actions:[{behavior:"Set Value", fieldId:"priority", value:"the matrix result"}] },
   { id:"r3",  name:"Capture resolution when Resolved", status:"Active", when:"While the form is being filled", audience:"Technicians only", usedInForms:3, recommended:false,
-    conditions:[{fieldId:"status", op:"Equals", value:"Resolved"}], actions:[{behavior:"Mandate", fieldId:"description"}] },
+    conditions:[{fieldId:"status", op:"In", value:"Resolved"}], actions:[{behavior:"Mandate", fieldId:"description"}] },
   { id:"r4",  name:"Hide Status on the portal", status:"Active", when:"When the form opens", audience:"Requesters only", usedInForms:2, recommended:false,
     conditions:[], actions:[{behavior:"Hide", fieldId:"status"}] },
   { id:"r5",  name:"Mandatory Category", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:5, recommended:false,
@@ -273,9 +279,9 @@ const RULE_DB = [
   { id:"r7",  name:"Lock Priority after assignment", status:"Active", when:"While the form is being filled", audience:"Technicians only", usedInForms:3, recommended:false, advanced:true,
     conditions:[{fieldId:"assignee", op:"Is Not Empty"}], actions:[{behavior:"Disable", fieldId:"priority"}] },
   { id:"r8",  name:"Require Urgency for High Impact", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:2, recommended:false,
-    conditions:[{fieldId:"impact", op:"Equals", value:"High"}], actions:[{behavior:"Mandate", fieldId:"urgency"}] },
+    conditions:[{fieldId:"impact", op:"In", value:"High"}], actions:[{behavior:"Mandate", fieldId:"urgency"}] },
   { id:"r9",  name:"Show Vendor for Hardware", status:"Active", when:"While the form is being filled", audience:"Technicians only", usedInForms:1, recommended:false,
-    conditions:[{fieldId:"category", op:"Equals", value:"Hardware"}], actions:[{behavior:"Show", fieldId:"vendor"},{behavior:"Mandate", fieldId:"vendor"}] },
+    conditions:[{fieldId:"category", op:"In", value:"Hardware"}], actions:[{behavior:"Show", fieldId:"vendor"},{behavior:"Mandate", fieldId:"vendor"}] },
   { id:"r10", name:"Auto-fill Requester from logged-in user", status:"Active", when:"When the form opens", audience:"Requesters only", usedInForms:8, recommended:false,
     conditions:[], actions:[{behavior:"Set Value", fieldId:"requester", value:"the logged-in user"}] },
   { id:"r11", name:"Assign Technician Group by Location", status:"Active", when:"While the form is being filled", audience:"Technicians only", usedInForms:3, recommended:false,
@@ -283,31 +289,123 @@ const RULE_DB = [
   { id:"r12", name:"Mandatory Subject & Description", status:"Active", when:"When the form is submitted", audience:"Everyone", usedInForms:9, recommended:false,
     conditions:[], actions:[{behavior:"Mandate", fieldId:"subject"},{behavior:"Mandate", fieldId:"description"}] },
   { id:"r13", name:"Reveal Cc Emails when On Hold", status:"Draft", when:"While the form is being filled", audience:"Everyone", usedInForms:1, recommended:false,
-    conditions:[{fieldId:"status", op:"Equals", value:"On Hold"}], actions:[{behavior:"Show", fieldId:"cc_emails"}] },
+    conditions:[{fieldId:"status", op:"In", value:"On Hold"}], actions:[{behavior:"Show", fieldId:"cc_emails"}] },
   { id:"r14", name:"Clear Assignee when reopened", status:"Draft", when:"While the form is being filled", audience:"Technicians only", usedInForms:1, recommended:false,
-    conditions:[{fieldId:"status", op:"Equals", value:"Reopened"}], actions:[{behavior:"Clear Value", fieldId:"assignee"}] },
+    conditions:[{fieldId:"status", op:"In", value:"Reopened"}], actions:[{behavior:"Clear Value", fieldId:"assignee"}] },
   // Multi-block rule (3 blocks) — only the middle block touches Priority, so it's the one that conflicts with
   // other Priority rules. Demonstrates the block inspector: all 3 blocks shown, block 2 flagged + auto-expanded.
   { id:"r15", name:"Priority & assignment workflow", status:"Active", when:"While the form is being filled", audience:"Technicians only", usedInForms:2, recommended:false,
-    conditions:[{fieldId:"status", op:"Equals", value:"In Progress"}], actions:[{behavior:"Mandate", fieldId:"assignee"}],
+    conditions:[{fieldId:"status", op:"In", value:"In Progress"}], actions:[{behavior:"Mandate", fieldId:"assignee"}],
     blocks:[
       { match:"all", time:"While the form is being filled", people:"Technicians only",
-        conditions:[{fieldId:"status", op:"Equals", value:"In Progress"}], actions:[{behavior:"Mandate", fieldId:"assignee"}] },
+        conditions:[{fieldId:"status", op:"In", value:"In Progress"}], actions:[{behavior:"Mandate", fieldId:"assignee"}] },
       { match:"all", time:"While the form is being filled", people:"Technicians only",
-        conditions:[{fieldId:"impact", op:"Equals", value:"High"}], actions:[{behavior:"Set Value", fieldId:"priority", value:"High"}] },
+        conditions:[{fieldId:"impact", op:"In", value:"High"}], actions:[{behavior:"Set Value", fieldId:"priority", value:"High"}] },
       { match:"all", time:"While the form is being filled", people:"Technicians only",
         conditions:[], actions:[{behavior:"Show", fieldId:"cc_emails"}] },
     ] },
-  // Part 2 demo — the "current rule" whose conflict inspector shows the 4 fixture scenarios (touches all 7 fields).
-  { id:"r16", name:"Major incident form behavior", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:2, recommended:false,
-    conditions:[{fieldId:"impact", op:"Equals", value:"High"}], actions:[{behavior:"Set Value", fieldId:"priority", value:"High"},{behavior:"Mandate", fieldId:"assignee"}],
+  // Demo scenario S1 — draft: Status = Open · Priority = High → make Attachment/Category/Description/Subject
+  // mandatory. Its conflict inspector maps to the "Simplified Mobile Ticket Form" scenario (Attachment, Category).
+  { id:"r16", name:"Require supporting information for high priority tickets", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:0, recommended:false,
+    conditions:[{fieldId:"status", op:"In", value:"Open"},{fieldId:"priority", op:"In", value:"High"}],
+    actions:[{behavior:"Mandate", fieldId:"attachment"},{behavior:"Mandate", fieldId:"category"},{behavior:"Mandate", fieldId:"description"},{behavior:"Mandate", fieldId:"subject"}],
     blocks:[
       { match:"all", time:"While the form is being filled", people:"Everyone",
-        conditions:[{fieldId:"impact", op:"Equals", value:"High"}], actions:[{behavior:"Set Value", fieldId:"priority", value:"High"},{behavior:"Mandate", fieldId:"assignee"}] },
-      { match:"all", time:"While the form is being filled", people:"Everyone", advanced:true,
-        conditions:[{fieldId:"impact", op:"Equals", value:"High"}], actions:[{behavior:"Mandate", fieldId:"description"},{behavior:"Show", fieldId:"cc_emails"},{behavior:"Show", fieldId:"vendor"}] },
+        conditions:[{fieldId:"status", op:"In", value:"Open"},{fieldId:"priority", op:"In", value:"High"}],
+        actions:[{behavior:"Mandate", fieldId:"attachment"},{behavior:"Mandate", fieldId:"category"},{behavior:"Mandate", fieldId:"description"},{behavior:"Mandate", fieldId:"subject"}] },
+    ] },
+  // Demo scenario S2 — draft: Assignee = Priya · Department = HR → make Description/Status/Subject/Category
+  // mandatory. Its conflict inspector maps to the "Hide internal fields for Surat requests" scenario (Subject, Category).
+  { id:"r17", name:"Mandatory information for HR requests", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:0, recommended:false,
+    conditions:[{fieldId:"assignee", op:"In", value:"Priya"},{fieldId:"department", op:"In", value:"HR"}],
+    actions:[{behavior:"Mandate", fieldId:"description"},{behavior:"Mandate", fieldId:"status"},{behavior:"Mandate", fieldId:"subject"},{behavior:"Mandate", fieldId:"category"}],
+    blocks:[
       { match:"all", time:"While the form is being filled", people:"Everyone",
-        conditions:[], actions:[{behavior:"Mandate", fieldId:"category"},{behavior:"Mandate", fieldId:"tech_group"}] },
+        conditions:[{fieldId:"assignee", op:"In", value:"Priya"},{fieldId:"department", op:"In", value:"HR"}],
+        actions:[{behavior:"Mandate", fieldId:"description"},{behavior:"Mandate", fieldId:"status"},{behavior:"Mandate", fieldId:"subject"},{behavior:"Mandate", fieldId:"category"}] },
+    ] },
+  // Demo scenario S3 — the field-level conflict discovery demo. One block, one Mandate action targeting four
+  // fields; only Department + Designation conflict (flagged inline; click → opens the drawer focused on that field).
+  { id:"r18", name:"HR Rule UI Exp", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:0, recommended:false,
+    conditions:[{fieldId:"department", op:"In", value:"HR"}],
+    actions:[{behavior:"Mandate", fieldIds:["employee_id","department","designation","joining_date"], fieldId:"employee_id"}],
+    blocks:[
+      { match:"all", time:"While the form is being filled", people:"Everyone",
+        conditions:[{fieldId:"department", op:"In", value:"HR"}],
+        actions:[{behavior:"Mandate", fieldIds:["employee_id","department","designation","joining_date"], fieldId:"employee_id"}] },
+    ] },
+  // Demo scenario S4 — "Critical Incident Handling": 2 standalone conditions + 2 condition groups + 4 actions.
+  // Real conflicts (DEMO_S4): Group 1 (Impact) & Group 2 (Category) condition-vs-action; Action Mandate Assignee
+  // (opposite behavior) & Action Mandate Description (same behavior). Two carry reverse behavior (Impact, Assignee).
+  { id:"r19", name:"Critical Incident Handling", status:"Active", when:"While the form is being filled", audience:"Technicians only", usedInForms:0, recommended:false,
+    conditions:[{fieldId:"priority", op:"In", value:"Urgent"},{fieldId:"status", op:"In", value:"Open"},{fieldId:"impact", op:"In", value:"High"},{fieldId:"urgency", op:"In", value:"High"},{fieldId:"category", op:"In", value:"Network"},{fieldId:"location", op:"In", value:"Mumbai"}],
+    actions:[{behavior:"Set Value", fieldId:"status", value:"In Progress"},{behavior:"Mandate", fieldId:"assignee"},{behavior:"Set Value", fieldId:"priority", value:"Urgent"},{behavior:"Mandate", fieldId:"description"}],
+    blocks:[
+      { match:"all", time:"While the form is being filled", people:"Technicians only",
+        conditions:[
+          {fieldId:"priority", op:"In", value:"Urgent"},
+          {fieldId:"status", op:"In", value:"Open"},
+          {group:true, match:"all", conditions:[{fieldId:"impact", op:"In", value:"High"},{fieldId:"urgency", op:"In", value:"High"}]},
+          {group:true, match:"all", conditions:[{fieldId:"category", op:"In", value:"Network"},{fieldId:"location", op:"In", value:"Mumbai"}]},
+        ],
+        actions:[
+          {behavior:"Set Value", fieldId:"status", value:"In Progress"},
+          {behavior:"Mandate", fieldIds:["assignee"], fieldId:"assignee"},
+          {behavior:"Set Value", fieldId:"priority", value:"Urgent"},
+          {behavior:"Mandate", fieldIds:["description","subject"], fieldId:"description"},
+        ] },
+    ] },
+  // Demo scenario S5 — "R20 - Request Routing Demo": 2 condition groups (OR), 4 block-level actions. Reverse
+  // behavior ON. Real conflicts: Show CC Email + Description (reverse vs IT Communication Policy), Hide Category
+  // (vs HR Category Policy mandatory), Mandate Attachment (vs IT Attachment Policy hide). Action 4 (Set Priority) clean.
+  { id:"r20", name:"R20 - Request Routing Demo", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:0, recommended:false,
+    conditions:[{fieldId:"department", op:"In", value:"HR"},{fieldId:"location", op:"In", value:"India"},{fieldId:"department", op:"In", value:"IT"},{fieldId:"impact", op:"In", value:"High"}],
+    actions:[{behavior:"Show", fieldId:"cc_emails"},{behavior:"Hide", fieldId:"category"},{behavior:"Mandate", fieldId:"attachment"},{behavior:"Set Value", fieldId:"priority", value:"High"}],
+    blocks:[
+      { match:"any", advanced:true, time:"While the form is being filled", people:"Everyone",
+        conditions:[
+          {group:true, match:"all", conditions:[{fieldId:"department", op:"In", value:"HR"},{fieldId:"location", op:"In", value:"India"}]},
+          {group:true, match:"all", conditions:[{fieldId:"department", op:"In", value:"IT"},{fieldId:"impact", op:"In", value:"High"}]},
+        ],
+        actions:[
+          {behavior:"Show", fieldIds:["cc_emails","description"], fieldId:"cc_emails"},
+          {behavior:"Hide", fieldIds:["category"], fieldId:"category"},
+          {behavior:"Mandate", fieldIds:["attachment"], fieldId:"attachment"},
+          {behavior:"Set Value", fieldId:"priority", value:"High"},
+        ] },
+    ] },
+  // Same conflict logic as R20 (maps to DEMO_S5), but its Review Conflict drawer opens in the SIMPLIFIED
+  // field-focused mode (no Current Rule / summary / compare; adds an Edit button per conflicting rule).
+  { id:"r21", name:"R21 - Request Routing Demo 2", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:0, recommended:false,
+    conditions:[{fieldId:"department", op:"In", value:"HR"},{fieldId:"location", op:"In", value:"India"},{fieldId:"department", op:"In", value:"IT"},{fieldId:"impact", op:"In", value:"High"}],
+    actions:[{behavior:"Show", fieldId:"cc_emails"},{behavior:"Hide", fieldId:"category"},{behavior:"Mandate", fieldId:"attachment"},{behavior:"Set Value", fieldId:"priority", value:"High"}],
+    blocks:[
+      { match:"any", advanced:true, time:"While the form is being filled", people:"Everyone",
+        conditions:[
+          {group:true, match:"all", conditions:[{fieldId:"department", op:"In", value:"HR"},{fieldId:"location", op:"In", value:"India"}]},
+          {group:true, match:"all", conditions:[{fieldId:"department", op:"In", value:"IT"},{fieldId:"impact", op:"In", value:"High"}]},
+        ],
+        actions:[
+          {behavior:"Show", fieldIds:["cc_emails","description"], fieldId:"cc_emails"},
+          {behavior:"Hide", fieldIds:["category"], fieldId:"category"},
+          {behavior:"Mandate", fieldIds:["attachment"], fieldId:"attachment"},
+          {behavior:"Set Value", fieldId:"priority", value:"High"},
+        ] },
+    ] },
+  // R22 — a DIFFERENT drawer design: field list (left) → conflicting rules (right) → expand a rule to its
+  // blocks → expand a block to see what the current rule vs that block does to the field. Maps to DEMO_S7.
+  { id:"r22", name:"R22 - Conflict Matrix Demo", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:0, recommended:false,
+    conditions:[{fieldId:"priority", op:"In", value:"High"}],
+    actions:[{behavior:"Set Value", fieldId:"status", value:"In Progress"},{behavior:"Hide", fieldId:"category"},{behavior:"Set Value", fieldId:"priority", value:"High"},{behavior:"Mandate", fieldId:"assignee"}],
+    blocks:[
+      { match:"all", time:"While the form is being filled", people:"Everyone",
+        conditions:[{fieldId:"priority", op:"In", value:"High"}],
+        actions:[
+          {behavior:"Set Value", fieldId:"status", value:"In Progress"},
+          {behavior:"Hide", fieldIds:["category"], fieldId:"category"},
+          {behavior:"Set Value", fieldId:"priority", value:"High"},
+          {behavior:"Mandate", fieldIds:["assignee"], fieldId:"assignee"},
+        ] },
     ] },
 ];
 
@@ -579,20 +677,20 @@ const STATUS_FIELD_RULES = [
     conditions:[], actions:[{behavior:"Hide", fieldId:"status"}] },
   // 2 — condition only → triggers an action on another field
   { id:"sf2", name:"Reveal Cc Emails when On Hold", audience:"Everyone",
-    conditions:[{fieldId:"status", op:"Equals", value:"On Hold"}], actions:[{behavior:"Show", fieldId:"cc_emails"}] },
+    conditions:[{fieldId:"status", op:"In", value:"On Hold"}], actions:[{behavior:"Show", fieldId:"cc_emails"}] },
   // 3 — condition only → clears another field
   { id:"sf3", name:"Clear Assignee when reopened", audience:"Technicians only",
-    conditions:[{fieldId:"status", op:"Equals", value:"Reopened"}], actions:[{behavior:"Clear Value", fieldId:"assignee"}] },
+    conditions:[{fieldId:"status", op:"In", value:"Reopened"}], actions:[{behavior:"Clear Value", fieldId:"assignee"}] },
   // 4 — KEY example: Status in all 3 blocks, a different role in each (condition / action / both)
   { id:"sf4", name:"Priority & assignment workflow", audience:"Technicians only",
     blocks:[
-      { conditions:[{fieldId:"status", op:"Equals", value:"In Progress"}], actions:[{behavior:"Mandate", fieldId:"assignee"}] },
-      { conditions:[{fieldId:"impact",  op:"Equals", value:"High"}],        actions:[{behavior:"Set Value", fieldId:"status", value:"On Hold"}] },
-      { conditions:[{fieldId:"status", op:"Equals", value:"Resolved"}],    actions:[{behavior:"Set Value", fieldId:"status", value:"Closed"},{behavior:"Clear Value", fieldId:"cc_emails"}] },
+      { conditions:[{fieldId:"status", op:"In", value:"In Progress"}], actions:[{behavior:"Mandate", fieldId:"assignee"}] },
+      { conditions:[{fieldId:"impact",  op:"In", value:"High"}],        actions:[{behavior:"Set Value", fieldId:"status", value:"On Hold"}] },
+      { conditions:[{fieldId:"status", op:"In", value:"Resolved"}],    actions:[{behavior:"Set Value", fieldId:"status", value:"Closed"},{behavior:"Clear Value", fieldId:"cc_emails"}] },
     ] },
   // 5 — condition only → locks another field
   { id:"sf5", name:"Lock Priority after assignment", audience:"Technicians only",
-    conditions:[{fieldId:"status", op:"Equals", value:"Assigned"}], actions:[{behavior:"Disable", fieldId:"priority"}] },
+    conditions:[{fieldId:"status", op:"In", value:"Assigned"}], actions:[{behavior:"Disable", fieldId:"priority"}] },
   // 6 — action only, opposite behavior to rule 1
   { id:"sf6", name:"Show Status on the portal", audience:"Everyone",
     conditions:[], actions:[{behavior:"Show", fieldId:"status"}] },
@@ -603,13 +701,13 @@ const DESCRIPTION_FIELD_RULES = [
   { id:"df1", name:"Require Description for major incidents", audience:"Everyone",
     conditions:[
       { group:true, conditions:[
-        {fieldId:"priority", op:"Equals", value:"High"},
-        {fieldId:"impact",   op:"Equals", value:"High"},
-        {fieldId:"urgency",  op:"Equals", value:"High"},
+        {fieldId:"priority", op:"In", value:"High"},
+        {fieldId:"impact",   op:"In", value:"High"},
+        {fieldId:"urgency",  op:"In", value:"High"},
       ] },
       { group:true, conditions:[
-        {fieldId:"category",       op:"Equals", value:"Incident"},
-        {fieldId:"location",       op:"Equals", value:"Surat"},
+        {fieldId:"category",       op:"In", value:"Incident"},
+        {fieldId:"location",       op:"In", value:"Surat"},
         {fieldId:"requester_type", op:"Equals", value:"Employee"},
       ] },
     ],
@@ -1782,9 +1880,9 @@ function GuidedDropdown({value, onChange, options, guide, placeholder, hint, var
   };
   const pick = v => { if (isMulti){ const next = arr.indexOf(v)>=0 ? arr.filter(x=>x!==v) : arr.concat([v]); onChange(next); } else { onChange(v); setOpen(false); } };
   const triggerCls = variant==="pill"
-    ? "appearance-none h-11 rounded-lg border bg-white pl-4 pr-9 text-[14px] font-semibold inline-flex items-center justify-between gap-2 min-w-[150px] relative " + (sel?"text-slate-700":"text-slate-400") + " " + (open?"border-sky-300 ring-2 ring-sky-100":"border-slate-200 hover:border-slate-300")
+    ? "appearance-none h-11 w-full rounded-lg border bg-white pl-4 pr-9 text-[14px] font-medium inline-flex items-center justify-between gap-2 relative " + (sel?"text-slate-700":"text-slate-400") + " " + (open?"border-sky-300 ring-2 ring-sky-100":"border-slate-200 hover:border-slate-300")
     : "h-9 rounded-md border bg-white px-2.5 text-[13px] inline-flex items-center justify-between gap-1.5 w-full relative " + ((sel||arr.length)?"text-slate-700":"text-slate-400") + " " + (open?"border-sky-300 ring-1 ring-sky-200":(highlight?"border-sky-300 ring-1 ring-sky-200":"border-slate-200 hover:border-slate-300"));
-  const triggerText = isMulti ? (arr.length ? arr.map(labelFor).join(", ") : (placeholder||"Select")) : (sel ? sel.label : (placeholder||"Select"));
+  const triggerText = isMulti ? (arr.length ? (arr.length>1 ? labelFor(arr[0]) + "  +" + (arr.length-1) : labelFor(arr[0])) : (placeholder||"Select")) : (sel ? sel.label : (placeholder||"Select"));
   const g = guide && active && guide[active];
   return (
     <>
@@ -2440,8 +2538,34 @@ const V7_FIELD_GROUPS = [
 // Flat, deduped field index (built once) — the source list for the dual-pane target selector. Scales to
 // 500+ fields: filtering is a single linear pass and the available list is render-capped.
 const V7_FIELD_FLAT = V7_FIELD_GROUPS.flatMap(g=> g.ids.map(id=>{ const f=ALL_FIELDS.find(x=>x.id===id); return f ? {id, label:f.label, group:g.label} : null; }).filter(Boolean));
+// Compact ⚠ conflict indicator that lives INSIDE a field control (fields dropdown / condition field picker),
+// right-aligned before the chevron: clickable → opens the existing Conflict Drawer; hover → quick field list.
+function ConflictPip({count, fields, onClick}){
+  const [tip, setTip] = useState(null);
+  const ref = useRef(null);
+  const show = () => { if(!ref.current) return; const r=ref.current.getBoundingClientRect(); const W=220; let left=r.right-W; if(left<8) left=8; setTip({left, top:r.bottom+8}); };
+  if(!count) return null;
+  return (
+    <>
+      <span ref={ref} role="button" tabIndex={0} title="View conflicts"
+        onClick={e=>{ e.stopPropagation(); onClick && onClick(); }}
+        onMouseEnter={e=>{ e.stopPropagation(); show(); }} onMouseLeave={()=>setTip(null)}
+        className="inline-flex shrink-0 items-center gap-1 text-[11.5px] font-medium text-amber-700 transition hover:text-amber-800 hover:underline">
+        <Ico name="warn" size={12} cls="text-amber-500"/>{count} conflict{count>1?"s":""}
+      </span>
+      {tip && ReactDOM.createPortal(
+        <div style={{left:tip.left, top:tip.top}} className="fixed z-[66] w-[220px] rounded-lg bg-white shadow-xl ring-1 ring-slate-200 p-2.5 pointer-events-none">
+          <div className="mb-1.5 text-[12px] font-semibold text-slate-700">{count} conflicting field{count>1?"s":""}</div>
+          <ul className="space-y-0.5">
+            {(fields||[]).map(f=> <li key={f} className="flex items-start gap-1.5 text-[12px] text-slate-600"><span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-amber-400"/><span className="leading-snug">{f}</span></li>)}
+          </ul>
+          <div className="mt-2 border-t border-slate-100 pt-1.5 text-[11px] text-slate-400">Click to view conflict details.</div>
+        </div>, document.body)}
+    </>
+  );
+}
 // Grouped + searchable field picker (V7 field organisation over V10's form fields).
-function V7FieldPicker({value, onChange, placeholder}){
+function V7FieldPicker({value, onChange, placeholder, conflict, onConflict, conflictLabel}){
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [pos, setPos] = useState(null);
@@ -2464,8 +2588,12 @@ function V7FieldPicker({value, onChange, placeholder}){
   return (
     <>
       <button ref={btn} type="button" onClick={()=> open?setOpen(false):openMenu()}
-        className={"cursor-pointer rounded-md px-3 py-1.5 text-[13px] font-medium transition inline-flex items-center gap-1 " + (value ? "bg-slate-100 text-slate-700 hover:bg-slate-200" : "border border-dashed border-slate-300 italic text-slate-400 hover:bg-slate-50")}>
-        {value ? labelOf(value) : (placeholder || "choose field")}<span className="text-[10px] opacity-50">▾</span>
+        className={"cursor-pointer h-9 w-full rounded-md border bg-white px-2.5 text-[13px] transition inline-flex items-center justify-between gap-1.5 " + (value ? "border-slate-200 text-slate-700 hover:border-slate-300" : "border-slate-200 italic text-slate-400 hover:border-slate-300")}>
+        <span className="truncate">{value ? labelOf(value) : (placeholder || "choose field")}</span>
+        <span className="flex shrink-0 items-center gap-2.5">
+          {conflict && <ConflictPip count={1} fields={[conflictLabel || labelOf(value)]} onClick={()=> onConflict && onConflict([value])}/>}
+          <Ico name="chevdown" size={14} cls="text-slate-400"/>
+        </span>
       </button>
       {open && pos && ReactDOM.createPortal(
         <div className="fixed inset-0 z-[60]" onMouseDown={()=>setOpen(false)}>
@@ -2495,19 +2623,36 @@ function V7FieldPicker({value, onChange, placeholder}){
 }
 // Action target selector — collapsed control. Empty → "Choose fields"; 1 → the field; many → "Status + N more".
 // Opens the dual-pane transfer modal; NEVER renders the full selection as chips.
-function V7TargetSelect({ ids, onChange }){
+function V7TargetSelect({ ids, onChange, conflictIds, onConflict }){
   const [open, setOpen] = useState(false);
-  const [tip, setTip] = useState(null);   // {left, top} for the portaled hover preview of all selected fields
+  const [tip, setTip] = useState(null);     // {left, top} for the portaled hover preview of all selected fields
+  const [cfTip, setCfTip] = useState(null); // hover tooltip for the conflict indicator
   const btn = useRef(null);
+  const cf = useRef(null);
   const n = ids.length;
+  const cfList = conflictIds || [];         // ids among the selection that conflict
+  const cfN = cfList.length;
   const label = n===0 ? "Choose fields" : (n===1 ? labelOf(ids[0]) : labelOf(ids[0]) + " + " + (n-1) + " more");
   const showTip = () => { if(!n || !btn.current) return; const r=btn.current.getBoundingClientRect(); const W=240; let left=r.left; if(left+W>window.innerWidth-8) left=window.innerWidth-W-8; if(left<8) left=8; setTip({left, top:r.bottom+6}); };
   const hideTip = () => setTip(null);
+  const showCfTip = () => { if(!cf.current) return; const r=cf.current.getBoundingClientRect(); const W=220; let left=r.right-W; if(left<8) left=8; setCfTip({left, top:r.bottom+8}); };
   return (
     <>
       <button ref={btn} type="button" onClick={()=>setOpen(true)} onMouseEnter={showTip} onMouseLeave={hideTip}
-        className={"cursor-pointer rounded-md px-3 py-1.5 text-[13px] font-medium transition inline-flex items-center gap-1.5 " + (n ? "bg-slate-100 text-slate-700 hover:bg-slate-200" : "border border-dashed border-slate-300 italic text-slate-400 hover:bg-slate-50")}>
-        {label}<span className="text-[10px] opacity-50">▾</span>
+        className={"cursor-pointer h-9 w-full rounded-md border bg-white px-2.5 text-[13px] transition inline-flex items-center justify-between gap-1.5 " + (n ? "border-slate-200 text-slate-700 hover:border-slate-300" : "border-slate-200 italic text-slate-400 hover:border-slate-300")}>
+        <span className="truncate">{label}</span>
+        {/* right cluster — conflict indicator (metadata about the selected fields) sits ~10px before the chevron */}
+        <span className="flex shrink-0 items-center gap-2.5">
+          {cfN>0 &&
+            <span ref={cf} role="button" tabIndex={0} title="View conflicts"
+              onClick={e=>{ e.stopPropagation(); onConflict && onConflict(cfList); }}
+              onMouseEnter={e=>{ e.stopPropagation(); setTip(null); showCfTip(); }}
+              onMouseLeave={()=> setCfTip(null)}
+              className="inline-flex items-center gap-1 text-[11.5px] font-medium text-amber-700 transition hover:text-amber-800 hover:underline">
+              <Ico name="warn" size={12} cls="text-amber-500"/>{cfN} conflict{cfN>1?"s":""}
+            </span>}
+          <Ico name="chevdown" size={14} cls="text-slate-400"/>
+        </span>
       </button>
       {/* Hover preview — portaled so it escapes the THEN card's overflow-hidden; lists every selected field */}
       {tip && n>0 && ReactDOM.createPortal(
@@ -2517,6 +2662,15 @@ function V7TargetSelect({ ids, onChange }){
             {ids.map(fid=> <li key={fid} className="flex items-start gap-1.5 text-[12px] text-slate-700"><span className="mt-1.5 h-1 w-1 rounded-full bg-slate-300 shrink-0"/><span className="leading-snug">{labelOf(fid)}</span></li>)}
           </ul>
           <div className="mt-2 pt-1.5 border-t border-slate-100 text-[11px] text-slate-400">Total: {n} field{n===1?"":"s"}</div>
+        </div>, document.body)}
+      {/* Conflict-indicator hover tooltip — quick summary only; full detail stays in the drawer */}
+      {cfTip && cfN>0 && ReactDOM.createPortal(
+        <div style={{left:cfTip.left, top:cfTip.top}} className="fixed z-[66] w-[220px] rounded-lg bg-white shadow-xl ring-1 ring-slate-200 p-2.5 pointer-events-none">
+          <div className="mb-1.5 text-[12px] font-semibold text-slate-700">{cfN} conflicting field{cfN>1?"s":""}</div>
+          <ul className="space-y-0.5">
+            {cfList.map(fid=> <li key={fid} className="flex items-start gap-1.5 text-[12px] text-slate-600"><span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-amber-400"/><span className="leading-snug">{labelOf(fid)}</span></li>)}
+          </ul>
+          <div className="mt-2 border-t border-slate-100 pt-1.5 text-[11px] text-slate-400">Click to view conflict details.</div>
         </div>, document.body)}
       {open && <V7TargetModal ids={ids} onApply={next=>{ onChange(next); setOpen(false); }} onClose={()=>setOpen(false)}/>}
     </>
@@ -2619,12 +2773,39 @@ function V7TargetModal({ ids, onApply, onClose }){
 const V7_BADGE = { when:"bg-sky-50 text-sky-600 ring-sky-100", if:"bg-amber-50 text-amber-600 ring-amber-100", then:"bg-emerald-50 text-emerald-600 ring-emerald-100", review:"bg-slate-100 text-slate-500 ring-slate-200" };
 const V7_BAR   = { when:"before:bg-sky-300", if:"before:bg-amber-300", then:"before:bg-emerald-300", review:"before:bg-slate-300" };
 const V7_CARD  = "relative overflow-hidden rounded-xl border border-slate-200 bg-slate-50/50 p-4 pl-5 before:absolute before:left-0 before:top-0 before:h-full before:w-1 before:content-['']";
-function V7StepHead({tone, tag, title, hint}){
+// Inline section header — coloured pill badge (When / Check If / Action) + a plain descriptor line.
+const STEP_BADGE = { when:"bg-sky-100 text-[#1180c1]", if:"bg-amber-100 text-amber-600", then:"bg-emerald-100 text-emerald-600" };
+function V7StepHead({tone, tag, title}){
   return (
     <div className="mb-3 flex items-center gap-2.5">
-      <span className={"rounded px-2 py-0.5 text-[10.5px] font-bold uppercase tracking-wider ring-1 " + V7_BADGE[tone]}>{tag}</span>
-      <span className="text-[14px] font-semibold text-slate-800">{title}</span>
-      {hint && <span className="ml-auto text-[12px] text-slate-400">{hint}</span>}
+      <span className={"rounded-md px-2.5 py-1 text-[12.5px] font-semibold " + (STEP_BADGE[tone]||"bg-slate-100 text-slate-600")}>{tag}</span>
+      <span className="text-[14px] text-slate-600">{title}</span>
+    </div>
+  );
+}
+// AND/OR row prefix inside a condition group. Row 0 → "Where"; row 1 → interactive toggle (flips the
+// group's match all↔any) with a reverse icon; later rows just echo the resulting operator.
+function LogicPrefix({index, match, onToggle}){
+  const label = match==="any" ? "Or" : "And";
+  if(index===0) return <span className="inline-flex items-center rounded-md bg-slate-100 px-2.5 py-1.5 text-[12px] font-medium text-slate-500">Where</span>;
+  if(index===1) return (
+    <button type="button" onClick={onToggle} title="Toggle And / Or"
+      className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[12px] font-semibold text-slate-600 transition hover:border-slate-300">
+      {label}<Ico name="history" size={12} cls="text-slate-400"/>
+    </button>
+  );
+  return <span className="inline-flex items-center rounded-md bg-slate-100 px-2.5 py-1.5 text-[12px] font-medium text-slate-400">{label}</span>;
+}
+// Between-group AND/OR connector (block-level match) — short vertical stems + a pill; first one interactive.
+function GroupConnector({index, match, onToggle}){
+  const label = match==="any" ? "Or" : "And";
+  return (
+    <div className="flex flex-col items-start pl-4 py-0.5">
+      <span className="h-2.5 w-px bg-slate-200"/>
+      {index===0
+        ? <button type="button" onClick={onToggle} title="Toggle And / Or" className="my-1 inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[12px] font-semibold text-slate-600 transition hover:border-slate-300">{label}<Ico name="history" size={12} cls="text-slate-400"/></button>
+        : <span className="my-1 inline-flex items-center rounded-md bg-slate-100 px-2.5 py-1 text-[12px] font-medium text-slate-400">{label}</span>}
+      <span className="h-2.5 w-px bg-slate-200"/>
     </div>
   );
 }
@@ -2646,67 +2827,78 @@ function V7LogicSelect({value, onChange, level}){
   );
 }
 // Condition row opens ready-to-fill: field · operator · value placeholders all visible immediately.
-function V7CondRow({c, onChange, onRemove}){
+function V7CondRow({c, onChange, onRemove, onDuplicate, prefix, conflictFields, onFieldConflict, ruleName}){
+  // condition-field conflict — surfaced INSIDE the field input box, same as the action's fields dropdown
+  const cfHit = !!(isDemoConflictRule(ruleName) && conflictFields && c.fieldId && conflictFields.has(c.fieldId));
   return (
     <div className="flex items-center gap-2">
-      <div className="flex flex-1 flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-white p-1.5">
-        <V7FieldPicker value={c.fieldId} onChange={v=>onChange({fieldId:v, op:"", value:""})} placeholder="Choose field"/>
-        <div className="w-36"><GuidedDropdown value={c.op} onChange={v=>onChange({op:v, value: OPS_MULTI.indexOf(v)>=0 ? [] : ""})} options={condOps(c)} guide={OP_GUIDE} placeholder="Choose"/></div>
+      {prefix && <div className="w-[62px] shrink-0">{prefix}</div>}
+      <div className="w-44 shrink-0"><V7FieldPicker value={c.fieldId} onChange={v=>onChange({fieldId:v, op:"", value:""})} placeholder="Choose field" conflict={cfHit} onConflict={onFieldConflict} conflictLabel={c.fieldId?labelOf(c.fieldId):""}/></div>
+      <div className="w-36 shrink-0"><GuidedDropdown value={c.op} onChange={v=>onChange({op:v, value: OPS_MULTI.indexOf(v)>=0 ? [] : ""})} options={condOps(c)} guide={OP_GUIDE} placeholder="Choose"/></div>
+      <div className="min-w-0 flex-1">
         {OPS_NOVALUE.indexOf(c.op)>=0
           ? <span className="px-1 text-[12px] italic text-slate-400">no value needed</span>
-          : <div className="w-44"><ValueControl fieldId={c.fieldId} op={c.op} value={c.value} onChange={v=>onChange({value:v})}/></div>}
+          : <ValueControl fieldId={c.fieldId} op={c.op} value={c.value} onChange={v=>onChange({value:v})}/>}
       </div>
-      <button onClick={onRemove} title="Remove condition" className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-rose-500 text-white transition hover:bg-rose-600"><Ico name="x" size={13}/></button>
+      {onDuplicate && <button onClick={onDuplicate} title="Duplicate condition" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-slate-200 text-slate-400 transition hover:bg-slate-50 hover:text-slate-600"><Ico name="copy" size={14}/></button>}
+      <button onClick={onRemove} title="Remove condition" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-slate-200 text-rose-500 transition hover:bg-rose-50"><Ico name="trash" size={14}/></button>
     </div>
   );
 }
 // A nested condition group inside IF — its own conditions + its own Match-ALL/ANY Conditions logic
 // (V9 model). The group's match is separate from the group-level (block.match) logic in V7Block.
-function V7Group({g, n, onChange, onRemove}){
+function V7Group({g, n, onChange, onRemove, onDuplicate, conflictFields, onFieldConflict, ruleName}){
   const setLeaf = (i,p)=> onChange({conditions: g.conditions.map((c,j)=> j===i?{...c,...p}:c)});
   const addLeaf = ()=> onChange({conditions:[...g.conditions, {fieldId:"", op:"", value:""}]});
   const rmLeaf  = i => onChange({conditions: g.conditions.filter((_,j)=>j!==i)});
+  const dupLeaf = i => onChange({conditions: g.conditions.flatMap((c,j)=> j===i ? [c, {...c}] : [c])});
+  const toggle  = ()=> onChange({match: (g.match||"all")==="any" ? "all" : "any"});
   return (
-    <div className="rounded-lg bg-slate-50/70 ring-1 ring-slate-200/70 p-2.5">
-      <div className="flex items-center justify-between gap-2 mb-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">{n ? "Condition group " + n : "Condition group"}</span>
-          {g.conditions.length>1 && <V7LogicSelect level="conditions" value={g.match||"all"} onChange={v=>onChange({match:v})}/>}
+    <div className="rounded-xl border border-slate-200 bg-white p-3">
+      <div className="mb-2.5">
+        <span className="inline-flex items-center rounded-md bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-500">{n ? "Condition group " + n : "Condition group"}</span>
+      </div>
+      <div className="space-y-2.5">
+        {g.conditions.map((c,i)=> <V7CondRow key={i} c={c} prefix={<LogicPrefix index={i} match={g.match||"all"} onToggle={toggle}/>} onChange={p=>setLeaf(i,p)} onRemove={()=>rmLeaf(i)} onDuplicate={()=>dupLeaf(i)} conflictFields={conflictFields} onFieldConflict={onFieldConflict} ruleName={ruleName}/>)}
+      </div>
+      <div className="mt-3 flex items-center justify-between gap-3">
+        <button onClick={addLeaf} className="inline-flex items-center gap-1.5 text-[13px] font-medium text-slate-500 transition hover:text-slate-700"><Ico name="plus" size={13}/> Add Condition</button>
+        <div className="flex items-center gap-4">
+          {onDuplicate && <button onClick={onDuplicate} className="text-[13px] font-medium text-[#1180c1] transition hover:underline">Duplicate group</button>}
+          <button onClick={onRemove} className="text-[13px] font-medium text-rose-500 transition hover:underline">Remove group</button>
         </div>
-        <button onClick={onRemove} className="text-slate-300 hover:text-rose-500 p-0.5 shrink-0" title="Remove group"><Ico name="x" size={14}/></button>
       </div>
-      <div className="space-y-2">
-        {g.conditions.map((c,i)=> <V7CondRow key={i} c={c} onChange={p=>setLeaf(i,p)} onRemove={()=>rmLeaf(i)}/>)}
-      </div>
-      <button onClick={addLeaf} className="mt-2.5 inline-flex items-center gap-1.5 text-[12.5px] font-medium text-[#1180c1] hover:underline"><Ico name="plus" size={12}/> Add condition to group</button>
     </div>
   );
 }
 // Action row: ONE behavior applied to ONE OR MANY target fields. Targets are chosen in a dual-pane modal
 // and shown collapsed ("Status + N more") — never as chips. fieldIds[] is the source of truth; fieldId
 // mirrors the first for back-compat with the shared summary/conflict helpers.
-function V7ActRow({a, onChange, onRemove, onDuplicate}){
+function V7ActRow({a, onChange, onRemove, onDuplicate, ruleName, conflictFields, onFieldConflict}){
   const ids = (a.fieldIds && a.fieldIds.length) ? a.fieldIds : (a.fieldId ? [a.fieldId] : []);
   const setIds = next => onChange({fieldIds:next, fieldId:next[0]||""});
+  // field-level conflict discovery — scoped to the demo rule: the ids of this action's conflicting fields,
+  // surfaced as a compact indicator INSIDE the fields dropdown (not as a banner below the action).
+  const cfIds = (isDemoConflictRule(ruleName) && conflictFields) ? ids.filter(id=>conflictFields.has(id)) : [];
   return (
-    <div className="flex items-start gap-2">
-      <div className="flex flex-1 flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-white p-1.5">
-        <div className="w-44"><GuidedDropdown value={a.behavior} onChange={v=>onChange({behavior:v, value:(v==="Show Options"||v==="Hide Options")?[]:"", entity:"", srcField:""})} options={BEHAVIORS} guide={ACTION_GUIDE} placeholder="Choose action"/></div>
+    <div className="flex items-center gap-2">
+      <div className="w-40 shrink-0"><GuidedDropdown value={a.behavior} onChange={v=>onChange({behavior:v, value:(v==="Show Options"||v==="Hide Options")?[]:"", entity:"", srcField:""})} options={BEHAVIORS} guide={ACTION_GUIDE} placeholder="Choose action"/></div>
+      <div className="flex min-w-0 flex-1 items-center gap-2">
         {a.behavior==="Filter Data"
           ? <FilterDataConfig a={a} onChange={onChange}/>
           : (a.behavior==="Set Value" || a.behavior==="Show Options" || a.behavior==="Hide Options")
             ? <>
                 {/* dependent flow: pick ONE target field first, then the value/options control appears */}
-                <V7FieldPicker value={a.fieldId||""} onChange={v=>onChange({fieldId:v, fieldIds:[v], value:(a.behavior==="Show Options"||a.behavior==="Hide Options")?[]:""})} placeholder="Choose field"/>
-                {a.fieldId && a.behavior==="Set Value" && <span className="text-[12px] text-slate-400">to</span>}
-                {a.fieldId && a.behavior==="Set Value" && <div className="w-40"><ValueControl fieldId={a.fieldId} op="Equals" value={a.value} onChange={v=>onChange({value:v})}/></div>}
-                {a.fieldId && (a.behavior==="Show Options"||a.behavior==="Hide Options") && <span className="text-[12px] text-slate-400">{a.behavior==="Show Options"?"show":"hide"}</span>}
-                {a.fieldId && (a.behavior==="Show Options"||a.behavior==="Hide Options") && <div className="w-48"><GuidedDropdown value={Array.isArray(a.value)?a.value:[]} onChange={v=>onChange({value:v})} options={FIELD_OPTIONS[a.fieldId]||[]} placeholder="Choose options" multi/></div>}
+                <div className="w-44 shrink-0"><V7FieldPicker value={a.fieldId||""} onChange={v=>onChange({fieldId:v, fieldIds:[v], value:(a.behavior==="Show Options"||a.behavior==="Hide Options")?[]:""})} placeholder="Choose field"/></div>
+                {a.fieldId && a.behavior==="Set Value" && <span className="text-[12px] text-slate-400 shrink-0">To</span>}
+                {a.fieldId && a.behavior==="Set Value" && <div className="min-w-0 flex-1"><ValueControl fieldId={a.fieldId} op="Equals" value={a.value} onChange={v=>onChange({value:v})}/></div>}
+                {a.fieldId && (a.behavior==="Show Options"||a.behavior==="Hide Options") && <span className="text-[12px] text-slate-400 shrink-0">{a.behavior==="Show Options"?"show":"hide"}</span>}
+                {a.fieldId && (a.behavior==="Show Options"||a.behavior==="Hide Options") && <div className="min-w-0 flex-1"><GuidedDropdown value={Array.isArray(a.value)?a.value:[]} onChange={v=>onChange({value:v})} options={FIELD_OPTIONS[a.fieldId]||[]} placeholder="Choose options" multi/></div>}
               </>
-            : <V7TargetSelect ids={ids} onChange={setIds}/>}
+            : <div className="min-w-0 flex-1"><V7TargetSelect ids={ids} onChange={setIds} conflictIds={cfIds} onConflict={onFieldConflict}/></div>}
       </div>
-      <button onClick={onDuplicate} title="Duplicate action" className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition"><Ico name="copy" size={13}/></button>
-      <button onClick={onRemove} title="Remove action" className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-rose-500 text-white transition hover:bg-rose-600"><Ico name="x" size={13}/></button>
+      <button onClick={onDuplicate} title="Duplicate action" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-slate-200 text-slate-400 transition hover:bg-slate-50 hover:text-slate-600"><Ico name="copy" size={14}/></button>
+      <button onClick={onRemove} title="Remove action" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-slate-200 text-rose-500 transition hover:bg-rose-50"><Ico name="trash" size={14}/></button>
     </div>
   );
 }
@@ -2872,11 +3064,26 @@ function BlockTip({title, summary, started, triggers, condItems, actItems, examp
     </span>
   );
 }
-function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate, onRemove, exec, ruleName}){
+function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate, onRemove, exec, ruleName, conflictFields, onFieldConflict}){
   // Disclosure gates: WHEN → IF → add-buttons → THEN → add-action → Advanced.
   const whenReady     = !!(block.time && block.people);
   const firstCondDone = (block.conditions||[]).some(leafComplete);
   const firstActDone  = (block.actions||[]).some(actComplete);
+  // block-level conflict summary — union of every conflicting field across BOTH conditions and actions (deduped)
+  const blockCfCount = (isDemoConflictRule(ruleName) && conflictFields)
+    ? new Set([
+        ...(block.actions||[]).flatMap(a=>{
+          const ids = (a.fieldIds && a.fieldIds.length) ? a.fieldIds : (a.fieldId ? [a.fieldId] : []);
+          return ids.filter(id=>conflictFields.has(id));
+        }),
+        ...(block.conditions||[]).flatMap(it=> it && it.group ? (it.conditions||[]) : [it])
+          .map(c=> c && c.fieldId).filter(id=> id && conflictFields.has(id)),
+      ]).size
+    : 0;
+  // Header counts — total leaf conditions + how many are grouped (mirrors the screenshot's "N Conditions (M Groups)").
+  const _cItems   = block.conditions || [];
+  const condCount = _cItems.reduce((n,it)=> n + (it && it.group ? (it.conditions||[]).length : 1), 0);
+  const groupCount= _cItems.filter(it=> it && it.group).length;
   const setCond = (i,p)=> onChange({conditions: block.conditions.map((c,j)=> j===i?{...c,...p}:c)});
   const addCond = ()=> onChange({conditions:[...block.conditions, {fieldId:"", op:"", value:""}]});
   // V9 model: adding a group wraps any existing flat conditions into their OWN group first, so
@@ -2893,6 +3100,8 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
     }
   };
   const rmCond  = i => onChange({conditions: block.conditions.filter((_,j)=>j!==i)});
+  const dupCond = i => onChange({conditions: block.conditions.flatMap((c,j)=> j===i ? [c, {...c}] : [c])});
+  const dupGroup= i => onChange({conditions: block.conditions.flatMap((it,j)=> j===i ? [it, {...it, conditions:(it.conditions||[]).map(c=>({...c}))}] : [it])});
   const setAct  = (i,p)=> onChange({actions: block.actions.map((a,j)=> j===i?{...a,...p}:a)});
   const addAct  = ()=> onChange({actions:[...block.actions, {behavior:"", fieldIds:[], value:""}]});
   const rmAct   = i => onChange({actions: block.actions.filter((_,j)=>j!==i)});
@@ -2963,7 +3172,8 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
     return "Always applies: " + lc(actTxt) + ".";
   })();
   return (
-    <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+    <div className="shadow-sm rounded-xl">
+    <div className={"border border-slate-200 bg-white " + (blockCfCount>0 ? "rounded-t-xl" : "rounded-xl shadow-sm")}>
       {/* collapsible-group row: numbered indicator (→ chevron on hover) + status dot + title (tooltip on hover) */}
       <div className="flex items-center gap-2.5 px-4 py-3">
         <button onClick={onToggle} className="flex min-w-0 flex-1 items-center gap-2.5 text-left">
@@ -2975,9 +3185,9 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
           <span className={"h-2 w-2 shrink-0 rounded-full " + (firstActDone ? "bg-emerald-400" : whenReady ? "bg-amber-400" : "bg-slate-300")}/>
           <span className="min-w-0">
             <BlockTip title={ruleName} summary={sum} started={tipHasContent} triggers={tipTriggers} condItems={tipCondItems} actItems={tipActItems} example={tipExample}>
-              <span className="block truncate text-[13.5px] font-medium text-slate-800">{sum}</span>
+              <span className="block truncate text-[14px] font-semibold text-slate-800">Rule {index+1}</span>
             </BlockTip>
-            <span className="block text-[12px] text-slate-400">{block.time || "When…"} · {block.people || "Everyone"}</span>
+            <span className="block truncate text-[12px] text-slate-400">{block.time || "When…"} · {block.people || "Everyone"} <span className="text-slate-300">|</span> {condCount} Condition{condCount===1?"":"s"}{groupCount>0 ? " (" + groupCount + " Group" + (groupCount===1?"":"s") + ")" : ""} · {block.actions.length} Action{block.actions.length===1?"":"s"}</span>
           </span>
         </button>
         {/* collapsed → quick Duplicate + Delete on the right; expanded → these live in the Advanced footer */}
@@ -2988,90 +3198,103 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
           </div>}
       </div>
       {expanded &&
-        <div className="border-t border-slate-100 px-4 py-5 space-y-4">
-          {/* STEP 1 — WHEN (always shown first; nothing else until both fields are set) */}
-          <div className={V7_CARD + " " + V7_BAR.when}>
-            <V7StepHead tone="when" tag="When" title="When this runs" hint="and who it’s for"/>
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="w-56"><GuidedDropdown value={block.time} onChange={v=>onChange({time:v})} options={WHENS} guide={WHEN_GUIDE} placeholder="Choose an event"/></div>
-              <div className="w-48"><GuidedDropdown value={block.people} onChange={v=>onChange({people:v})} options={AUDS} guide={AUD_GUIDE} placeholder="Choose people"/></div>
+        <div className="border-t border-slate-100 bg-slate-50/60 px-4 py-5 space-y-6">
+          {/* WHEN — event + audience, labelled like the product's rule trigger */}
+          <div>
+            <V7StepHead tone="when" tag="When" title="pick the event and who it applies to"/>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-1.5 block text-[13px] font-medium text-slate-500">Select Rule Event <span className="text-rose-400">*</span></label>
+                <GuidedDropdown value={block.time} onChange={v=>onChange({time:v})} options={WHENS} guide={WHEN_GUIDE} placeholder="Choose an event" variant="pill"/>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-[13px] font-medium text-slate-500">Applies to <span className="text-rose-400">*</span></label>
+                <GuidedDropdown value={block.people} onChange={v=>onChange({people:v})} options={AUDS} guide={AUD_GUIDE} placeholder="Choose people" variant="pill"/>
+              </div>
             </div>
             {!whenReady && <p className="mt-2 text-[12px] text-slate-400">Choose an event and people to continue.</p>}
           </div>
-          {/* STEP 2/3/4 — IF revealed once WHEN is set; first condition row already seeded; add-buttons appear once it's valid */}
+          {/* CHECK IF — grouped conditions with AND/OR connectors between rows and between groups */}
           {whenReady && (()=>{
-            const items = block.conditions || [];
-            const hasGroups = items.some(it=> it && it.group);
-            const groupCount = items.filter(it=> it && it.group).length;
-            let gNo = 0;
+            const items  = block.conditions || [];
+            const groups = items.filter(it=> it && it.group);
+            const bares  = items.filter(it=> it && !it.group);
+            const hasGroups = groups.length>0;
+            const toggleBlock = ()=> onChange({match: (block.match||"all")==="any" ? "all" : "any"});
             return (
-            <div className={V7_CARD + " " + V7_BAR.if + " v10-fade"}>
-              <V7StepHead tone="if" tag="If" title="What needs to be true" hint="conditions"/>
-              {hasGroups
-                ? (groupCount>1 && <div className="mb-2.5 flex items-center gap-2"><span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">Groups logic</span><V7LogicSelect level="groups" value={block.match||"all"} onChange={v=>onChange({match:v})}/></div>)
-                : (items.length>1 && <div className="mb-2.5"><V7LogicSelect level="conditions" value={block.match||"all"} onChange={v=>onChange({match:v})}/></div>)}
-              {items.length===0 && <p className="text-[13px] italic text-slate-400 mb-2">No conditions — this rule always runs.</p>}
-              <div className="space-y-2">
-                {items.map((c,i)=>{
-                  if(c && c.group){
-                    gNo += 1;
-                    return <V7Group key={i} g={c} n={gNo} onChange={p=>setCond(i,p)} onRemove={()=>rmCond(i)}/>;
-                  }
-                  return <V7CondRow key={i} c={c} onChange={p=>setCond(i,p)} onRemove={()=>rmCond(i)}/>;
-                })}
-              </div>
-              {/* STEP 4 — Add Condition / Add Condition Group only after the first condition is valid */}
+            <div className="v10-fade">
+              <V7StepHead tone="if" tag="Check If" title="set the conditions that must match"/>
+              {items.length===0 && <p className="mb-2 text-[13px] italic text-slate-400">No conditions — this rule always runs.</p>}
+              {(()=>{
+                // render EVERY top-level item as a card so nothing is dropped: bare leaves collapse into a
+                // leading "Condition group 1" card, explicit groups follow — pure-bares, pure-groups, and mixes all work.
+                const units = [];
+                if(bares.length) units.push({kind:"bares"});
+                groups.forEach(g=> units.push({kind:"group", g}));
+                return units.map((u,ui)=>
+                  <div key={ui}>
+                    {ui>0 && <GroupConnector index={ui-1} match={block.match||"all"} onToggle={toggleBlock}/>}
+                    {u.kind==="bares"
+                      ? <div className="rounded-xl border border-slate-200 bg-white p-3">
+                          <div className="mb-2.5"><span className="inline-flex items-center rounded-md bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-500">Condition group {ui+1}</span></div>
+                          <div className="space-y-2.5">
+                            {bares.map((c,bi)=>
+                              <V7CondRow key={bi} c={c} prefix={<LogicPrefix index={bi} match={block.match||"all"} onToggle={toggleBlock}/>} onChange={p=>setCond(items.indexOf(c),p)} onRemove={()=>rmCond(items.indexOf(c))} onDuplicate={()=>dupCond(items.indexOf(c))} conflictFields={conflictFields} onFieldConflict={onFieldConflict} ruleName={ruleName}/>)}
+                          </div>
+                          <div className="mt-3"><button onClick={addCond} className="inline-flex items-center gap-1.5 text-[13px] font-medium text-slate-500 transition hover:text-slate-700"><Ico name="plus" size={13}/> Add Condition</button></div>
+                        </div>
+                      : <V7Group g={u.g} n={ui+1} onChange={p=>setCond(items.indexOf(u.g),p)} onRemove={()=>rmCond(items.indexOf(u.g))} onDuplicate={()=>dupGroup(items.indexOf(u.g))} conflictFields={conflictFields} onFieldConflict={onFieldConflict} ruleName={ruleName}/>}
+                  </div>);
+              })()}
               {(firstCondDone || items.length===0) &&
                 <div className="mt-3 flex flex-wrap items-center gap-2 v10-fade">
-                  {!hasGroups && <button onClick={addCond} className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[13px] font-medium text-[#1180c1] transition hover:bg-sky-50">
-                    <span className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 text-[11px] leading-none text-white">+</span> Add Condition
-                  </button>}
-                  <button onClick={addGroup} className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[13px] font-medium text-slate-600 transition hover:bg-slate-50">
-                    <span className="text-sky-500">⊕</span> Add Condition Group
-                  </button>
+                  {!hasGroups && bares.length===0 &&
+                    <button onClick={addCond} className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[13px] font-medium text-[#1180c1] transition hover:bg-sky-50"><Ico name="plus" size={13}/> Add Condition</button>}
+                  <button onClick={addGroup} className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[13px] font-medium text-slate-600 transition hover:bg-slate-50"><Ico name="plus" size={13} cls="text-sky-500"/> Add Condition Group</button>
                 </div>}
             </div>);
           })()}
-          {/* STEP 5/6/7 — THEN revealed once the first condition is complete; first action row seeded; Add Action appears once it's valid */}
+          {/* ACTION — one behavior per row, applied to one or more fields */}
           {whenReady && firstCondDone &&
-            <div className={V7_CARD + " " + V7_BAR.then + " v10-fade"}>
-              <V7StepHead tone="then" tag="Then" title="What should happen" hint="one action can target several fields"/>
-              {block.actions.length===0 && <p className="text-[13px] italic text-slate-400 mb-2">No actions yet — add one to define what happens.</p>}
-              <div className="space-y-2">
-                {block.actions.map((a,i)=> <V7ActRow key={i} a={a} onChange={p=>setAct(i,p)} onRemove={()=>rmAct(i)} onDuplicate={()=>dupAct(i)}/>)}
+            <div className="v10-fade">
+              <V7StepHead tone="then" tag="Action" title="choose what the rule does"/>
+              <div className="space-y-2.5 rounded-xl border border-slate-200 bg-white p-3">
+                {block.actions.length===0 && <p className="text-[13px] italic text-slate-400">No actions yet — add one to define what happens.</p>}
+                {block.actions.map((a,i)=> <V7ActRow key={i} a={a} onChange={p=>setAct(i,p)} onRemove={()=>rmAct(i)} onDuplicate={()=>dupAct(i)} ruleName={ruleName} conflictFields={conflictFields} onFieldConflict={onFieldConflict}/>)}
+                {(firstActDone || block.actions.length===0) &&
+                  <button onClick={addAct} className="inline-flex items-center gap-1.5 text-[13px] font-medium text-slate-500 transition hover:text-slate-700"><Ico name="plus" size={13}/> Add Action</button>}
               </div>
-              {(firstActDone || block.actions.length===0) &&
-                <button onClick={addAct} className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[13px] font-medium text-[#1180c1] transition hover:bg-sky-50 v10-fade">
-                  <span className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 text-[11px] leading-none text-white">+</span> Add Action
-                </button>}
             </div>}
-          {/* Advanced — hidden until WHEN configured + a valid condition + a valid action */}
+          {/* ADVANCED — reverse-on-exit shown as a labelled toggle (matches the product's switch) */}
           {whenReady && firstCondDone && firstActDone &&
-            <div className="border-t border-slate-100 pt-3 v10-fade">
-              <div className="flex items-center justify-between gap-2">
-                <button onClick={()=>onChange({advOpen: !block.advOpen})} className="flex items-center gap-2 text-[12px] font-medium text-slate-500 transition hover:text-slate-700">
-                  <Ico name="chevdown" size={12} cls={block.advOpen?"":"-rotate-90"}/> Advanced behavior for this block
-                  {block.advanced
-                    ? <span className="rounded-full bg-sky-50 px-1.5 py-0.5 text-[10px] font-semibold text-sky-600 ring-1 ring-sky-100">On</span>
-                    : <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-400">Optional</span>}
+            <div className="v10-fade">
+              <p className="mb-2 text-[13px] text-slate-500">Advanced behavior for this block</p>
+              <div className="flex items-start justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
+                <span className="min-w-0">
+                  <span className="block text-[13px] font-medium text-slate-700">Reverse when the condition is no longer true</span>
+                  <span className="mt-0.5 block text-[11px] leading-tight text-slate-400">Undo this block's action automatically when its conditions stop matching</span>
+                </span>
+                <button type="button" onClick={()=>onChange({advanced:!block.advanced})} title="Toggle reverse behavior" className="mt-0.5 inline-flex shrink-0 items-center gap-2">
+                  <span className={"relative h-5 w-9 rounded-full transition " + (block.advanced?"bg-sky-500":"bg-slate-300")}>
+                    <span className={"absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all " + (block.advanced?"left-[18px]":"left-0.5")}/>
+                  </span>
+                  <span className="text-[11px] font-semibold text-slate-400">{block.advanced?"ON":"OFF"}</span>
                 </button>
-                {/* collapsed → tools sit on the right of the Advanced row */}
-                {!block.advOpen && blockTools}
               </div>
-              {block.advOpen &&
-                <>
-                  <label className={"mt-2 flex items-start gap-3 rounded-lg border px-3 py-2.5 cursor-pointer transition " + (block.advanced?"border-sky-200 bg-sky-50/60":"border-slate-200 bg-white hover:bg-slate-50")}>
-                    <input type="checkbox" checked={!!block.advanced} onChange={e=>onChange({advanced:e.target.checked})} className="mt-0.5 accent-sky-500 w-4 h-4"/>
-                    <span className="min-w-0">
-                      <span className="block text-[13px] font-medium text-slate-700">Reverse when the condition is no longer true</span>
-                      <span className="mt-0.5 block text-[11px] leading-tight text-slate-400">Undo this block's action automatically when its conditions stop matching</span>
-                    </span>
-                  </label>
-                  {/* expanded → tools move below the Advanced content, right-aligned */}
-                  <div className="mt-2 flex justify-end">{blockTools}</div>
-                </>}
             </div>}
+          {/* FOOTER — block-level tools, always available while expanded (matches the screenshot's footer bar) */}
+          <div className="flex items-center justify-between border-t border-slate-200 pt-3">
+            <button onClick={onDuplicate} className="inline-flex items-center gap-1.5 text-[13px] font-medium text-slate-500 transition hover:text-slate-700"><Ico name="copy" size={14}/> Duplicate Block</button>
+            <button onClick={clearBlock} className="inline-flex items-center gap-1.5 text-[13px] font-medium text-rose-500 transition hover:text-rose-600"><Ico name="x" size={14}/> Clear</button>
+          </div>
         </div>}
+    </div>
+    {/* block-level conflict strip — sits BELOW the block card so it shows in both collapsed and expanded states; same amber language as the action strip */}
+    {blockCfCount>0 &&
+      <div className="flex items-center justify-between gap-3 rounded-b-xl border border-t-0 border-amber-100 bg-amber-50/70 px-4 py-2">
+        <span className="inline-flex items-center gap-1.5 text-[13px] font-medium text-amber-700"><Ico name="warn" size={15} cls="text-amber-500"/>{blockCfCount} conflict{blockCfCount>1?"s":""} in this block</span>
+        <button type="button" onClick={()=> onFieldConflict && onFieldConflict()} className="inline-flex items-center gap-1 text-[13px] font-semibold text-amber-700 transition hover:text-amber-800">View Conflicts<Ico name="chevdown" size={12} cls="-rotate-90"/></button>
+      </div>}
     </div>
   );
 }
@@ -3147,88 +3370,211 @@ function inspectConflict(draft, rule){
   const where = (actionConflicts.length && conditionConflicts.length) ? "conditions and actions" : actionConflicts.length ? "actions" : conditionConflicts.length ? "conditions" : "scope";
   return { actionConflicts, conditionConflicts, kinds, reverse, tag, total, where };
 }
-// Part 2 — fixture scenarios for the "Major incident form behavior" demo rule. Four data states of the SAME
-// Rule → Block → Field → Comparison component (action-only · single-field+condition · multi-field shared · multi-block).
-const DEMO_CONFLICT_FIELDS = ["Priority","Assignee","Description","Cc Emails","Category","Technician Group","Vendor"];
-// Each conflicting field carries two independent sides — cur (the rule being edited) and con (this
-// listed rule) — each describing the field's role (Condition / Action / Both), its own check/change,
-// the other conditions (grouped: AND within a group, OR between groups), and the resulting actions.
-// The comparison component adapts per side, so asymmetric conflicts (Condition ↔ Action, Both ↔ Action)
-// render correctly. Authored to stress-test grouped logic and long action lists.
-const DEMO_CONFLICT_ROWS = [
-  // S1 — Action ↔ Action (baseline compact)
-  { id:"dz1", name:"Lock Priority after assignment", audience:"Signed-in users only",
-    blocks:[ { label:"Block 1", trigger:"While the form is being filled · On Create and Edit", reverse:false,
-      fields:[
-        { id:"priority", label:"Priority",
-          cur:{ role:"Action", action:"Set value → Urgent", cgroups:[["Request Type is Incident","Impact is High"]] },
-          con:{ role:"Action", action:"Set value → High",   cgroups:[["Assignee is not empty"]] },
-          why:"Priority cannot be set to two different values at once.",
-          runtime:"If both rules run, the older rule wins." },
-      ] } ] },
-  // S2 — Condition ↔ Action (field checked on one side, changed on the other)
-  { id:"dz2", name:"Clear Assignee when reopened", audience:"Technicians only",
-    blocks:[ { label:"Block 1", trigger:"While the form is being filled · On Edit", reverse:false,
-      fields:[
-        { id:"status", label:"Status",
-          cur:{ role:"Condition", check:"Status = Reopened", cgroups:[["Request Type is Incident","Assignee is not empty"]], then:["Clear Assignee","Notify Technician"] },
-          con:{ role:"Action", action:"Set value → In Progress", cgroups:[["Priority is High","Technician Group is not empty"]] },
-          why:"Changing Status to In Progress can prevent the Current Rule's 'Status = Reopened' condition from being met." },
-      ] } ] },
-  // S3 — Action ↔ Condition with two condition groups + a long action list (main scalability test)
-  { id:"dz3", name:"Portal field visibility controls", audience:"Requesters only",
-    blocks:[ { label:"Block 2", trigger:"While the form is being filled · On Create and Edit", reverse:true, reverseNote:"Restores these fields when the condition is no longer true.",
-      fields:[
-        { id:"description", label:"Description",
-          cur:{ role:"Action", action:"Make mandatory", cgroups:[["Priority is High","Impact is High","Urgency is Critical"],["Category is Incident","Location is Surat","Requester Type is Employee"]] },
-          con:{ role:"Condition", check:"Description is empty", cgroups:[["Status is In Progress","Assignee is not empty","Technician Group is Major Incident Team"],["Impact is Critical","Category is Service Request","Source is Email"]],
-                then:["Hide Description","Clear Cc Emails","Make Vendor mandatory","Set Priority → High","Notify Technician","Set Technician Group → Escalation Team"] },
-          why:"The Current Rule makes Description mandatory while this rule depends on Description being empty and can also hide it." },
-        { id:"cc_emails", label:"Cc Emails",
-          cur:{ role:"Action", action:"Make mandatory", cgroups:[["Requester Type is External"]] },
-          con:{ role:"Action", action:"Hide field",     cgroups:[["Portal view is enabled"]] },
-          why:"Cc Emails cannot be required while it is hidden." },
-        { id:"vendor", label:"Vendor",
-          cur:{ role:"Action", action:"Show field",  cgroups:[["Category is Hardware"]] },
-          con:{ role:"Action", action:"Clear value", cgroups:[["Requester Type is External"]] },
-          why:"Vendor cannot show a value while it is being cleared." },
-      ] } ] },
-  // S4 — Both ↔ Action across a 3-block rule (field is checked AND changed on the current side)
-  { id:"dz4", name:"Major incident automation", audience:"Technicians only",
-    blocks:[
-      { label:"Block 1", trigger:"While the form is being filled · On Create and Edit", reverse:false,
+// PROTOTYPE — two hardcoded conflict scenarios. Each field carries two sides: cur (the unsaved draft) and
+// con (the existing saved rule). demoFor(draft) maps the rule being created to its scenario (no live engine).
+//   S1 — draft "Require supporting information for high priority tickets" (Status = Open · Priority = High)
+//        conflicts with "Simplified Mobile Ticket Form" on Attachment + Category.
+//   S2 — draft "Mandatory information for HR requests" (Assignee = Priya · Department = HR)
+//        conflicts with "Hide internal fields for Surat requests" on Subject + Category.
+const DEMO_S1 = {
+  fields: ["Attachment","Category"],
+  rows: [
+    { id:"dz1", name:"Simplified Mobile Ticket Form", audience:"Everyone",
+      blocks:[ { label:"Block 1", trigger:"While the form is being filled · On Create and Edit", reverse:false,
         fields:[
-          { id:"priority", label:"Priority",
-            cur:{ role:"Both", check:"Priority = High", cgroups:[["Impact is Critical","Urgency is Critical"]], changeTo:"Urgent",
-                  others:["Notify Incident Manager","Make Assignee mandatory","Set Technician Group → Major Incident Team","Show Resolution Notes","Lock Category","Add Major Incident tag"] },
-            con:{ role:"Action", action:"Set value → Low", cgroups:[["Location is Surat","Category is Incident","Requester Type is Employee"],["Source is Email","Status is In Progress","Assignee is not empty"]] },
-            why:"Setting Priority to Low can prevent the Current Rule's 'Priority = High' condition from being met, while both rules can also assign different values to Priority.",
-            runtime:"If both rules run, the older rule wins." },
-          { id:"assignee", label:"Assignee",
-            cur:{ role:"Action", action:"Make mandatory", cgroups:[["Impact is Critical"]] },
-            con:{ role:"Action", action:"Clear value",    cgroups:[["Status is In Progress"]] },
-            why:"Assignee cannot be required while it is being cleared." },
-        ] },
-      { label:"Block 2", trigger:"While the form is being filled · On Create and Edit", reverse:true, reverseNote:"Restores Description when the condition is no longer true.",
+          { id:"attachment", label:"Attachment",
+            cur:{ role:"Action", action:"Make mandatory", cgroups:[["Status is Open","Priority is High"]] },
+            con:{ role:"Action", action:"Hide field",     cgroups:[["Channel is Mobile App","Priority is High"]] },
+            why:"A hidden field cannot be completed by the user while another rule requires it.",
+            runtime:"If both rules run, the existing (older) rule wins." },
+          { id:"category", label:"Category",
+            cur:{ role:"Action", action:"Make mandatory", cgroups:[["Status is Open","Priority is High"]] },
+            con:{ role:"Action", action:"Hide field",     cgroups:[["Channel is Mobile App","Priority is High"]] },
+            why:"A hidden field cannot be completed by the user while another rule requires it.",
+            runtime:"If both rules run, the existing (older) rule wins." },
+        ] } ] },
+  ],
+};
+const DEMO_S2 = {
+  fields: ["Subject","Category"],
+  rows: [
+    { id:"dz1", name:"Hide internal fields for Surat requests", audience:"Everyone",
+      blocks:[ { label:"Block 1", trigger:"While the form is being filled · On Create and Edit", reverse:false,
         fields:[
-          { id:"description", label:"Description",
-            cur:{ role:"Action", action:"Make mandatory", cgroups:[["Status is Resolved"]] },
-            con:{ role:"Action", action:"Hide field",     cgroups:[["Portal view is enabled"]] },
-            why:"Description cannot be required while it is hidden." },
-        ] },
-      { label:"Block 3", trigger:"While the form is being filled · On Create and Edit", reverse:false,
+          { id:"subject", label:"Subject",
+            cur:{ role:"Action", action:"Make mandatory", cgroups:[["Assignee is Priya","Department is HR"]] },
+            con:{ role:"Action", action:"Hide field",     cgroups:[["Assignee is Priya","Department is HR","Location is Surat"],["Assignee is Priya","Department is IT","Location is Surat"]] },
+            why:"A hidden field cannot be completed by the user while another rule requires it.",
+            runtime:"If both rules run, the existing (older) rule wins." },
+          { id:"category", label:"Category",
+            cur:{ role:"Action", action:"Make mandatory", cgroups:[["Assignee is Priya","Department is HR"]] },
+            con:{ role:"Action", action:"Hide field",     cgroups:[["Assignee is Priya","Department is HR","Location is Surat"],["Assignee is Priya","Department is IT","Location is Surat"]] },
+            why:"A hidden field cannot be completed by the user while another rule requires it.",
+            runtime:"If both rules run, the existing (older) rule wins." },
+        ] } ] },
+  ],
+};
+// Pick the scenario from the draft — by name, or by its distinctive conditions (Priya/Department → S2).
+//   S3 — draft "HR Rule UI Exp" (Department = HR) mandates Employee ID/Department/Designation/Joining Date.
+//        Only Department + Designation conflict — each with its own existing rule (field-level discovery demo).
+const DEMO_S3 = {
+  fields: ["Department","Designation"],
+  rows: [
+    { id:"dz1", name:"Default Department from Requester", audience:"Everyone",
+      blocks:[ { label:"Block 1", trigger:"While the form is being filled · On Create and Edit", reverse:false,
+        fields:[
+          { id:"department", label:"Department",
+            cur:{ role:"Action", action:"Make mandatory", cgroups:[["Department is HR"]] },
+            con:{ role:"Action", action:"Set value → automatically from the requester", cgroups:[["The requester has a department"]] },
+            why:"Department cannot be required from the user while another rule sets it automatically." },
+        ] } ] },
+    { id:"dz2", name:"Standardize Designation from job title", audience:"Everyone",
+      blocks:[ { label:"Block 1", trigger:"While the form is being filled · On Create and Edit", reverse:false,
+        fields:[
+          { id:"designation", label:"Designation",
+            cur:{ role:"Action", action:"Make mandatory", cgroups:[["Department is HR"]] },
+            con:{ role:"Action", action:"Set value → automatically from the job title", cgroups:[["The job title is set"]] },
+            why:"Designation cannot be required from the user while another rule sets it automatically." },
+        ] } ] },
+  ],
+};
+// S4 — draft "Critical Incident Handling": 2 conditions + 2 groups + 4 actions. Four REAL conflicts —
+// Group 1 (Impact) & Group 2 (Category) are condition-vs-action; Assignee (opposite behavior) & Description
+// (same behavior) are action conflicts. Impact + Assignee also carry reverse behavior (run-order thrash).
+const DEMO_S4 = {
+  fields: ["Impact","Category","Assignee","Description"],
+  rows: [
+    { id:"cz1", name:"Auto-downgrade Impact for standard requests", audience:"Everyone",
+      blocks:[ { label:"Block 1", trigger:"While the form is being filled · On Create and Edit", reverse:true,
+        reverseNote:"This rule reverses on exit — it re-applies Impact = Low whenever its own condition stops matching, so it keeps overriding your High check as the form changes.",
+        fields:[
+          { id:"impact", label:"Impact",
+            cur:{ role:"Condition", check:"Impact is High", cgroups:[["Urgency is High"]] },
+            con:{ role:"Action", action:"Set value → Low", cgroups:[["Request Type is Service Request"]] },
+            why:"Your group waits for Impact = High, but this rule sets Impact to Low — the group's condition can never hold when both rules run." },
+        ] } ] },
+    { id:"cz2", name:"Regional Category Routing", audience:"Everyone",
+      blocks:[ { label:"Block 1", trigger:"When the form is submitted · On Create and Edit", reverse:false,
         fields:[
           { id:"category", label:"Category",
-            cur:{ role:"Action", action:"Make read-only",       cgroups:null },
-            con:{ role:"Action", action:"Set value → Incident", cgroups:null },
-            why:"Category cannot be set to 'Incident' while it is read-only." },
-          { id:"tech_group", label:"Technician Group",
-            cur:{ role:"Action", action:"Make mandatory",                  cgroups:null },
-            con:{ role:"Action", action:"Set value → Major Incident Team", cgroups:null },
-            why:"Technician Group cannot be user-selected while its value is set automatically." },
-        ] },
-    ] },
-];
+            cur:{ role:"Condition", check:"Category is Network", cgroups:[["Location is Mumbai"]] },
+            con:{ role:"Action", action:"Set value → Access", cgroups:[["Location is Mumbai"]] },
+            why:"Your group waits for Category = Network, but this rule sets Category to Access for the same location — the check and the change contradict each other." },
+        ] } ] },
+    { id:"cz3", name:"Simplified Portal Form", audience:"Requesters only",
+      blocks:[ { label:"Block 1", trigger:"While the form is being filled · On Create and Edit", reverse:true,
+        reverseNote:"This rule reverses on exit — it re-hides Assignee when its condition stops matching, so as the form changes the two rules repeatedly override each other.",
+        fields:[
+          { id:"assignee", label:"Assignee",
+            cur:{ role:"Action", action:"Make mandatory", cgroups:[["Priority is Urgent","Status is Open"]] },
+            con:{ role:"Action", action:"Hide field", cgroups:[["Requester is a portal user"]] },
+            why:"A hidden field cannot be completed by the user while your rule requires it — the two actions directly contradict." },
+        ] } ] },
+    { id:"cz4", name:"Require Description on Incidents", audience:"Everyone",
+      blocks:[ { label:"Block 1", trigger:"While the form is being filled · On Create and Edit", reverse:false,
+        fields:[
+          { id:"description", label:"Description",
+            cur:{ role:"Action", action:"Make mandatory", cgroups:[["Priority is Urgent","Status is Open"]] },
+            con:{ role:"Action", action:"Make mandatory", cgroups:[["Request Type is Incident"]] },
+            why:"Both rules make Description mandatory — the same behavior applied twice, so one of them is redundant." },
+        ] } ] },
+  ],
+};
+// S5 — draft "R20 - Request Routing Demo": Show CC Email/Description (reverse ON), Hide Category, Mandate
+// Attachment, Set Priority. Four REAL conflicts across three existing rules — two of them reverse-behavior.
+const DEMO_S5 = {
+  fields: ["Cc Emails","Description","Category","Attachment"],
+  rows: [
+    { id:"pz1", name:"IT Communication Policy", audience:"Everyone",
+      blocks:[ { label:"Block 1", trigger:"While the form is being filled · On Create and Edit", reverse:true,
+        reverseNote:"R20 shows Cc Emails & Description, but with reverse behavior ON it hides them again whenever the condition stops matching (Department ≠ HR). For the IT group, that directly fights this rule, which requires them.",
+        fields:[
+          { id:"cc_emails", label:"Cc Emails",
+            cur:{ role:"Action", action:"Show field", cgroups:[["Department is HR","Location is India"],["Department is IT","Impact is High"]] },
+            con:{ role:"Action", action:"Make mandatory", cgroups:[["Department is IT","Impact is High"]] },
+            why:"R20's reverse behavior hides Cc Emails when the condition no longer holds, while this rule requires it — the two keep overriding each other." },
+          { id:"description", label:"Description",
+            cur:{ role:"Action", action:"Show field", cgroups:[["Department is HR","Location is India"],["Department is IT","Impact is High"]] },
+            con:{ role:"Action", action:"Make mandatory", cgroups:[["Department is IT","Impact is High"]] },
+            why:"R20's reverse behavior hides Description when the condition no longer holds, while this rule requires it — the two keep overriding each other." },
+        ] } ] },
+    { id:"pz2", name:"HR Category Policy", audience:"Everyone",
+      blocks:[ { label:"Block 1", trigger:"While the form is being filled · On Create and Edit", reverse:false,
+        fields:[
+          { id:"category", label:"Category",
+            cur:{ role:"Action", action:"Hide field", cgroups:[["Department is HR","Location is India"],["Department is IT","Impact is High"]] },
+            con:{ role:"Action", action:"Make mandatory", cgroups:[["Department is HR","Location is India"]] },
+            why:"A hidden field cannot be completed by the user while this rule requires it — hiding and mandating Category directly contradict." },
+        ] } ] },
+    { id:"pz3", name:"IT Attachment Policy", audience:"Everyone",
+      blocks:[ { label:"Block 1", trigger:"While the form is being filled · On Create and Edit", reverse:false,
+        fields:[
+          { id:"attachment", label:"Attachment",
+            cur:{ role:"Action", action:"Make mandatory", cgroups:[["Department is HR","Location is India"],["Department is IT","Impact is High"]] },
+            con:{ role:"Action", action:"Hide field", cgroups:[["Department is IT","Impact is High"]] },
+            why:"R20 requires Attachment, but this rule hides it for the IT group — a required field the user can never see or fill." },
+        ] } ] },
+  ],
+};
+// R21 = same conflicts as DEMO_S5, but Cc Emails additionally conflicts with a SECOND rule (Portal Field
+// Cleanup hides it) — so the simplified drawer's Cc Emails tab reads "Used in 3 Rules" and stacks both
+// conflicting rules under one Current Rule. Kept separate so R20 (DEMO_S5) is untouched.
+const DEMO_S6 = {
+  fields: DEMO_S5.fields,
+  rows: DEMO_S5.rows.concat([
+    { id:"pz4", name:"Portal Field Cleanup", audience:"Requesters only",
+      blocks:[ { label:"Block 1", trigger:"When the form is submitted · On Create and Edit", reverse:true,
+        reverseNote:"This rule reverses on exit — it re-hides Cc Emails when its condition stops matching, so it keeps fighting R20 which shows the field.",
+        fields:[
+          { id:"cc_emails", label:"Cc Emails",
+            cur:{ role:"Action", action:"Show field", cgroups:[["Department is HR","Location is India"],["Department is IT","Impact is High"]] },
+            con:{ role:"Action", action:"Hide field", cgroups:[["Requester is external"]] },
+            why:"R20 shows Cc Emails, but this rule hides it for external requesters — the field flips between shown and hidden." },
+        ] } ] },
+  ]),
+};
+// R22 — field-centric MATRIX shape: each conflicting field lists the rules it clashes with; each rule has
+// blocks; each block names what the current rule does vs what that block does to the field. `rows:[]` keeps
+// the shared drawer computations (demoRows / N / counts) safe; the matrix drives R22's dedicated render.
+const DEMO_S7 = {
+  fields: ["Status","Category","Priority","Assignee"],
+  rows: [],
+  matrix: [
+    { id:"status", label:"Status", cur:"Sets Status to In Progress", rules:[
+      { name:"Auto-close Resolved Tickets", blocks:[ {label:"Block 1", con:"Sets Status to Closed"} ] },
+      { name:"Portal Status Lock", blocks:[ {label:"Block 1", con:"Makes Status read-only"} ] },
+      { name:"Escalation Workflow", blocks:[
+        {label:"Block 1", con:"Sets Status to On Hold"},
+        {label:"Block 2", con:"Hides Status"},
+        {label:"Block 3", con:"Clears Status"},
+      ] },
+    ]},
+    { id:"category", label:"Category", cur:"Hides Category", rules:[
+      { name:"HR Category Policy", blocks:[ {label:"Block 1", con:"Makes Category mandatory"} ] },
+      { name:"Catalog Defaults",  blocks:[ {label:"Block 1", con:"Sets Category to Software"} ] },
+    ]},
+    { id:"priority", label:"Priority", cur:"Sets Priority to High", rules:[
+      { name:"Auto-set Priority from Impact", blocks:[ {label:"Block 1", con:"Sets Priority to Urgent"} ] },
+      { name:"VIP Fast-track", blocks:[
+        {label:"Block 1", con:"Sets Priority to Urgent"},
+        {label:"Block 2", con:"Makes Priority read-only"},
+      ] },
+    ]},
+    { id:"assignee", label:"Assignee", cur:"Makes Assignee mandatory", rules:[
+      { name:"Simplified Portal Form",   blocks:[ {label:"Block 1", con:"Hides Assignee"} ] },
+      { name:"Round-robin Assignment",   blocks:[ {label:"Block 1", con:"Clears Assignee"} ] },
+    ]},
+  ],
+};
+// Pick the scenario from the draft — by name, or by its distinctive fields/conditions.
+const demoFor = draft => { const s = JSON.stringify(draft||{}).toLowerCase(); const name=((draft&&draft.name)||"").toLowerCase();
+  if(name.indexOf("conflict matrix")>=0) return DEMO_S7;
+  if(name.indexOf("routing demo 2")>=0) return DEMO_S6;
+  if(name.indexOf("request routing")>=0) return DEMO_S5;
+  if(name.indexOf("critical incident")>=0) return DEMO_S4;
+  if(name.indexOf("hr rule ui exp")>=0 || s.indexOf("designation")>=0 || s.indexOf("employee_id")>=0) return DEMO_S3;
+  if(/hr requests/i.test((draft&&draft.name)||"") || s.indexOf("priya")>=0) return DEMO_S2;
+  return DEMO_S1; };
 // Collapsed-row roles for a demo conflicting rule: the field is an Action if the conflicting rule
 // changes it (a `their` behavior), and a Condition if its label heads any of that block's condition
 // tokens. Aggregated across all blocks and de-duplicated to one entry per field.
@@ -3247,7 +3593,20 @@ const demoRuleFields = fx => {
 // one-line behaviour summary for a side, used by the collapsed rule-creation warning
 const sideBrief = side => side.role==="Action" ? side.action : side.role==="Both" ? ("Set value → " + side.changeTo) : ("Requires " + side.check);
 const ROLE_TINT = { Condition:"text-violet-600", Action:"text-sky-600", Both:"text-amber-600" };
-function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onToggle, parentWidth}){
+// Plain-language one-liner for what a rule does to field L (e.g. "Shows Cc Emails", "Makes Cc Emails mandatory").
+// Module-scope so both DemoCompare (R20) and the grouped simplified card (R21) can reuse it.
+function glanceOf(side, L){
+  const checkVal = c => { if(!c) return ""; const eq=c.indexOf(" = "); if(eq>=0) return c.slice(eq+3); let r=(c.indexOf(L+" ")===0)?c.slice(L.length+1):c; return r.replace(/^is /,""); };
+  const actLine = a => { if(!a) return "Changes " + L;
+    if(a.indexOf("Set value → ")===0) return "Changes " + L + " to " + a.slice(("Set value → ").length);
+    switch(a){ case "Make mandatory": return "Makes " + L + " mandatory"; case "Make optional": return "Makes " + L + " optional"; case "Hide field": return "Hides " + L; case "Show field": return "Shows " + L; case "Clear value": return "Clears " + L; case "Make read-only": return "Locks " + L; case "Make editable": return "Unlocks " + L; default: return a + " " + L; } };
+  const fieldAct = s => (s.then||[]).concat(s.others||[]).find(a=> a.indexOf(L)>=0);
+  if(side.role==="Action") return actLine(side.action);
+  const base = side.role==="Both" ? ("Checks if " + L + " is " + checkVal(side.check) + ", then changes it to " + side.changeTo) : ("Checks if " + L + " is " + checkVal(side.check));
+  const hit = fieldAct(side);
+  return hit ? (base + " and can " + hit.charAt(0).toLowerCase() + hit.slice(1)) : base;
+}
+function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onToggle, parentWidth, focusFields}){
   // Rule-first hierarchy — Conflicting rule → OUR blocks that clash → per-block field comparison. Levels independent.
   const [openRule, setOpenRule] = useState(null);   // one conflicting rule expanded at a time
   const [openBlk, setOpenBlk] = useState({});       // "<ruleId>:<blockIdx>" → expanded
@@ -3258,6 +3617,9 @@ function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onTogg
   const [q, setQ] = useState("");
   const [tagFilter, setTagFilter] = useState("ALL");   // ALL | Contradicting | Duplicate
   const [cuOpen, setCuOpen] = useState(false);   // Current Rule summary — collapsed by default
+  const [simpTab, setSimpTab] = useState(null);  // simplified (R21) drawer — one shared field tab across all conflicts
+  const [mxField, setMxField] = useState(null);  // R22 matrix drawer — selected field in the left column
+  const [mxOpen, setMxOpen] = useState({});      // R22 matrix drawer — expanded rules/blocks ("field:rule" / "field:rule:block")
   const width = Math.max(480, (parentWidth || 940) - 56);
   const seen = {}; const baseRules = [];
   conflicts.forEach(c=>{ if(c.rule && !seen[c.rule.id]){ seen[c.rule.id]=1; baseRules.push(c.rule); } });
@@ -3314,9 +3676,20 @@ function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onTogg
   // Per conflicting rule → the fields it clashes with the current rule on (action conflicts include hide-vs-cond).
   const ruleCF = baseRules.map(r=>{ const ci=inspectConflict(draft, r); let cf=new Set(ci.actionConflicts.map(x=>x.field)); if(!cf.size) cf=new Set(ci.conditionConflicts.map(x=>x.field)); return { r, ci, cf }; });
   const allFields = new Set(); ruleCF.forEach(x=> x.cf.forEach(f=> allFields.add(f)));
-  const demo = (draft.name||"").trim()==="Major incident form behavior";   // Part 2 fixture scenario
-  const N = demo ? 7 : allFields.size;   // total conflicting fields — the "… of N fields" denominator (always 7 in the demo)
-  const chipLabels = demo ? DEMO_CONFLICT_FIELDS : [...allFields].map(labelOf);
+  const demo = true;   // PROTOTYPE: the Review Conflict drawer always demonstrates a hardcoded scenario (never the live engine)
+  const demoData = demoFor(draft);   // which scenario this draft rule maps to
+  // ONLY R21 opens the simplified drawer (R20 is left exactly as-is). Same side-by-side Current Rule |
+  // Conflicting Rule card as R20, minus the top anchor, the warning summary and the compare/expand control,
+  // plus an Edit button in the conflicting-rule column.
+  const simplified = /request routing demo 2/i.test(draft.name||"");
+  const matrixMode = !!(demo && demoData.matrix);   // R22 — field → rules → blocks → detail master-detail layout
+  // If opened by clicking a specific field's flag, show ONLY that field's conflicting rule and expand it.
+  // focusFields = the field ids to scope the drawer to (an action's conflicts). null → the whole block (all rows).
+  const ff = (focusFields && focusFields.length) ? focusFields : null;
+  const demoRows = ff ? demoData.rows.filter(r=> (r.blocks[0].fields||[]).some(f=> ff.indexOf(f.id)>=0)) : demoData.rows;
+  useEffect(()=>{ if(!ff) return; const row = demoData.rows.find(r=> (r.blocks[0].fields||[]).some(f=> ff.indexOf(f.id)>=0)); if(row){ setOpenRule(row.id); const fld=(row.blocks[0].fields||[]).find(f=> ff.indexOf(f.id)>=0); if(fld) setSelField(t=>({...t,[row.id+":0"]:fld.id})); } }, [ff && ff.join(",")]);
+  const N = demo ? demoData.fields.length : allFields.size;   // total conflicting fields
+  const chipLabels = demo ? demoData.fields : [...allFields].map(labelOf);
   // RULE-FIRST — one row per conflicting rule: the fields it clashes on, and which of OUR blocks those live in.
   const rows = ruleCF.map(({r, ci, cf})=>{
     const rFields = [...cf];
@@ -3391,11 +3764,17 @@ function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onTogg
   // Part 2 demo comparison — trigger → labeled field selector → FIELD / CURRENT RULE vs <conflicting rule> →
   // WHY (subtly emphasised) → <conflicting rule> runs when (or NO CONDITIONS) → reverse. Switching a field
   // updates the comparison + why in place; the block title/count/Reverse already live on the row above.
-  const DemoCompare = ({blk, bk, ruleName})=>{
+  const DemoCompare = ({blk, bk, ruleName, ruleId, simplified})=>{
     const fields = blk.fields;
     const sel = (selField[bk] && fields.some(f=>f.id===selField[bk])) ? selField[bk] : fields[0].id;
     const F = fields.find(f=>f.id===sel) || fields[0];
     const L = F.label, cur = F.cur, con = F.con;
+    // how many rules use THIS field: the current rule + every conflicting rule that references it
+    const usedIn = 1 + demoData.rows.filter(r=> (r.blocks[0].fields||[]).some(f=>f.id===F.id)).length;
+    // one shared expand for the whole comparison — both rule details reveal/collapse together
+    const cmpOpen = !!seeMore[bk+":"+sel+":cmp"];
+    // side-by-side comparison with a single shared expand — applied to every conflicting rule/field in this drawer
+    const sideBySide = true;
 
     // plain-language statement of what a rule does with THIS field — no rule-builder fragments, no arrows
     const checkVal = c => { if(!c) return ""; const eq=c.indexOf(" = "); if(eq>=0) return c.slice(eq+3); let r=(c.indexOf(L+" ")===0)?c.slice(L.length+1):c; return r.replace(/^is /,""); };
@@ -3492,6 +3871,25 @@ function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onTogg
         </div>
       );
     };
+    // one column of the side-by-side comparison container — independent expand, expanded by default
+    const ComparePanel = ({label, name, side, kp}) => {
+      const open = seeMore[kp+":open"]===undefined ? true : seeMore[kp+":open"];
+      return (
+        <div className="min-w-0">
+          <button type="button" onClick={()=>setSeeMore(t=>({...t,[kp+":open"]:!open}))} className="flex w-full items-start gap-2 px-3.5 py-2.5 text-left transition hover:bg-slate-50/60">
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[10px] leading-tight" title={name ? (label + " · " + name) : label}>
+                <span className="font-semibold uppercase tracking-wider text-slate-500">{label}</span>
+                {name && <span className="font-medium text-slate-400"> · {name}</span>}
+              </div>
+              <div className="mt-1.5 text-[13px] font-medium leading-snug text-slate-900">{glance(side)}</div>
+            </div>
+            <Ico name="chevdown" size={13} cls={"mt-0.5 shrink-0 text-slate-400 transition-transform " + (open?"":"-rotate-90")}/>
+          </button>
+          {open && <div className="border-t border-slate-100 px-3.5 py-3"><Detail side={side} kp={kp}/></div>}
+        </div>
+      );
+    };
 
     return (
       <div className="pt-0.5 pb-2.5">
@@ -3512,17 +3910,84 @@ function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onTogg
         {/* compact first view — field name, short reason, then two collapsible self-contained rule sections */}
         <div className="mt-3 rounded-xl border border-slate-200/80 bg-white px-4 py-3.5">
           <div className="text-[15px] font-semibold text-slate-900">{L}</div>
+          {simplified
+            ? <>
+                {/* simplified view (R21) — the SAME side-by-side Current Rule | Conflicting Rule card as R20,
+                    minus the warning summary, the Compare/expand control and the reverse note; adds an Edit
+                    action in the conflicting-rule column. */}
+                <div className="mt-0.5 text-[12px] text-slate-500">Used in {usedIn} Rule{usedIn===1?"":"s"}</div>
+                <div className="mt-3 overflow-hidden rounded-xl border border-slate-200/80">
+                  <div className="grid grid-cols-2 divide-x divide-slate-200/80">
+                    {/* Current Rule — kept, side-by-side */}
+                    <div className="min-w-0 bg-slate-50/50 px-3.5 py-2.5">
+                      <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Current Rule</div>
+                      <div className="mt-1.5 text-[13px] font-medium leading-snug text-slate-900">{glance(cur)}</div>
+                    </div>
+                    {/* Conflicting Rule — with an Edit action in-column */}
+                    <div className="min-w-0 px-3.5 py-2.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="truncate text-[10px] leading-tight" title={"Conflicting Rule · " + ruleName}><span className="font-semibold uppercase tracking-wider text-slate-500">Conflicting Rule</span><span className="font-medium text-slate-400"> · {ruleName}</span></div>
+                          <div className="mt-1.5 text-[13px] font-medium leading-snug text-slate-900">{glance(con)}</div>
+                        </div>
+                        <button type="button" onClick={()=> window.open(window.location.pathname + "?editRule=" + encodeURIComponent(ruleName), "_blank")} title={"Edit " + ruleName + " in a new tab"} className="inline-flex shrink-0 items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-[11.5px] font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-800"><Ico name="pencil" size={12}/> Edit</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </>
+            : <>
           {/* short conflict reason — understandable at a glance, before any detail */}
           {F.why &&
             <div className="mt-1.5 flex items-start gap-1.5">
               <Ico name="warn" size={13} cls="mt-px shrink-0 text-amber-500"/>
               <div className="text-[12.5px] leading-snug text-slate-600">{F.why}</div>
             </div>}
-          {/* two rule sections — each owns its conditions + actions; collapsed by default */}
-          <div className="mt-3 space-y-2">
-            <RuleSection label="Current Rule" side={cur} kp={bk+":"+sel+":cur"}/>
-            <RuleSection label="Conflicting Rule" name={ruleName} side={con} kp={bk+":"+sel+":con"}/>
-          </div>
+          {/* ONE comparison component — a single control expands BOTH rule details together. For the scoped
+              Priority case the panels sit side-by-side; everywhere else they stack. Expand state is shared. */}
+          {sideBySide
+            ? <div className="mt-3 overflow-hidden rounded-xl border border-slate-200/80">
+                <div className="grid grid-cols-2 divide-x divide-slate-200/80">
+                  {/* Current Rule */}
+                  <div className="min-w-0">
+                    <div className="bg-slate-50/50 px-3.5 py-2.5">
+                      <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Current Rule</div>
+                      <div className="mt-1.5 text-[13px] font-medium leading-snug text-slate-900">{glance(cur)}</div>
+                    </div>
+                    {cmpOpen && <div className="border-t border-slate-100 px-3.5 py-3"><Detail side={cur} kp={bk+":"+sel+":cmpcur"}/></div>}
+                  </div>
+                  {/* Conflicting Rule */}
+                  <div className="min-w-0">
+                    <div className="px-3.5 py-2.5">
+                      <div className="truncate text-[10px] leading-tight" title={"Conflicting Rule · " + ruleName}><span className="font-semibold uppercase tracking-wider text-slate-500">Conflicting Rule</span><span className="font-medium text-slate-400"> · {ruleName}</span></div>
+                      <div className="mt-1.5 text-[13px] font-medium leading-snug text-slate-900">{glance(con)}</div>
+                    </div>
+                    {cmpOpen && <div className="border-t border-slate-100 px-3.5 py-3"><Detail side={con} kp={bk+":"+sel+":cmpcon"}/></div>}
+                  </div>
+                </div>
+                <button type="button" onClick={()=>setSeeMore(t=>({...t,[bk+":"+sel+":cmp"]:!cmpOpen}))} className="flex w-full items-center justify-center gap-1.5 border-t border-slate-100 bg-slate-50/40 py-2 text-[11.5px] font-medium text-sky-600 transition hover:bg-slate-50">
+                  {cmpOpen ? "Hide comparison" : "Compare rules"}<Ico name="chevdown" size={12} cls={"transition-transform " + (cmpOpen?"":"-rotate-90")}/>
+                </button>
+              </div>
+            : <div className="mt-3 overflow-hidden rounded-xl border border-slate-200/80">
+                <div className="divide-y divide-slate-100">
+                  {/* Current Rule */}
+                  <div className="bg-slate-50/50 px-3.5 py-2.5">
+                    <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Current Rule</div>
+                    <div className="mt-1.5 text-[13px] font-medium leading-snug text-slate-900">{glance(cur)}</div>
+                    {cmpOpen && <div className="mt-2.5 border-t border-slate-100 pt-2.5"><Detail side={cur} kp={bk+":"+sel+":cur"}/></div>}
+                  </div>
+                  {/* Conflicting Rule */}
+                  <div className="px-3.5 py-2.5">
+                    <div className="truncate text-[10px] leading-tight" title={"Conflicting Rule · " + ruleName}><span className="font-semibold uppercase tracking-wider text-slate-500">Conflicting Rule</span><span className="font-medium text-slate-400"> · {ruleName}</span></div>
+                    <div className="mt-1.5 text-[13px] font-medium leading-snug text-slate-900">{glance(con)}</div>
+                    {cmpOpen && <div className="mt-2.5 border-t border-slate-100 pt-2.5"><Detail side={con} kp={bk+":"+sel+":con"}/></div>}
+                  </div>
+                </div>
+                <button type="button" onClick={()=>setSeeMore(t=>({...t,[bk+":"+sel+":cmp"]:!cmpOpen}))} className="flex w-full items-center justify-center gap-1.5 border-t border-slate-100 bg-slate-50/40 py-2 text-[11.5px] font-medium text-sky-600 transition hover:bg-slate-50">
+                  {cmpOpen ? "Hide comparison" : "Compare rules"}<Ico name="chevdown" size={12} cls={"transition-transform " + (cmpOpen?"":"-rotate-90")}/>
+                </button>
+              </div>}
           {/* runtime outcome — what the system actually does, when relevant */}
           {F.runtime &&
             <div className="mt-3 border-t border-slate-100 pt-2.5">
@@ -3531,6 +3996,7 @@ function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onTogg
             </div>}
           {blk.reverseNote &&
             <div className="mt-2.5 flex items-start gap-1.5 text-[11.5px] leading-snug text-slate-500"><Ico name="history" size={12} cls="mt-0.5 shrink-0 text-blue-500"/><span>{blk.reverseNote}</span></div>}
+              </>}
         </div>
       </div>
     );
@@ -3547,7 +4013,7 @@ function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onTogg
         </div>
         {/* PINNED CURRENT-RULE ANCHOR — the rule everything below is compared against. Neutral tint +
             hairline for quiet containment (no color accent); prominence comes from the name + a clean strip. */}
-        <div className="relative shrink-0 border-b border-slate-200 bg-slate-50/60 px-6 py-3">
+        {!simplified && <div className="relative shrink-0 border-b border-slate-200 bg-slate-50/60 px-6 py-3">
           {fieldCentric
             ? <>
                 <div className="flex items-start justify-between gap-3">
@@ -3562,10 +4028,13 @@ function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onTogg
             : <button onClick={()=>setCuOpen(o=>!o)} className="w-full text-left">
                 {/* eyebrow — quiet monochrome location icon (no color accent) */}
                 <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500"><Ico name="target" size={12} cls="text-slate-400"/><span>Current Rule</span></div>
-                {/* rule name = the heaviest element; chevron shares its line */}
-                <div className="mt-1 flex items-start justify-between gap-3">
-                  <span className="min-w-0 truncate text-[16.5px] font-bold leading-tight text-slate-900">{draft.name || "Untitled rule"}</span>
-                  <Ico name="chevdown" size={16} cls={"mt-1 shrink-0 text-slate-400 transition-transform " + (cuOpen?"":"-rotate-90")}/>
+                {/* rule name = the heaviest element; a "Draft" badge marks it unsaved; chevron shares the line */}
+                <div className="mt-1 flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="min-w-0 truncate text-[16.5px] font-bold leading-tight text-slate-900">{draft.name || "Untitled rule"}</span>
+                    {demo && <span className="shrink-0 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 ring-1 ring-amber-100" title="This rule has not been saved yet">Draft</span>}
+                  </div>
+                  <Ico name="chevdown" size={16} cls={"shrink-0 text-slate-400 transition-transform " + (cuOpen?"":"-rotate-90")}/>
                 </div>
                 {/* ONE compact metadata strip: scope · blocks · what it conflicts on (fields collapse to +N more w/ hover peek) */}
                 <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11.5px] leading-snug text-slate-500">
@@ -3583,21 +4052,23 @@ function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onTogg
                       <span className="group/more relative"><span className="cursor-help text-slate-500 underline decoration-dotted decoration-slate-300 underline-offset-2">+{N-2} more</span><span className="pointer-events-none absolute left-0 top-full z-20 mt-1 hidden w-max max-w-[240px] rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-medium leading-relaxed text-slate-600 shadow-lg group-hover/more:block">{chipLabels.slice(2).join(", ")}</span></span>}</>}
                 </div>
               </button>}
-        </div>
+        </div>}
         {/* search — quiet, below the current-rule anchor; the bottom of the pinned area, so it carries the
-            scroll shadow that only appears once the list moves beneath it */}
+            scroll shadow that only appears once the list moves beneath it (hidden in the simplified R21 view) */}
+        {!simplified && !matrixMode &&
         <div className={"relative z-10 shrink-0 border-b border-slate-100 px-6 py-2.5 transition-shadow " + (scrolled ? "shadow-[0_6px_10px_-8px_rgba(15,23,42,0.18)]" : "")}>
           <div className="relative">
             <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><Ico name="search" size={14}/></span>
             <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search rules, fields, or blocks…" className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50/60 pl-9 pr-3 text-[12.5px] outline-none focus:border-sky-300 focus:bg-white focus:ring-1 focus:ring-sky-200"/>
           </div>
-        </div>
+        </div>}
         {/* CONFLICTING RULES → OUR blocks → per-block field comparison */}
         <div onScroll={e=>setScrolled(e.currentTarget.scrollTop>4)} className="flex-1 overflow-y-auto px-6 py-3">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{fieldCentric ? "Conflicting Fields" : "Conflicting Rules"}</span>
-            <span className="text-[11px] text-slate-400">{fieldCentric ? (fmShown.length + " field" + (fmShown.length===1?"":"s")) : ((demo?DEMO_CONFLICT_ROWS.length:rulesView.length) + " rule" + ((demo?DEMO_CONFLICT_ROWS.length:rulesView.length)===1?"":"s"))}</span>
-          </div>
+          {!simplified && !matrixMode &&
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{fieldCentric ? "Conflicting Fields" : "Conflicting Rules"}</span>
+              <span className="text-[11px] text-slate-400">{fieldCentric ? (fmShown.length + " field" + (fmShown.length===1?"":"s")) : ((demo?demoRows.length:rulesView.length) + " rule" + ((demo?demoRows.length:rulesView.length)===1?"":"s"))}</span>
+            </div>}
           {fieldCentric &&
             <div className="space-y-2.5">
               {fmShown.map(fm=>{
@@ -3698,8 +4169,136 @@ function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onTogg
               })}
               {fmShown.length===0 && <div className="py-10 text-center text-[12.5px] text-slate-400">No fields match.</div>}
             </div>}
-          {!fieldCentric && <div className="divide-y divide-slate-100">
-            {demo && DEMO_CONFLICT_ROWS.map(fx=>{
+          {simplified && (()=>{
+            // group conflicts by FIELD — a field can conflict with several rules; one tab per field, one card below
+            // (Current Rule shown once + EVERY conflicting rule stacked, each with its own Edit). No trigger, no ACTION text.
+            const groups = [];
+            demoRows.forEach(fx=> (fx.blocks[0].fields||[]).forEach(f=>{
+              let g = groups.find(x=>x.id===f.id);
+              if(!g){ g={id:f.id, label:f.label, cur:f.cur, cons:[]}; groups.push(g); }
+              g.cons.push({ruleName:fx.name, con:f.con});
+            }));
+            if(groups.length===0) return <div className="py-10 text-center text-[12.5px] text-slate-400">No conflicts match.</div>;
+            const activeId = (simpTab && groups.some(g=>g.id===simpTab)) ? simpTab : groups[0].id;
+            const g = groups.find(x=>x.id===activeId) || groups[0];
+            const usedIn = 1 + g.cons.length;
+            const editRule = n => window.open(window.location.pathname + "?editRule=" + encodeURIComponent(n), "_blank");
+            return (
+              <div>
+                {groups.length>1 &&
+                  <div className="mb-3 flex flex-wrap gap-1.5">
+                    {groups.map(x=>{ const on=x.id===activeId;
+                      return <button key={x.id} type="button" onClick={()=>setSimpTab(x.id)}
+                        className={"inline-flex items-center rounded-lg px-2.5 py-1 text-[12px] ring-1 transition " + (on ? "bg-white font-semibold text-slate-900 ring-slate-300 shadow-sm" : "bg-slate-50 text-slate-600 ring-slate-200/70 hover:bg-white")}>{x.label}</button>;
+                    })}
+                  </div>}
+                <div className="rounded-xl border border-slate-200/80 bg-white px-4 py-3.5">
+                  <div className="text-[15px] font-semibold text-slate-900">{g.label}</div>
+                  <div className="mt-0.5 text-[12px] text-slate-500">Used in {usedIn} Rule{usedIn===1?"":"s"}</div>
+                  <div className="mt-3 overflow-hidden rounded-xl border border-slate-200/80">
+                    <div className="grid grid-cols-2 divide-x divide-slate-200/80">
+                      {/* Current Rule — shown once, however many rules it conflicts with */}
+                      <div className="bg-slate-50/50 px-3.5 py-2.5">
+                        <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Current Rule</div>
+                        <div className="mt-1.5 text-[13px] font-medium leading-snug text-slate-900">{glanceOf(g.cur, g.label)}</div>
+                      </div>
+                      {/* Conflicting Rules — one row per rule, each with its own Edit */}
+                      <div className="divide-y divide-slate-100">
+                        {g.cons.map((c,ci)=>
+                          <div key={ci} className="px-3.5 py-2.5">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="truncate text-[10px] leading-tight" title={"Conflicting Rule · " + c.ruleName}><span className="font-semibold uppercase tracking-wider text-slate-500">Conflicting Rule</span><span className="font-medium text-slate-400"> · {c.ruleName}</span></div>
+                                <div className="mt-1.5 text-[13px] font-medium leading-snug text-slate-900">{glanceOf(c.con, g.label)}</div>
+                              </div>
+                              <button type="button" onClick={()=>editRule(c.ruleName)} title={"Edit " + c.ruleName + " in a new tab"} className="inline-flex shrink-0 items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-[11.5px] font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-800"><Ico name="pencil" size={12}/> Edit</button>
+                            </div>
+                          </div>)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+          {matrixMode && (()=>{
+            // R22 — field list (left) → conflicting rules (right); expand a rule to its blocks; expand a block
+            // to see what the CURRENT rule vs that block does to the selected field.
+            const fm = demoData.matrix;
+            if(!fm.length) return <div className="py-10 text-center text-[12.5px] text-slate-400">No conflicts.</div>;
+            const activeId = (mxField && fm.some(f=>f.id===mxField)) ? mxField : ((ff && (fm.find(f=>ff.indexOf(f.id)>=0)||{}).id) || fm[0].id);
+            const fld = fm.find(f=>f.id===activeId) || fm[0];
+            return (
+              <div className="space-y-5">
+                {/* OVERVIEW section */}
+                <div>
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Overview</div>
+                  <div className="mt-1.5 text-[13px] leading-snug text-slate-600"><span className="font-semibold text-slate-800">{fm.length} fields</span> in this rule conflict with existing rules — {fm.map(f=>f.label).join(", ")}. Pick a field to see which rules and blocks clash with it.</div>
+                </div>
+                {/* CONFLICTING FIELDS — vertical field list (left) → selected field's rules (right), one minimal separator */}
+                <div className="grid grid-cols-[minmax(120px,180px)_1fr]">
+                  {/* LEFT — field list */}
+                  <div className="pr-3">
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Conflicting fields</div>
+                    <div className="mt-2 space-y-0.5">
+                      {fm.map(f=>{ const on=f.id===activeId;
+                        return <button key={f.id} type="button" onClick={()=>setMxField(f.id)}
+                          className={"flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-2 text-left text-[13px] transition " + (on ? "bg-slate-100 font-semibold text-slate-900" : "text-slate-600 hover:bg-slate-50")}>
+                          <span className="truncate">{f.label}</span><span className="shrink-0 text-[11px] font-medium text-slate-400">{f.rules.length}</span></button>;
+                      })}
+                    </div>
+                  </div>
+                  {/* RIGHT — the selected field's conflicting rules, separated by one thin line */}
+                  <div className="border-l border-slate-200/70 pl-4">
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{fld.label} conflicting rules</div>
+                    <div className="mt-2 divide-y divide-slate-100">
+                      {fld.rules.map((r,ri)=>{ const rk=fld.id+":"+ri; const ro=!!mxOpen[rk];
+                        return (
+                          <div key={ri}>
+                            {/* RULE ROW — expand to its blocks */}
+                            <button type="button" onClick={()=>setMxOpen(t=>({...t,[rk]:!ro}))} className="flex w-full items-center gap-2 py-2.5 text-left">
+                              <Ico name="chevdown" size={13} cls={"shrink-0 text-slate-400 transition-transform " + (ro?"":"-rotate-90")}/>
+                              <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-slate-800">{r.name}</span>
+                              <span className="shrink-0 text-[11px] text-slate-400">{r.blocks.length} block{r.blocks.length===1?"":"s"}</span>
+                            </button>
+                            {/* RULE EXPANSION → its blocks */}
+                            {ro &&
+                              <div className="space-y-1 pb-2.5 pl-6">
+                                {r.blocks.map((b,bi)=>{ const bk=rk+":"+bi; const bo=!!mxOpen[bk];
+                                  return (
+                                    <div key={bi}>
+                                      {/* BLOCK ROW — expand to the current-rule vs block detail */}
+                                      <button type="button" onClick={()=>setMxOpen(t=>({...t,[bk]:!bo}))} className="flex w-full items-center gap-2 py-1.5 text-left">
+                                        <Ico name="chevdown" size={12} cls={"shrink-0 text-slate-400 transition-transform " + (bo?"":"-rotate-90")}/>
+                                        <span className="text-[12.5px] font-medium text-slate-700">{b.label}</span>
+                                      </button>
+                                      {/* BLOCK DETAIL — what OUR rule does vs what THIS block does to the field */}
+                                      {bo &&
+                                        <div className="mt-0.5 grid grid-cols-2 gap-4 pb-1.5 pl-6">
+                                          <div>
+                                            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Current Rule</div>
+                                            <div className="mt-0.5 text-[12.5px] font-medium leading-snug text-slate-900">{fld.cur}</div>
+                                          </div>
+                                          <div>
+                                            <div className="truncate text-[10px] font-semibold uppercase tracking-wider text-slate-500" title={"This Block · " + r.name}>This Block · {r.name}</div>
+                                            <div className="mt-0.5 text-[12.5px] font-medium leading-snug text-slate-900">{b.con}</div>
+                                          </div>
+                                        </div>}
+                                    </div>
+                                  );
+                                })}
+                              </div>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+          {!fieldCentric && !simplified && !matrixMode && <div className="divide-y divide-slate-100">
+            {demo && demoRows.map(fx=>{
               const ro = openRule===fx.id;
               const fr = demoRuleFields(fx);
               const roleGroups = ["Action","Condition","Both"]
@@ -3735,7 +4334,8 @@ function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onTogg
                   {ro &&
                     <div className="bg-slate-50/40 pl-8 pr-2 pb-2 pt-2">
                       {fx.blocks.map((blk,bi)=>{
-                        const bk = fx.id+":"+bi; const bo = !!openBlk[bk];
+                        // single-block rules open their one block by default (until the user toggles it); multi-block stays collapsed
+                        const bk = fx.id+":"+bi; const bo = fx.blocks.length===1 ? (openBlk[bk]===undefined ? true : openBlk[bk]) : !!openBlk[bk];
                         return (
                           <div key={bi} className="border-b border-slate-100 last:border-b-0">
                             {/* BLOCK ROW (demo) — which block · X of 7 fields · reverse label */}
@@ -3842,7 +4442,12 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
   // Single source of truth: evaluate the SAME normalized rule the listing/inspector use, excluding this rule's own id.
   const [, bumpRules] = useReducer(x=>x+1, 0);   // recompute conflicts after disabling a conflicting rule
   const conflicts = conflictsFor(draftToRule(draft, baseRule));
+  // field-level conflict discovery — the scenario's conflicting field ids, + a focus handler for the inspector
+  const _scen = demoFor(draft);
+  const scenFieldIds = new Set(_scen.matrix ? _scen.matrix.map(m=>m.id) : _scen.rows.flatMap(r=>(r.blocks[0].fields||[]).map(f=>f.id)));
   const [inspectOpen, setInspectOpen] = useState(false);
+  const [inspectFields, setInspectFields] = useState(null);   // field ids to focus the drawer on (null = whole block)
+  const openFieldConflict = fids => { setInspectFields(fids && fids.length ? fids : null); setInspectOpen(true); };
   // Disable a conflicting rule from the inspector → it stops running (excluded from conflicts) and persists.
   const disableRule = rule => { rule.disabled = true; persistRule(rule); bumpRules(); };
   // Inspector Action toggle — enable/disable a conflicting rule inline; disabling drops it from conflictsFor on recompute.
@@ -3931,7 +4536,7 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
             <div className="space-y-3">
               {draft.blocks.map((b,i)=>
                 <V7Block key={i} block={b} index={i} total={draft.blocks.length} expanded={expandedIdx===i}
-                  exec={draft.exec} ruleName={draft.name}
+                  exec={draft.exec} ruleName={draft.name} conflictFields={scenFieldIds} onFieldConflict={openFieldConflict}
                   onToggle={()=>setExpandedIdx(expandedIdx===i?null:i)} onChange={p=>setBlock(i,p)}
                   onDuplicate={()=>dupBlock(i)} onRemove={()=>rmBlock(i)}/>)}
             </div>
@@ -3944,14 +4549,12 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
         {/* bottom bar — conflict status is the primary info (replaces the old block count) */}
         <div className="flex items-center justify-between border-t border-slate-200 bg-white px-6 py-3 shrink-0">
           <div className="flex items-center gap-5">
-            {conflicts.length>0
-              ? <span className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-amber-700"><span className="w-2 h-2 rounded-full bg-amber-500"/>{conflicts.length} conflict{conflicts.length>1?"s":""} with existing rules</span>
-              : <span className="inline-flex items-center gap-1.5 text-[12.5px] font-medium text-emerald-600"><span className="w-2 h-2 rounded-full bg-emerald-500"/>No conflicts</span>}
-            {conflicts.length>0 &&
-              <button type="button" onClick={()=>setInspectOpen(true)}
-                className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-[12px] font-semibold text-amber-700 transition hover:bg-amber-100">
-                View conflicts<Ico name="chevdown" size={12} cls="-rotate-90"/>
-              </button>}
+            {/* PROTOTYPE: hardcoded to the fixed demo — always surfaces the scenario's conflicts */}
+            <span className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-amber-700"><span className="w-2 h-2 rounded-full bg-amber-500"/>{demoFor(draft).fields.length} conflicts with existing rules</span>
+            <button type="button" onClick={()=>{ setInspectFields(null); setInspectOpen(true); }}
+              className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-[12px] font-semibold text-amber-700 transition hover:bg-amber-100">
+              View conflicts<Ico name="chevdown" size={12} cls="-rotate-90"/>
+            </button>
           </div>
           <div className="flex items-center gap-3">
             {/* always-visible reason the save is blocked — no click needed to discover what's missing */}
@@ -3963,7 +4566,7 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
               style={{background: saved ? "#16a34a" : BRAND}}>{saved ? "Saved ✓" : (baseRule ? "Update rule" : "Save rule")}</button>
           </div>
         </div>
-        {inspectOpen && conflicts.length>0 && <ConflictInspector draft={draft} conflicts={conflicts} parentWidth={rz.width} onClose={()=>setInspectOpen(false)} onEdit={loadRule} onDisable={disableRule} onToggle={toggleRule}/>}
+        {inspectOpen && <ConflictInspector draft={draft} conflicts={conflicts} parentWidth={rz.width} focusFields={inspectFields} onClose={()=>{ setInspectOpen(false); setInspectFields(null); }} onEdit={loadRule} onDisable={disableRule} onToggle={toggleRule}/>}
       </aside>
     </>
   );
