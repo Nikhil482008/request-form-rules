@@ -92,6 +92,11 @@ const ICON = {
   warn:      <><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><path d="M12 9v4M12 17h.01"/></>,
   grip:      <><circle cx="9" cy="6" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="6" r="1.3" fill="currentColor" stroke="none"/><circle cx="9" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="9" cy="18" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="18" r="1.3" fill="currentColor" stroke="none"/></>,
   target:    <><circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none"/><path d="M12 2.5v3M12 21.5v-3M2.5 12h3M21.5 12h-3"/></>,
+  user:      <><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 016-6h4a6 6 0 016 6v1"/></>,
+  wrench:    <path d="M14.7 6.3a4 4 0 00-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 005.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z"/>,
+  funnel:    <path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/>,
+  chevupdown:<path d="M7 15l5 5 5-5M7 9l5-5 5 5"/>,
+  tick:      <path d="M20 6L9 17l-5-5"/>,
 };
 const Ico = ({name, size=16, sw=1.7, cls=""}) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -189,9 +194,17 @@ const BEHAVIORS = ["Show","Hide","Mandate","Non-Mandate","Enable","Disable","Set
 const WHENS = ["When the form opens","While the form is being filled","When the form is submitted"];
 const AUDS  = ["Everyone","Requesters only","Technicians only","Signed-in users only"];
 // Rules that drive the hardcoded field-level conflict demo — their conditions/actions surface the ⚠ indicator.
-const DEMO_CONFLICT_RULES = ["HR Rule UI Exp","Critical Incident Handling","R20 - Request Routing Demo","R21 - Request Routing Demo 2","R22 - Conflict Matrix Demo"];
+const DEMO_CONFLICT_RULES = ["HR Rule UI Exp","Critical Incident Handling","R20 - Request Routing Demo","R21 - Request Routing Demo 2","R22 - Conflict Matrix Demo","R23 - Rule Conflict Matrix"];
 const isDemoConflictRule = n => DEMO_CONFLICT_RULES.indexOf(n)>=0;
 const EXEC_OPTS = ["On Create and Edit","On Create","On Edit"];   // rule-level execution scope (ss2 vocabulary)
+// Run Test — the reassurance sequence shown while the rule engine "evaluates" the draft. Read-only: the test
+// never saves, never touches the draft, and never modifies an existing rule.
+const TEST_STEPS = [
+  "Starting the rule engine in an isolated run",
+  "Checking this rule against existing rules",
+  "Analyzing possible conflicts",
+  "Preparing your results",
+];
 // Value pickers: fields with a known option set get a contextual picker instead of a free text box.
 const FIELD_OPTIONS = {
   status:["Open","In Progress","On Hold","Resolved","Closed","Reopened"],
@@ -405,6 +418,22 @@ const RULE_DB = [
           {behavior:"Hide", fieldIds:["category"], fieldId:"category"},
           {behavior:"Set Value", fieldId:"priority", value:"High"},
           {behavior:"Mandate", fieldIds:["assignee"], fieldId:"assignee"},
+        ] },
+    ] },
+  // R23 — INVERSE of R22: conflicting rules on the LEFT; selecting one shows its affected fields (as titles)
+  // and the blocks touching each on the RIGHT. A search + field-filter toolbar narrows both sides. Maps to DEMO_S8.
+  { id:"r23", name:"R23 - Rule Conflict Matrix", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:0, recommended:false,
+    conditions:[{fieldId:"priority", op:"In", value:"High"}],
+    actions:[{behavior:"Set Value", fieldId:"status", value:"In Progress"},{behavior:"Set Value", fieldId:"priority", value:"High"},{behavior:"Hide", fieldId:"category"},{behavior:"Mandate", fieldId:"assignee"},{behavior:"Set Value", fieldId:"impact", value:"High"}],
+    blocks:[
+      { match:"all", time:"While the form is being filled", people:"Everyone",
+        conditions:[{fieldId:"priority", op:"In", value:"High"}],
+        actions:[
+          {behavior:"Set Value", fieldId:"status", value:"In Progress"},
+          {behavior:"Set Value", fieldId:"priority", value:"High"},
+          {behavior:"Hide", fieldIds:["category"], fieldId:"category"},
+          {behavior:"Mandate", fieldIds:["assignee"], fieldId:"assignee"},
+          {behavior:"Set Value", fieldId:"impact", value:"High"},
         ] },
     ] },
 ];
@@ -1028,7 +1057,7 @@ function RulesListing({customSel, onEditRule, onCustom, onToast}){
   const [tab, setTab] = useState("all");   // all | form | custom
   const [sel, setSel] = useState(()=>new Set());
   const [enabled, setEnabled] = useState({});   // key → on (overrides the default)
-  const [expandedKey, setExpandedKey] = useState(null);   // conflict expansion — one row open at a time
+  const [conflictRule, setConflictRule] = useState(null);   // rule whose Review Conflict drawer is open
   const [order, setOrder] = useState(null);               // drag-reorder: keys in display order (null = natural)
   const [dragKey, setDragKey] = useState(null);
   const [dropTarget, setDropTarget] = useState(null);     // { key, edge: 'before' | 'after' }
@@ -1114,7 +1143,6 @@ function RulesListing({customSel, onEditRule, onCustom, onToast}){
                 {rows.map(row=>{
                   const k = keyOf(row);
                   const conflicts = conflictsFor(row.rule);
-                  const isExpanded = expandedKey===k && conflicts.length>0;
                   return (
                     <React.Fragment key={k}>
                     <div
@@ -1135,7 +1163,8 @@ function RulesListing({customSel, onEditRule, onCustom, onToast}){
                         <div className="flex items-center gap-2 min-w-0">
                           <span className="text-[13.5px] font-semibold text-slate-800 truncate">{row.name}</span>
                           {row.kind==="custom" && <TypeBadge kind="custom"/>}
-                          {conflicts.length>0 && <ConflictTag count={conflicts.length} open={expandedKey===k} onClick={e=>{ e.stopPropagation(); setExpandedKey(expandedKey===k?null:k); }}/>}
+                          {/* clicking the pill opens THIS rule's Review Conflict drawer directly */}
+                          {conflicts.length>0 && <ConflictTag count={conflicts.length} open={false} onClick={e=>{ e.stopPropagation(); setConflictRule(row.rule); }}/>}
                         </div>
                         <div className="text-[12px] text-slate-500 truncate">{row.summary}</div>
                       </div>
@@ -1153,29 +1182,6 @@ function RulesListing({customSel, onEditRule, onCustom, onToast}){
                           <button onClick={e=>{ e.stopPropagation(); setConfirmDel(row); }} title="Delete rule" className="w-7 h-7 grid place-items-center rounded-md text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition"><Ico name="trash" size={15}/></button>}
                       </div>
                     </div>
-                    {isExpanded &&
-                      <div className="bg-amber-50/40 px-4 py-3.5">
-                        <div className="ml-[46px] rounded-lg border border-amber-200 bg-white p-3.5">
-                          <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-700 mb-2.5">
-                            <Ico name="warn" size={13}/> {conflicts.length} conflict{conflicts.length===1?"":"s"} with other rules
-                          </div>
-                          <ul className="space-y-3">
-                            {conflicts.map((c,ci)=>(
-                              <li key={ci} className="flex items-start gap-2.5">
-                                <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-amber-400 shrink-0"/>
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="text-[12.5px] font-semibold text-slate-800">Conflicts with “{c.rule.name}”</span>
-                                    <button onClick={e=>{ e.stopPropagation(); onEditRule && onEditRule(c.rule.id); }} className="text-[11.5px] font-medium text-[#1180c1] hover:underline inline-flex items-center gap-1"><Ico name="pencil" size={11}/> View rule</button>
-                                  </div>
-                                  {c.reasons.map((rr,ri)=>(<div key={ri} className="text-[12px] text-slate-600 mt-0.5">{rr.reason}</div>))}
-                                  <div className="text-[11px] text-slate-400 mt-1">Scope: {c.rule.when} · {c.rule.audience}</div>
-                                </div>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      </div>}
                     </React.Fragment>
                   );
                 })}
@@ -1187,6 +1193,14 @@ function RulesListing({customSel, onEditRule, onCustom, onToast}){
       </div>
       {/* delete confirmation — destructive, so always confirm first */}
       {confirmDel && <ConfirmDeleteRule name={confirmDel.name} onCancel={()=>setConfirmDel(null)} onConfirm={()=>doDelete(confirmDel)}/>}
+      {/* Review Conflict drawer — opened straight from a row's conflict pill, scoped to that rule.
+          Opens at 60% of the screen (+56 cancels the inspector's own inset). */}
+      {conflictRule &&
+        <ConflictInspector draft={conflictRule} conflicts={conflictsFor(conflictRule)}
+          parentWidth={(typeof window!=="undefined" ? Math.round(window.innerWidth*0.6) : 1140) + 56}
+          onClose={()=>setConflictRule(null)}
+          onEdit={r=> onEditRule && onEditRule(r && r.id ? r.id : r)}
+          onDisable={()=>{}} onToggle={()=>{}}/>}
     </div>
   );
 }
@@ -2925,7 +2939,8 @@ function draftToRule(draft, baseRule){
     .filter(b => b.time && (b.actions||[]).some(actComplete))
     .map(b => ({
       match: b.match||"all", advanced: !!b.advanced,
-      time: b.time, people: b.people||"Everyone",
+      // exec is PER BLOCK; people (audience) is the rule's common value, mirrored onto each block
+      time: b.time, exec: b.exec||"", people: draft.people || b.people || "Everyone",
       conditions: (b.conditions||[]).map(c=>({...c})),
       actions: (b.actions||[]).filter(actComplete).map(a=>({...a})),
     }));
@@ -2933,7 +2948,7 @@ function draftToRule(draft, baseRule){
   return {
     id: baseRule ? baseRule.id : null,
     name: (draft.name||"").trim() || "this rule",
-    when: first.time || "", audience: first.people || "Everyone",
+    when: first.time || "", audience: draft.people || first.people || "Everyone",
     blocks,
   };
 }
@@ -2949,7 +2964,8 @@ function ruleFromDraft(draft, baseRule){
     name: (draft.name||"").trim(),
     status: baseRule ? baseRule.status : "Active",
     when: base.when, audience: base.audience,
-    exec: draft.exec || "",
+    // V10 keeps exec per block → the first usable block wins; the field-rule editor still sets it rule-level.
+    exec: first.exec || draft.exec || "",
     description: draft.description || "",
     tags: (draft.tags||[]).slice(),
     usedInForms: baseRule ? baseRule.usedInForms : 1,
@@ -3066,7 +3082,8 @@ function BlockTip({title, summary, started, triggers, condItems, actItems, examp
 }
 function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate, onRemove, exec, ruleName, conflictFields, onFieldConflict}){
   // Disclosure gates: WHEN → IF → add-buttons → THEN → add-action → Advanced.
-  const whenReady     = !!(block.time && block.people);
+  // The block's own WHEN is the event + execution scope; the audience is common (set once on the rule).
+  const whenReady     = !!(block.time && block.exec);
   const firstCondDone = (block.conditions||[]).some(leafComplete);
   const firstActDone  = (block.actions||[]).some(actComplete);
   // block-level conflict summary — union of every conflicting field across BOTH conditions and actions (deduped)
@@ -3108,7 +3125,8 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
   // Duplicate an action directly below the original — copy targets/value, reset only the action type.
   const dupAct  = i => onChange({actions: block.actions.flatMap((a,j)=> j===i ? [a, {...a, behavior:"", fieldIds:(a.fieldIds||[]).slice()}] : [a])});
   // Reset this block's content to a fresh state (keeps the block; clears WHEN / IF / THEN / Advanced).
-  const clearBlock = ()=> onChange({ time:"", people:"", match:"all", advanced:false, advOpen:false, conditions:[{fieldId:"", op:"", value:""}], actions:[{behavior:"", fieldIds:[], value:""}] });
+  // Clears the block's own content — the audience (people) is rule-level/common, so it is left intact.
+  const clearBlock = ()=> onChange({ time:"", exec:"", match:"all", advanced:false, advOpen:false, conditions:[{fieldId:"", op:"", value:""}], actions:[{behavior:"", fieldIds:[], value:""}] });
   // Tertiary block tools shown around the Advanced row (right-aligned, secondary to the rule content).
   const blockTools = (
     <div className="flex items-center gap-1">
@@ -3118,7 +3136,7 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
   );
   // Live, progressive summary — grows as WHEN → IF → THEN get filled in.
   const sum = (()=>{
-    if(!block.time && !block.people) return "New rule block — start with When";
+    if(!block.time && !block.exec) return "New rule block — start with When";
     let s = block.time || "When…";
     if(block.people && block.people!=="Everyone") s += " by " + block.people;
     const conds = (block.conditions||[]).filter(leafComplete);
@@ -3157,7 +3175,7 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
     }
     return { behavior: a.behavior, targets };
   });
-  const tipTriggers = ([exec, block.time].filter(Boolean).join(", ") || "Not set yet") + " · " + (block.people || "Everyone");
+  const tipTriggers = ([block.exec, block.time].filter(Boolean).join(", ") || "Not set yet") + " · " + (block.people || "Everyone");
   const tipHasContent = !!(block.time || block.people || tipCondItems.length || tipActItems.length);
   // Short, concrete one-line example.
   const lc = s => s ? s.charAt(0).toLowerCase()+s.slice(1) : s;
@@ -3187,7 +3205,7 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
             <BlockTip title={ruleName} summary={sum} started={tipHasContent} triggers={tipTriggers} condItems={tipCondItems} actItems={tipActItems} example={tipExample}>
               <span className="block truncate text-[14px] font-semibold text-slate-800">Rule {index+1}</span>
             </BlockTip>
-            <span className="block truncate text-[12px] text-slate-400">{block.time || "When…"} · {block.people || "Everyone"} <span className="text-slate-300">|</span> {condCount} Condition{condCount===1?"":"s"}{groupCount>0 ? " (" + groupCount + " Group" + (groupCount===1?"":"s") + ")" : ""} · {block.actions.length} Action{block.actions.length===1?"":"s"}</span>
+            <span className="block truncate text-[12px] text-slate-400">{block.time || "When…"} · {block.exec || "Execute on…"} <span className="text-slate-300">|</span> {condCount} Condition{condCount===1?"":"s"}{groupCount>0 ? " (" + groupCount + " Group" + (groupCount===1?"":"s") + ")" : ""} · {block.actions.length} Action{block.actions.length===1?"":"s"}</span>
           </span>
         </button>
         {/* collapsed → quick Duplicate + Delete on the right; expanded → these live in the Advanced footer */}
@@ -3199,20 +3217,20 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
       </div>
       {expanded &&
         <div className="border-t border-slate-100 bg-slate-50/60 px-4 py-5 space-y-6">
-          {/* WHEN — event + audience, labelled like the product's rule trigger */}
+          {/* WHEN — event + execution scope (audience is common, set once on the rule) */}
           <div>
-            <V7StepHead tone="when" tag="When" title="pick the event and who it applies to"/>
+            <V7StepHead tone="when" tag="When" title="pick the event and when it runs"/>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className="mb-1.5 block text-[13px] font-medium text-slate-500">Select Rule Event <span className="text-rose-400">*</span></label>
                 <GuidedDropdown value={block.time} onChange={v=>onChange({time:v})} options={WHENS} guide={WHEN_GUIDE} placeholder="Choose an event" variant="pill"/>
               </div>
               <div>
-                <label className="mb-1.5 block text-[13px] font-medium text-slate-500">Applies to <span className="text-rose-400">*</span></label>
-                <GuidedDropdown value={block.people} onChange={v=>onChange({people:v})} options={AUDS} guide={AUD_GUIDE} placeholder="Choose people" variant="pill"/>
+                <label className="mb-1.5 block text-[13px] font-medium text-slate-500">Execute on <span className="text-rose-400">*</span></label>
+                <GuidedDropdown value={block.exec} onChange={v=>onChange({exec:v})} options={EXEC_OPTS} guide={EXEC_GUIDE} placeholder="Apply rule on" variant="pill"/>
               </div>
             </div>
-            {!whenReady && <p className="mt-2 text-[12px] text-slate-400">Choose an event and people to continue.</p>}
+            {!whenReady && <p className="mt-2 text-[12px] text-slate-400">Choose an event and when it runs to continue.</p>}
           </div>
           {/* CHECK IF — grouped conditions with AND/OR connectors between rows and between groups */}
           {whenReady && (()=>{
@@ -3566,8 +3584,37 @@ const DEMO_S7 = {
     ]},
   ],
 };
+// R23 — RULE-centric matrix: each conflicting rule lists the fields it touches; each field names what the
+// current rule does + the blocks (of that rule) that clash. 5 conflicting fields. `rows:[]` keeps shared
+// drawer computations safe; `ruleMatrix` drives R23's dedicated render.
+const DEMO_S8 = {
+  fields: ["Status","Priority","Category","Assignee","Impact"],
+  rows: [],
+  ruleMatrix: [
+    { id:"ra", name:"Auto-close Resolved Tickets", audience:"Technicians only", fields:[
+      { id:"status",  label:"Status",  cur:"Sets Status to In Progress", blocks:[ {label:"Block 1", con:"Sets Status to Closed"} ] },
+      { id:"priority",label:"Priority",cur:"Sets Priority to High",       blocks:[ {label:"Block 2", con:"Sets Priority to Low"} ] },
+    ]},
+    { id:"rb", name:"Escalation Workflow", audience:"Technicians only", fields:[
+      { id:"status", label:"Status", cur:"Sets Status to In Progress", blocks:[ {label:"Block 1", con:"Sets Status to On Hold"}, {label:"Block 2", con:"Hides Status"} ] },
+      { id:"impact", label:"Impact", cur:"Sets Impact to High",        blocks:[ {label:"Block 1", con:"Sets Impact to Low"} ] },
+    ]},
+    { id:"rc", name:"HR Category Policy", audience:"Everyone", fields:[
+      { id:"category", label:"Category", cur:"Hides Category", blocks:[ {label:"Block 1", con:"Makes Category mandatory"} ] },
+    ]},
+    { id:"rd", name:"Simplified Portal Form", audience:"Requesters only", fields:[
+      { id:"assignee", label:"Assignee", cur:"Makes Assignee mandatory", blocks:[ {label:"Block 1", con:"Hides Assignee"} ] },
+      { id:"category", label:"Category", cur:"Hides Category",           blocks:[ {label:"Block 2", con:"Sets Category to Software"} ] },
+    ]},
+    { id:"re", name:"VIP Fast-track", audience:"Signed-in users only", fields:[
+      { id:"priority", label:"Priority", cur:"Sets Priority to High", blocks:[ {label:"Block 1", con:"Sets Priority to Urgent"} ] },
+      { id:"impact",   label:"Impact",   cur:"Sets Impact to High",   blocks:[ {label:"Block 1", con:"Sets Impact to Critical"} ] },
+    ]},
+  ],
+};
 // Pick the scenario from the draft — by name, or by its distinctive fields/conditions.
 const demoFor = draft => { const s = JSON.stringify(draft||{}).toLowerCase(); const name=((draft&&draft.name)||"").toLowerCase();
+  if(name.indexOf("rule conflict matrix")>=0) return DEMO_S8;
   if(name.indexOf("conflict matrix")>=0) return DEMO_S7;
   if(name.indexOf("routing demo 2")>=0) return DEMO_S6;
   if(name.indexOf("request routing")>=0) return DEMO_S5;
@@ -3593,6 +3640,8 @@ const demoRuleFields = fx => {
 // one-line behaviour summary for a side, used by the collapsed rule-creation warning
 const sideBrief = side => side.role==="Action" ? side.action : side.role==="Both" ? ("Set value → " + side.changeTo) : ("Requires " + side.check);
 const ROLE_TINT = { Condition:"text-violet-600", Action:"text-sky-600", Both:"text-amber-600" };
+// Audience → icon (who a rule applies to): Everyone / Requesters / Technicians / Signed-in users.
+const AUD_ICON = { "Everyone":"users", "Requesters only":"user", "Technicians only":"wrench", "Signed-in users only":"lock" };
 // Plain-language one-liner for what a rule does to field L (e.g. "Shows Cc Emails", "Makes Cc Emails mandatory").
 // Module-scope so both DemoCompare (R20) and the grouped simplified card (R21) can reuse it.
 function glanceOf(side, L){
@@ -3606,7 +3655,59 @@ function glanceOf(side, L){
   const hit = fieldAct(side);
   return hit ? (base + " and can " + hit.charAt(0).toLowerCase() + hit.slice(1)) : base;
 }
-function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onToggle, parentWidth, focusFields}){
+// Sample values used to pre-fill the R22 form preview (feels like a real filled-in request form).
+const PREVIEW_VALUES = {
+  fill_template:"", transition_model:"Default Workflow", requester:"Priya Sharma",
+  cc_emails:"manager@acme.com", subject:"Laptop won't power on", description:"Device is dead after the latest update.",
+  status:"Open", priority:"High", urgency:"High", impact:"High", category:"Hardware",
+  tech_group:"Hardware", assignee:"Marco", department:"IT", vendor:"Dell", location:"Mumbai",
+  tags:"Escalated", attachment:"crash-log.txt",
+};
+// R22 "Preview form" — a filled-in request form shown as a panel ON TOP of the Review Conflict drawer
+// (matched to its width). Fields that clash with existing rules are outlined inline; hovering one reveals
+// how many rules that conflict triggers.
+function FormPreviewModal({ conflictFields, onClose, width }){
+  const cfMap = new Map((conflictFields||[]).map(f=>[f.id, f]));
+  return ReactDOM.createPortal(
+    <div className="fixed inset-0 z-[60]">
+      <div className="absolute inset-0 bg-slate-900/20" onClick={onClose}/>
+      <aside style={{width: width || 600}} className="absolute top-0 right-0 flex h-full max-w-[97vw] flex-col border-l border-slate-200 bg-white shadow-2xl v10-drawer">
+        <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-6 py-3.5 shrink-0">
+          <div>
+            <h3 className="text-[16px] font-bold text-slate-800">Form preview</h3>
+            <p className="mt-0.5 text-[12px] leading-snug text-slate-500">A filled-in request form. <span className="font-medium text-amber-700">Outlined fields</span> are creating conflicts — hover one to see how many rules it triggers.</p>
+          </div>
+          <button onClick={onClose} title="Close" className="grid h-8 w-8 shrink-0 place-items-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-600"><Ico name="x" size={18}/></button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50/40 px-6 py-5">
+          <div className="mx-auto max-w-2xl space-y-3.5">
+            {FORM_ROWS.map((row,ri)=>(
+              <div key={ri} className={"grid gap-3.5 " + (row.length>1 ? "grid-cols-2" : "grid-cols-1")}>
+                {row.map(f=>{ const cf = cfMap.get(f.id); const v = PREVIEW_VALUES[f.id] || "";
+                  return (
+                    <div key={f.id} className="group/pf relative">
+                      <label className="mb-1 block text-[12px] font-medium text-slate-600">{f.label}{f.required && <span className="text-rose-400"> *</span>}</label>
+                      {/* conflict shown INLINE on the field: an amber border + a warn glyph; count is on hover */}
+                      <div className={"flex h-9 items-center gap-2 rounded-md border px-2.5 text-[13px] transition " + (cf ? "border-amber-400 bg-amber-50/50 text-slate-800 group-hover/pf:border-amber-500" : "border-slate-200 bg-white text-slate-700")}>
+                        <span className={"min-w-0 flex-1 truncate " + (v ? "" : "italic text-slate-300")}>{v || (f.placeholder || "—")}</span>
+                        {cf && <Ico name="warn" size={13} cls="shrink-0 text-amber-500"/>}
+                      </div>
+                      {cf && <span className="pointer-events-none absolute left-0 top-full z-10 mt-1 hidden w-max max-w-[240px] rounded-md bg-slate-800 px-2.5 py-1.5 text-[11px] leading-snug text-white shadow-lg group-hover/pf:block">{cf.count} rule{cf.count===1?"":"s"} triggered by this conflict</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="flex items-center justify-between gap-3 border-t border-slate-200 px-6 py-3 shrink-0">
+          <span className="inline-flex items-center gap-1.5 text-[11.5px] text-slate-500"><span className="h-3.5 w-3.5 rounded border-2 border-amber-400 bg-amber-50"/> Field in conflict</span>
+          <button onClick={onClose} className="rounded-md bg-[#1180c1] px-4 py-1.5 text-[13px] font-semibold text-white transition hover:bg-[#0f72ab]">Done</button>
+        </div>
+      </aside>
+    </div>, document.body);
+}
+function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onToggle, parentWidth, focusFields, autoPreview}){
   // Rule-first hierarchy — Conflicting rule → OUR blocks that clash → per-block field comparison. Levels independent.
   const [openRule, setOpenRule] = useState(null);   // one conflicting rule expanded at a time
   const [openBlk, setOpenBlk] = useState({});       // "<ruleId>:<blockIdx>" → expanded
@@ -3620,6 +3721,16 @@ function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onTogg
   const [simpTab, setSimpTab] = useState(null);  // simplified (R21) drawer — one shared field tab across all conflicts
   const [mxField, setMxField] = useState(null);  // R22 matrix drawer — selected field in the left column
   const [mxOpen, setMxOpen] = useState({});      // R22 matrix drawer — expanded rules/blocks ("field:rule" / "field:rule:block")
+  const [previewOpen, setPreviewOpen] = useState(false);  // R22 — the filled-in form preview modal
+  useEffect(()=>{ if(autoPreview) setPreviewOpen(true); }, []);   // Run Test on R22 → pop the preview on top of this drawer
+  const [mx2Rule, setMx2Rule] = useState(null);  // R23 rule-matrix — selected rule in the left column
+  const [mx2Tip, setMx2Tip] = useState(null);    // R23 — which view-switcher tab tooltip is showing
+  const [mx2Fields, setMx2Fields] = useState(null); // R23 field filter (null = all fields selected)
+  const [mx2Q, setMx2Q] = useState("");          // R23 rule search
+  const [mx2FilterOpen, setMx2FilterOpen] = useState(false);
+  const [mx2Banner, setMx2Banner] = useState(false);  // R23 overview banner — expand to view the conflicting fields
+  const [mx2View, setMx2View] = useState("rule");     // R23 section-2 grouping: "rule" (default) or "field"
+  const [mx2FieldSel, setMx2FieldSel] = useState(null); // R23 field-view — selected field in the left column
   const width = Math.max(480, (parentWidth || 940) - 56);
   const seen = {}; const baseRules = [];
   conflicts.forEach(c=>{ if(c.rule && !seen[c.rule.id]){ seen[c.rule.id]=1; baseRules.push(c.rule); } });
@@ -3683,6 +3794,10 @@ function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onTogg
   // plus an Edit button in the conflicting-rule column.
   const simplified = /request routing demo 2/i.test(draft.name||"");
   const matrixMode = !!(demo && demoData.matrix);   // R22 — field → rules → blocks → detail master-detail layout
+  const ruleMatrixMode = !!(demo && demoData.ruleMatrix);   // R23 — rule → fields → blocks, with a field filter
+  // R23 header summary — "N rules affecting N fields" (lives beside the drawer title; hover shows the field names).
+  const rmxRules = ruleMatrixMode ? demoData.ruleMatrix : [];
+  const rmxFields = (()=>{ const a=[]; rmxRules.forEach(r=> r.fields.forEach(f=>{ if(!a.some(x=>x.id===f.id)) a.push(f); })); return a; })();
   // If opened by clicking a specific field's flag, show ONLY that field's conflicting rule and expand it.
   // focusFields = the field ids to scope the drawer to (an action's conflicts). null → the whole block (all rows).
   const ff = (focusFields && focusFields.length) ? focusFields : null;
@@ -4002,18 +4117,33 @@ function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onTogg
     );
   };
 
-  return (
+  // PORTALED to <body>: any ancestor with a transform/filter would otherwise become the containing block for
+  // `position: fixed`, pinning the drawer under the page header instead of spanning the full viewport height.
+  return ReactDOM.createPortal(
     <>
       <div className="fixed inset-0 z-[55] bg-slate-900/25" onClick={onClose}/>
       <aside style={{width}} className="fixed top-0 right-0 z-[56] h-full max-w-[97vw] bg-white shadow-2xl border-l border-slate-200 flex flex-col v10-drawer">
-        {/* header */}
+        {/* header — back returns to wherever the drawer was opened from; X closes it */}
         <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-6 py-3.5 shrink-0">
-          <h2 className="text-[16px] font-bold text-slate-800">Review Conflict</h2>
+          <div className="flex min-w-0 items-center gap-3">
+            <button onClick={onClose} title="Back" className="grid h-8 w-8 shrink-0 place-items-center rounded-md text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"><Ico name="back" size={18}/></button>
+            <h2 className="shrink-0 text-[16px] font-bold text-slate-800">Review Conflict</h2>
+            {/* R23 — the summary rides beside the title; hover reveals the conflicting field names */}
+            {ruleMatrixMode &&
+              <span className="group relative min-w-0">
+                <span className="inline-flex cursor-default items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-[12px] font-medium text-amber-700 ring-1 ring-amber-100">
+                  <Ico name="warn" size={12} cls="shrink-0 text-amber-500"/><span className="truncate"><span className="font-semibold">{rmxRules.length} rule{rmxRules.length===1?"":"s"}</span> affecting <span className="font-semibold">{rmxFields.length} field{rmxFields.length===1?"":"s"}</span></span>
+                </span>
+                <span className="pointer-events-none absolute left-0 top-full z-30 mt-1.5 hidden w-max max-w-[220px] rounded-md bg-slate-800 px-2.5 py-1.5 text-[11px] font-normal leading-relaxed text-white shadow-lg group-hover:block">
+                  <span className="text-slate-300">Conflicting fields:</span> {rmxFields.map(f=>f.label).join(", ")}
+                </span>
+              </span>}
+          </div>
           <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-600" title="Close"><Ico name="x" size={18}/></button>
         </div>
         {/* PINNED CURRENT-RULE ANCHOR — the rule everything below is compared against. Neutral tint +
             hairline for quiet containment (no color accent); prominence comes from the name + a clean strip. */}
-        {!simplified && <div className="relative shrink-0 border-b border-slate-200 bg-slate-50/60 px-6 py-3">
+        {!simplified && !ruleMatrixMode && <div className="relative shrink-0 border-b border-slate-200 bg-slate-50/60 px-6 py-3">
           {fieldCentric
             ? <>
                 <div className="flex items-start justify-between gap-3">
@@ -4055,7 +4185,7 @@ function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onTogg
         </div>}
         {/* search — quiet, below the current-rule anchor; the bottom of the pinned area, so it carries the
             scroll shadow that only appears once the list moves beneath it (hidden in the simplified R21 view) */}
-        {!simplified && !matrixMode &&
+        {!simplified && !matrixMode && !ruleMatrixMode &&
         <div className={"relative z-10 shrink-0 border-b border-slate-100 px-6 py-2.5 transition-shadow " + (scrolled ? "shadow-[0_6px_10px_-8px_rgba(15,23,42,0.18)]" : "")}>
           <div className="relative">
             <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><Ico name="search" size={14}/></span>
@@ -4064,7 +4194,7 @@ function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onTogg
         </div>}
         {/* CONFLICTING RULES → OUR blocks → per-block field comparison */}
         <div onScroll={e=>setScrolled(e.currentTarget.scrollTop>4)} className="flex-1 overflow-y-auto px-6 py-3">
-          {!simplified && !matrixMode &&
+          {!simplified && !matrixMode && !ruleMatrixMode &&
             <div className="mb-2 flex items-center justify-between">
               <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{fieldCentric ? "Conflicting Fields" : "Conflicting Rules"}</span>
               <span className="text-[11px] text-slate-400">{fieldCentric ? (fmShown.length + " field" + (fmShown.length===1?"":"s")) : ((demo?demoRows.length:rulesView.length) + " rule" + ((demo?demoRows.length:rulesView.length)===1?"":"s"))}</span>
@@ -4230,11 +4360,15 @@ function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onTogg
             const fld = fm.find(f=>f.id===activeId) || fm[0];
             return (
               <div className="space-y-5">
-                {/* OVERVIEW section */}
-                <div>
-                  <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Overview</div>
-                  <div className="mt-1.5 text-[13px] leading-snug text-slate-600"><span className="font-semibold text-slate-800">{fm.length} fields</span> in this rule conflict with existing rules — {fm.map(f=>f.label).join(", ")}. Pick a field to see which rules and blocks clash with it.</div>
+                {/* OVERVIEW section — with a "Preview form" action that opens the filled-in form with conflicts marked */}
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Overview</div>
+                    <div className="mt-1.5 text-[13px] leading-snug text-slate-600"><span className="font-semibold text-slate-800">{fm.length} fields</span> in this rule conflict with existing rules — {fm.map(f=>f.label).join(", ")}. Pick a field to see which rules and blocks clash with it.</div>
+                  </div>
+                  <button type="button" onClick={()=>setPreviewOpen(true)} className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-[12.5px] font-medium text-slate-700 transition hover:bg-slate-50 hover:text-slate-900"><Ico name="eye" size={14}/> Preview form</button>
                 </div>
+                {previewOpen && <FormPreviewModal conflictFields={fm.map(f=>({id:f.id, label:f.label, count:f.rules.length}))} width={width} onClose={()=>setPreviewOpen(false)}/>}
                 {/* CONFLICTING FIELDS — vertical field list (left) → selected field's rules (right), one minimal separator */}
                 <div className="grid grid-cols-[minmax(120px,180px)_1fr]">
                   {/* LEFT — field list */}
@@ -4297,7 +4431,216 @@ function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onTogg
               </div>
             );
           })()}
-          {!fieldCentric && !simplified && !matrixMode && <div className="divide-y divide-slate-100">
+          {ruleMatrixMode && (()=>{
+            const rm = demoData.ruleMatrix;
+            // union of fields across all rules (for the filter + right-hand scoping)
+            const allF = []; rm.forEach(r=> r.fields.forEach(f=>{ if(!allF.some(x=>x.id===f.id)) allF.push({id:f.id, label:f.label}); }));
+            const selIds = mx2Fields===null ? allF.map(f=>f.id) : mx2Fields;
+            const selSet = new Set(selIds);
+            const ql = mx2Q.trim().toLowerCase();
+            // rules kept: touch at least one selected field + match the search
+            const rules = rm.filter(r=>{
+              if(!r.fields.some(f=> selSet.has(f.id))) return false;
+              if(ql && r.name.toLowerCase().indexOf(ql)<0 && !r.fields.some(f=> selSet.has(f.id) && f.label.toLowerCase().indexOf(ql)>=0)) return false;
+              return true;
+            });
+            const activeRuleId = (mx2Rule && rules.some(r=>r.id===mx2Rule)) ? mx2Rule : (rules[0] && rules[0].id);
+            const rule = rules.find(r=>r.id===activeRuleId);
+            const toggleField = id => setMx2Fields(prev=>{ const cur = prev===null ? allF.map(f=>f.id) : prev.slice(); const i=cur.indexOf(id); if(i>=0) cur.splice(i,1); else cur.push(id); return cur; });
+            // FIELD-view derivations — group conflicts by field instead of by rule
+            const flds = allF.filter(f=> selSet.has(f.id));
+            const rulesCountFor = fid => rm.filter(r=> r.fields.some(x=>x.id===fid)).length;
+            const activeFid = (mx2FieldSel && flds.some(f=>f.id===mx2FieldSel)) ? mx2FieldSel : (flds[0] && flds[0].id);
+            const activeFld = flds.find(f=>f.id===activeFid);
+            const rulesForField = activeFld ? rm.filter(r=> r.fields.some(x=>x.id===activeFld.id)).map(r=>{ const fe=r.fields.find(x=>x.id===activeFld.id); return {name:r.name, audience:r.audience, cur:fe.cur, blocks:fe.blocks}; }) : [];
+            const filterLabel = selIds.length===0 ? "No fields" : (selIds.length===allF.length ? "All fields" : (selIds.length + " field" + (selIds.length===1?"":"s")));
+            return (
+              <div>
+                {/* VIEW SWITCHER — left-aligned. (Section 1 removed; its summary now rides beside the drawer title.)
+                    Custom narrow tooltips wrap to 3–4 lines rather than the wide single-line native title. */}
+                <div className="flex items-center gap-2.5">
+                  <span className="text-[11px] font-medium text-slate-400">Group conflicts by</span>
+                  <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+                    <div className="relative">
+                      <button type="button" onMouseEnter={()=>setMx2Tip("rule")} onMouseLeave={()=>setMx2Tip(null)} onClick={()=>setMx2View("rule")} className={"rounded-md px-3 py-1 text-[12px] font-medium transition " + (mx2View!=="field" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}>Rule view</button>
+                      {mx2Tip==="rule" && <span className="pointer-events-none absolute left-0 top-full z-30 mt-1.5 w-44 rounded-md bg-slate-800 px-2.5 py-1.5 text-[11px] font-normal leading-relaxed text-white shadow-lg">Group by rule — see how many rules conflict and which fields each one clashes on.</span>}
+                    </div>
+                    <div className="relative">
+                      <button type="button" onMouseEnter={()=>setMx2Tip("field")} onMouseLeave={()=>setMx2Tip(null)} onClick={()=>setMx2View("field")} className={"rounded-md px-3 py-1 text-[12px] font-medium transition " + (mx2View==="field" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}>Field view</button>
+                      {mx2Tip==="field" && <span className="pointer-events-none absolute left-0 top-full z-30 mt-1.5 w-44 rounded-md bg-slate-800 px-2.5 py-1.5 text-[11px] font-normal leading-relaxed text-white shadow-lg">Group by field — see how many rules are triggered by each conflicting field.</span>}
+                    </div>
+                  </div>
+                </div>
+                {/* SECTION 2 — grouped by rule (default) or by field */}
+                <div className="mt-4">
+                  {mx2View!=="field" &&
+                  <div className="grid grid-cols-[minmax(150px,210px)_1fr]">
+                    {/* LEFT — conflicting rules + field filter */}
+                    <div className="pr-4">
+                      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Conflicting rules</div>
+                      {/* field filter — dropdown below the heading, above the rules; all selected by default */}
+                      <div className="relative mt-2">
+                        <button type="button" onClick={()=>setMx2FilterOpen(o=>!o)} className={"inline-flex w-full items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[12px] font-medium transition " + (selIds.length!==allF.length ? "border-sky-200 bg-sky-50 text-sky-700" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50")}>
+                          <Ico name="funnel" size={13}/><span className="flex-1 text-left">{filterLabel}</span><Ico name="chevupdown" size={13} cls="shrink-0 text-slate-400"/>
+                        </button>
+                        {mx2FilterOpen && <>
+                          <div className="fixed inset-0 z-10" onClick={()=>setMx2FilterOpen(false)}/>
+                          <div className="absolute left-0 z-20 mt-1 w-56 rounded-lg border border-slate-200 bg-white p-2 shadow-xl">
+                            <div className="flex items-center justify-between gap-2 px-1 pb-1.5">
+                              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Filter fields</span>
+                              <div className="flex items-center gap-1.5">
+                                <button type="button" onClick={()=>setMx2Fields(null)} className="text-[11px] font-medium text-sky-600 hover:text-sky-700">Select all</button>
+                                <span className="text-slate-300">·</span>
+                                <button type="button" onClick={()=>setMx2Fields([])} className="text-[11px] font-medium text-slate-500 hover:text-slate-700">Deselect all</button>
+                              </div>
+                            </div>
+                            {allF.map(f=>{ const on=selSet.has(f.id);
+                              return (
+                                <label key={f.id} className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1.5 text-[13px] hover:bg-slate-50">
+                                  <input type="checkbox" checked={on} onChange={()=>toggleField(f.id)} className="h-3.5 w-3.5 accent-sky-500"/>
+                                  <span className="text-slate-700">{f.label}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </>}
+                      </div>
+                      {/* divider between the filter and the rule list */}
+                      <div className="my-2.5 border-t border-slate-100"/>
+                      <div className="space-y-0.5">
+                        {rules.map(r=>{ const on=r.id===activeRuleId; const nF=r.fields.filter(f=>selSet.has(f.id)).length;
+                          return (
+                            <button key={r.id} type="button" onClick={()=>setMx2Rule(r.id)} title={r.name}
+                              className={"block w-full rounded-md px-2.5 py-2 text-left transition " + (on ? "bg-slate-100" : "hover:bg-slate-50")}>
+                              <span className={"block truncate text-[13px] " + (on ? "font-semibold text-slate-900" : "text-slate-700")}>{r.name}</span>
+                              <span className="mt-0.5 block text-[11px] text-slate-400">{nF} field{nF===1?"":"s"} affected</span></button>
+                          );
+                        })}
+                        {rules.length===0 && <div className="px-2.5 py-3 text-[12px] text-slate-400">No rules match.</div>}
+                      </div>
+                    </div>
+                    {/* RIGHT — the selected rule's affected fields (titles) + the blocks touching each */}
+                    <div className="border-l border-slate-200/70 pl-4">
+                      {rule ? <>
+                        {/* rule heading in the original small caption style; no "affected fields", no audience tag; + Edit */}
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0 truncate text-[10px] font-semibold uppercase tracking-wide text-slate-400" title={rule.name}>{rule.name}</div>
+                          <button type="button" onClick={()=> window.open(window.location.pathname + "?editRule=" + encodeURIComponent(rule.name), "_blank")} title={"Edit " + rule.name + " in a new tab"} className="inline-flex shrink-0 items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-[11.5px] font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-800"><Ico name="pencil" size={12}/> Edit</button>
+                        </div>
+                        <div className="mt-2 space-y-4">
+                          {rule.fields.filter(f=>selSet.has(f.id)).map(f=>(
+                            <div key={f.id}>
+                              <div className="text-[13px] font-semibold text-slate-900">{f.label}</div>
+                              <div className="mt-1.5 space-y-1.5">
+                                {f.blocks.map((b,bi)=>(
+                                  <div key={bi} className="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2.5">
+                                    <div className="text-[12px] font-semibold text-slate-800">{b.label}</div>
+                                    {/* two-column compare — the conflicting block's action is the one thing highlighted (amber) */}
+                                    <div className="mt-2 grid grid-cols-2 divide-x divide-slate-200/70">
+                                      <div className="min-w-0 pr-4">
+                                        <div className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Current rule</div>
+                                        <div className="mt-1 text-[13px] font-medium leading-snug text-slate-900">{f.cur}</div>
+                                      </div>
+                                      <div className="min-w-0 pl-4">
+                                        <div className="text-[10px] font-medium uppercase tracking-wide text-slate-400">This block</div>
+                                        <div className="mt-1 text-[13px] font-semibold leading-snug text-amber-700">{b.con}</div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </> : <div className="text-[12px] text-slate-400">Select a rule to see the fields it affects.</div>}
+                    </div>
+                  </div>}
+                  {/* FIELD VIEW — fields (left) → the rules clashing on the selected field (right) */}
+                  {mx2View==="field" &&
+                  <div className="grid grid-cols-[minmax(150px,210px)_1fr]">
+                    {/* LEFT — conflicting fields + the same field filter */}
+                    <div className="pr-4">
+                      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Conflicting fields</div>
+                      <div className="relative mt-2">
+                        <button type="button" onClick={()=>setMx2FilterOpen(o=>!o)} className={"inline-flex w-full items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[12px] font-medium transition " + (selIds.length!==allF.length ? "border-sky-200 bg-sky-50 text-sky-700" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50")}>
+                          <Ico name="funnel" size={13}/><span className="flex-1 text-left">{filterLabel}</span><Ico name="chevupdown" size={13} cls="shrink-0 text-slate-400"/>
+                        </button>
+                        {mx2FilterOpen && <>
+                          <div className="fixed inset-0 z-10" onClick={()=>setMx2FilterOpen(false)}/>
+                          <div className="absolute left-0 z-20 mt-1 w-56 rounded-lg border border-slate-200 bg-white p-2 shadow-xl">
+                            <div className="flex items-center justify-between gap-2 px-1 pb-1.5">
+                              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Filter fields</span>
+                              <div className="flex items-center gap-1.5">
+                                <button type="button" onClick={()=>setMx2Fields(null)} className="text-[11px] font-medium text-sky-600 hover:text-sky-700">Select all</button>
+                                <span className="text-slate-300">·</span>
+                                <button type="button" onClick={()=>setMx2Fields([])} className="text-[11px] font-medium text-slate-500 hover:text-slate-700">Deselect all</button>
+                              </div>
+                            </div>
+                            {allF.map(f=>{ const on=selSet.has(f.id);
+                              return (
+                                <label key={f.id} className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1.5 text-[13px] hover:bg-slate-50">
+                                  <input type="checkbox" checked={on} onChange={()=>toggleField(f.id)} className="h-3.5 w-3.5 accent-sky-500"/>
+                                  <span className="text-slate-700">{f.label}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </>}
+                      </div>
+                      <div className="my-2.5 border-t border-slate-100"/>
+                      <div className="space-y-0.5">
+                        {flds.map(f=>{ const on=f.id===activeFid; const nR=rulesCountFor(f.id);
+                          return (
+                            <button key={f.id} type="button" onClick={()=>setMx2FieldSel(f.id)} title={f.label}
+                              className={"block w-full rounded-md px-2.5 py-2 text-left transition " + (on ? "bg-slate-100" : "hover:bg-slate-50")}>
+                              <span className={"block truncate text-[13px] " + (on ? "font-semibold text-slate-900" : "text-slate-700")}>{f.label}</span>
+                              <span className="mt-0.5 block text-[11px] text-slate-400">{nR} rule{nR===1?"":"s"} affected</span></button>
+                          );
+                        })}
+                        {flds.length===0 && <div className="px-2.5 py-3 text-[12px] text-slate-400">No fields selected.</div>}
+                      </div>
+                    </div>
+                    {/* RIGHT — the selected field's conflicting rules + the blocks touching it */}
+                    <div className="border-l border-slate-200/70 pl-4">
+                      {activeFld ? <>
+                        {/* field name omitted — it's already selected/highlighted in the left column */}
+                        <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Affected rules</div>
+                        <div className="mt-2 space-y-4">
+                          {rulesForField.map((r,ri)=>(
+                            <div key={ri}>
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="min-w-0 truncate text-[13px] font-semibold text-slate-900" title={r.name}>{r.name}</div>
+                                <button type="button" onClick={()=> window.open(window.location.pathname + "?editRule=" + encodeURIComponent(r.name), "_blank")} title={"Edit " + r.name + " in a new tab"} className="inline-flex shrink-0 items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-[11.5px] font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-800"><Ico name="pencil" size={12}/> Edit</button>
+                              </div>
+                              <div className="mt-1.5 space-y-1.5">
+                                {r.blocks.map((b,bi)=>(
+                                  <div key={bi} className="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2.5">
+                                    <div className="text-[12px] font-semibold text-slate-800">{b.label}</div>
+                                    {/* two-column compare — the conflicting block's action is the one thing highlighted (amber) */}
+                                    <div className="mt-2 grid grid-cols-2 divide-x divide-slate-200/70">
+                                      <div className="min-w-0 pr-4">
+                                        <div className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Current rule</div>
+                                        <div className="mt-1 text-[13px] font-medium leading-snug text-slate-900">{r.cur}</div>
+                                      </div>
+                                      <div className="min-w-0 pl-4">
+                                        <div className="text-[10px] font-medium uppercase tracking-wide text-slate-400">This block</div>
+                                        <div className="mt-1 text-[13px] font-semibold leading-snug text-amber-700">{b.con}</div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </> : <div className="text-[12px] text-slate-400">Select a field to see the rules it affects.</div>}
+                    </div>
+                  </div>}
+                </div>
+              </div>
+            );
+          })()}
+          {!fieldCentric && !simplified && !matrixMode && !ruleMatrixMode && <div className="divide-y divide-slate-100">
             {demo && demoRows.map(fx=>{
               const ro = openRule===fx.id;
               const fr = demoRuleFields(fx);
@@ -4396,25 +4739,27 @@ function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onTogg
           </div>}
         </div>
       </aside>
-    </>
-  );
+    </>,
+    document.body);
 }
 function FormRuleEditorV7({baseRule, onClose, onSaved}){
   const init = useMemo(()=>{
     if(baseRule){
       // Editing a built rule → everything is revealed (its context is already decided). Round-trip the full
       // multi-block shape when the rule was saved with one; fall back to the flat single-block model for seeds.
+      // Audience is COMMON (one value for the whole rule); Execute-on is PER BLOCK.
+      const aud = baseRule.audience || (baseRule.blocks && baseRule.blocks[0] && baseRule.blocks[0].people) || "";
       const blocks = (baseRule.blocks && baseRule.blocks.length)
         ? baseRule.blocks.map(b=>({ match:b.match||"all", advanced:!!b.advanced, advOpen:false,
-            time:b.time, people:b.people,
+            time:b.time, people:aud, exec: b.exec || baseRule.exec || EXEC_OPTS[0],
             conditions:(b.conditions||[]).map(c=>({...c})), actions:(b.actions||[]).map(a=>({...a})) }))
         : [{ match:"all", advanced:!!baseRule.advanced, advOpen:false,
-            time: baseRule.when, people: baseRule.audience,
+            time: baseRule.when, people: aud, exec: baseRule.exec || EXEC_OPTS[0],
             conditions: (baseRule.conditions||[]).map(c=>({...c})), actions: (baseRule.actions||[]).map(a=>({...a})) }];
-      return { name: baseRule.name, exec: baseRule.exec||"", description: baseRule.description||"", tags: (baseRule.tags||[]).slice(), blocks };
+      return { name: baseRule.name, exec: baseRule.exec||"", people: aud, description: baseRule.description||"", tags: (baseRule.tags||[]).slice(), blocks };
     }
     // New rule → one block with a ready-to-fill condition + action row already open (default-open).
-    return { name:"", exec:"", description:"", tags:[], blocks:[{ match:"all", advanced:false, advOpen:false, time:"", people:"", conditions:[{fieldId:"", op:"", value:""}], actions:[{behavior:"", fieldIds:[], value:""}] }] };
+    return { name:"", exec:"", people:"", description:"", tags:[], blocks:[{ match:"all", advanced:false, advOpen:false, time:"", people:"", exec:"", conditions:[{fieldId:"", op:"", value:""}], actions:[{behavior:"", fieldIds:[], value:""}] }] };
   }, [baseRule]);
   const [draft, setDraft] = useState(init);
   const [saved, setSaved] = useState(false);
@@ -4430,21 +4775,46 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
   const setBlock = (i,p)=> setDraft(d=>({...d, blocks: d.blocks.map((b,j)=> j===i?{...b,...p}:b)}));
   const dupBlock = i => setDraft(d=>{ const src=d.blocks[i]; const copy={...src, conditions:src.conditions.map(c=>({...c})), actions:src.actions.map(a=>({...a}))}; const blocks=d.blocks.slice(); blocks.splice(i+1,0,copy); return {...d, blocks}; });
   const rmBlock = i => setDraft(d=>({...d, blocks: d.blocks.filter((_,j)=>j!==i)}));
-  const addBlock = ()=> setDraft(d=>{ const blocks=[...d.blocks, {match:"all", advanced:false, advOpen:false, time:"", people:"", conditions:[{fieldId:"", op:"", value:""}], actions:[{behavior:"", fieldIds:[], value:""}]}]; setExpandedIdx(blocks.length-1); return {...d, blocks}; });
-  // Save gates: a rule must have a NAME, an execution TRIGGER (Execute on), and at least one usable
+  // New blocks inherit the rule's common audience; their Execute-on starts empty (it's per block).
+  const addBlock = ()=> setDraft(d=>{ const blocks=[...d.blocks, {match:"all", advanced:false, advOpen:false, time:"", people:d.people||"", exec:"", conditions:[{fieldId:"", op:"", value:""}], actions:[{behavior:"", fieldIds:[], value:""}]}]; setExpandedIdx(blocks.length-1); return {...d, blocks}; });
+  // Applies-to is COMMON — setting it writes the rule-level value AND mirrors it onto every block, so all
+  // the block-level consumers (summary, conflict helpers, draftToRule) keep seeing a per-block audience.
+  const setAudience = v => setDraft(d=>({...d, people:v, blocks:(d.blocks||[]).map(b=>({...b, people:v}))}));
+  // Save gates: a rule must have a NAME, an audience (Applies to), and at least one usable
   // When → Then block. Validation surfaces inline once the user attempts to save.
   const [showErrors, setShowErrors] = useState(false);
   const nameOk   = (draft.name||"").trim().length>0;
-  const execOk   = !!(draft.exec||"").trim();
+  const appliesOk= !!(draft.people||"").trim();
   const actionOk = draft.blocks.some(b=> b.time && b.actions.some(actComplete));
-  const canSave  = nameOk && execOk && actionOk;
-  const missing  = []; if(!nameOk) missing.push("rule name"); if(!execOk) missing.push("execution trigger"); if(!actionOk) missing.push("a When → Then action");
+  const canSave  = nameOk && appliesOk && actionOk;
+  const missing  = []; if(!nameOk) missing.push("rule name"); if(!appliesOk) missing.push("who it applies to"); if(!actionOk) missing.push("a When → Then action");
   // Single source of truth: evaluate the SAME normalized rule the listing/inspector use, excluding this rule's own id.
   const [, bumpRules] = useReducer(x=>x+1, 0);   // recompute conflicts after disabling a conflicting rule
   const conflicts = conflictsFor(draftToRule(draft, baseRule));
   // field-level conflict discovery — the scenario's conflicting field ids, + a focus handler for the inspector
   const _scen = demoFor(draft);
-  const scenFieldIds = new Set(_scen.matrix ? _scen.matrix.map(m=>m.id) : _scen.rows.flatMap(r=>(r.blocks[0].fields||[]).map(f=>f.id)));
+  const scenFieldIds = new Set(
+    _scen.matrix ? _scen.matrix.map(m=>m.id)
+    : _scen.ruleMatrix ? _scen.ruleMatrix.flatMap(r=>r.fields.map(f=>f.id))
+    : _scen.rows.flatMap(r=>(r.blocks[0].fields||[]).map(f=>f.id)));
+  // ---- Run Test: a safe, read-only dry run. Shows a short reassurance sequence, then reveals the result —
+  // the filled-in FORM PREVIEW for matrix rules (R22), otherwise the conflict drawer. Nothing is saved.
+  const [testing, setTesting] = useState(false);
+  const [testStep, setTestStep] = useState(0);
+  const [testAutoPreview, setTestAutoPreview] = useState(false);  // R22 → the conflict drawer pops the form preview on top
+  const runTest = () => { if(!actionOk) return; setTestStep(0); setTesting(true); };
+  useEffect(()=>{
+    if(!testing) return;
+    // ~12s total: each step holds ~2.8s so it's comfortably readable, then a short beat with all steps ticked.
+    const tick = setInterval(()=> setTestStep(s=> Math.min(s+1, TEST_STEPS.length)), 2800);
+    const done = setTimeout(()=>{
+      setTesting(false);
+      setInspectFields(null);
+      setTestAutoPreview(!!demoFor(draft).matrix);     // R22 → drawer opens with the form preview layered on top
+      setInspectOpen(true);
+    }, 12000);
+    return ()=>{ clearInterval(tick); clearTimeout(done); };
+  }, [testing]);
   const [inspectOpen, setInspectOpen] = useState(false);
   const [inspectFields, setInspectFields] = useState(null);   // field ids to focus the drawer on (null = whole block)
   const openFieldConflict = fids => { setInspectFields(fids && fids.length ? fids : null); setInspectOpen(true); };
@@ -4508,9 +4878,10 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
                   {showErrors && !nameOk && <p className="mt-1 text-[12px] font-medium text-rose-500">Give this rule a name to save it.</p>}
                 </div>
                 <div className="w-56">
-                  <label className="block text-[13px] font-semibold text-slate-700">Execute on <span className="text-rose-500">*</span></label>
-                  <div className={"mt-1.5 rounded-md " + (showErrors && !execOk ? "ring-1 ring-rose-400" : "")}><GuidedDropdown value={draft.exec} onChange={v=>patch({exec:v})} options={EXEC_OPTS} guide={EXEC_GUIDE} placeholder="Apply rule on"/></div>
-                  {showErrors && !execOk && <p className="mt-1 text-[12px] font-medium text-rose-500">Choose when this rule runs.</p>}
+                  {/* Applies to is COMMON to the whole rule; Execute on now lives on each block's When step. */}
+                  <label className="block text-[13px] font-semibold text-slate-700">Applies to <span className="text-rose-500">*</span></label>
+                  <div className={"mt-1.5 rounded-md " + (showErrors && !appliesOk ? "ring-1 ring-rose-400" : "")}><GuidedDropdown value={draft.people} onChange={setAudience} options={AUDS} guide={AUD_GUIDE} placeholder="Choose people"/></div>
+                  {showErrors && !appliesOk && <p className="mt-1 text-[12px] font-medium text-rose-500">Choose who this rule applies to.</p>}
                 </div>
               </div>
               {/* metadata — collapsed: "Add description" with "Add tag" beside it; once description opens, Tags drop below the box (V7) */}
@@ -4559,6 +4930,12 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
           <div className="flex items-center gap-3">
             {/* always-visible reason the save is blocked — no click needed to discover what's missing */}
             {!canSave && !saved && <span className="hidden sm:inline text-[12px] text-slate-400">Needed to save: <span className="font-medium text-slate-500">{missing.join(" · ")}</span></span>}
+            {/* Run Test — secondary to Save; enabled once an action is configured. Read-only dry run. */}
+            <button type="button" onClick={runTest} aria-disabled={!actionOk}
+              title={actionOk ? "Test this rule against existing rules — nothing is saved or changed" : "Configure an action to enable the test"}
+              className={"inline-flex h-10 items-center gap-1.5 rounded-full border px-5 text-[13px] font-medium transition " + (actionOk ? "border-slate-300 bg-white text-slate-700 hover:bg-slate-50" : "border-slate-200 bg-white text-slate-300 cursor-not-allowed")}>
+              <Ico name="zap" size={14}/> Run Test
+            </button>
             <button onClick={onClose} className="h-10 rounded-full border border-slate-200 bg-white px-5 text-[13px] font-medium text-slate-600 hover:bg-slate-50">Cancel</button>
             {/* styled as disabled when invalid, but still clickable so it can reveal inline validation */}
             <button onClick={save} aria-disabled={!canSave} title={canSave ? "" : ("Needed to save: " + missing.join(", "))}
@@ -4566,7 +4943,59 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
               style={{background: saved ? "#16a34a" : BRAND}}>{saved ? "Saved ✓" : (baseRule ? "Update rule" : "Save rule")}</button>
           </div>
         </div>
-        {inspectOpen && <ConflictInspector draft={draft} conflicts={conflicts} parentWidth={rz.width} focusFields={inspectFields} onClose={()=>{ setInspectOpen(false); setInspectFields(null); }} onEdit={loadRule} onDisable={disableRule} onToggle={toggleRule}/>}
+        {/* RUN TEST — transitional, read-only. Same width/position as the conflict drawer so it hands off seamlessly. */}
+        {testing && ReactDOM.createPortal(
+          <>
+            <div className="fixed inset-0 z-[55] bg-slate-900/25" onClick={()=>setTesting(false)}/>
+            <aside style={{width: Math.round(rz.width * 0.9)}}
+              className="fixed top-0 right-0 z-[56] h-full max-w-[97vw] bg-white shadow-2xl border-l border-slate-200 flex flex-col v10-drawer">
+              <div className="flex items-center gap-3 border-b border-slate-200 px-6 py-3.5 shrink-0">
+                <h2 className="text-[16px] font-bold text-slate-800">Run Test</h2>
+              </div>
+              <div className="flex flex-1 items-center justify-center px-6">
+                <div className="w-full max-w-sm">
+                  {/* calm analysis indicator — soft halo + one sweeping arc; no flashy motion */}
+                  <div className="flex justify-center">
+                    <span className="relative grid h-16 w-16 place-items-center">
+                      <span className="absolute inset-0 rounded-full bg-sky-50 animate-pulse"/>
+                      <span className="absolute inset-1 rounded-full border-2 border-slate-200"/>
+                      <span className="absolute inset-1 rounded-full border-2 border-transparent border-t-sky-500 animate-spin"/>
+                      <Ico name="zap" size={20} cls="relative text-sky-600"/>
+                    </span>
+                  </div>
+                  <div className="mt-5 text-center">
+                    <div className="text-[15px] font-semibold text-slate-900">Rule engine is running your test</div>
+                    <div className="mt-1 text-[13px] leading-relaxed text-slate-500">We're checking this rule against your existing rules in the background.</div>
+                  </div>
+                  <div className="mt-6 space-y-2.5">
+                    {TEST_STEPS.map((s,i)=>{
+                      const done = i < testStep, active = i === testStep;
+                      return (
+                        <div key={i} className={"flex items-center gap-2.5 text-[12.5px] transition-colors " + (done ? "text-slate-500" : active ? "font-medium text-slate-800" : "text-slate-300")}>
+                          <span className="grid h-4 w-4 shrink-0 place-items-center">
+                            {done ? <Ico name="tick" size={13} cls="text-emerald-500"/>
+                              : active ? <span className="h-2 w-2 rounded-full bg-sky-500 animate-pulse"/>
+                              : <span className="h-1.5 w-1.5 rounded-full bg-slate-200"/>}
+                          </span>
+                          <span>{s}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {/* the reassurance is the point of the wait */}
+                  <div className="mt-6 rounded-lg border border-slate-200 bg-slate-50/70 px-3.5 py-3">
+                    <div className="flex items-start gap-2">
+                      <Ico name="lock" size={14} cls="mt-0.5 shrink-0 text-slate-400"/>
+                      <div className="text-[12px] leading-relaxed text-slate-600">This test won't save or modify anything. Your existing rules remain unchanged — you're only previewing possible conflicts.</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </aside>
+          </>, document.body)}
+        {/* Opened from the rule config drawer → render 10% narrower than it, so the config drawer's edge stays
+            visible behind and the stack reads as "one level deeper" (+56 cancels the inspector's own inset). */}
+        {inspectOpen && <ConflictInspector draft={draft} conflicts={conflicts} parentWidth={Math.round(rz.width * 0.9) + 56} focusFields={inspectFields} autoPreview={testAutoPreview} onClose={()=>{ setInspectOpen(false); setInspectFields(null); setTestAutoPreview(false); }} onEdit={loadRule} onDisable={disableRule} onToggle={toggleRule}/>}
       </aside>
     </>
   );
