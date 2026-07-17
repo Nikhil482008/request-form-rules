@@ -32,6 +32,14 @@
   .v10-pop { animation: v10pop .22s cubic-bezier(.22,.61,.36,1) both; }
   @keyframes v10drawer { from { transform: translateX(28px); opacity:.5; } to { transform:none; opacity:1; } }
   .v10-drawer { animation: v10drawer .26s cubic-bezier(.22,.61,.36,1) both; }
+  /* Run Test simulation. Slow, soft, looping motion only — the screen should read as careful work being done,
+     never as urgency. Nothing here bounces, flashes, or spins. */
+  @keyframes v10simhalo { 0%,100% { opacity:.4; } 50% { opacity:.85; } }
+  .v10-simhalo { animation: v10simhalo 3.4s ease-in-out infinite; }
+  @keyframes v10simscan { 0% { transform: translateY(0); opacity:0; } 20% { opacity:.8; } 80% { opacity:.8; } 100% { transform: translateY(54px); opacity:0; } }
+  .v10-simscan { transform-box: view-box; animation: v10simscan 2.8s cubic-bezier(.45,0,.55,1) infinite; }
+  @keyframes v10simrise { from { opacity:0; transform: translateY(4px); } to { opacity:1; transform:none; } }
+  .v10-simrise { animation: v10simrise .45s cubic-bezier(.22,.61,.36,1) both; }
   .v10 input::placeholder { color:#94a3b8; }
 </style>
 </head>
@@ -145,21 +153,23 @@ const PALETTE = [
 
 // Center canvas — Request Form, in the exact order/layout from the screenshot.
 // Rows of 2 entries render side-by-side; single entries are full width.
+// `half` = a lone field that occupies only the LEFT column of the two-column grid, as in production. The form
+// canvas keys off row length alone and is unaffected; the Run Test preview honours it so it mirrors production.
 const fld = (id, label, kind, opts={}) =>
-  ({ id, label, kind, placeholder: opts.placeholder || "Select", required: !!opts.required });
+  ({ id, label, kind, placeholder: opts.placeholder || "Select", required: !!opts.required, half: !!opts.half });
 const FORM_ROWS = [
-  [ fld("fill_template",    "Fill From Template", "select") ],
-  [ fld("transition_model", "Transition Model",   "select") ],
+  [ fld("fill_template",    "Fill From Template", "select", {half:true}) ],
+  [ fld("transition_model", "Transition Model",   "select", {half:true}) ],
   [ fld("requester",        "Requester",          "text", {required:true}) ],
   [ fld("cc_emails",        "Cc Emails",          "adder") ],
   [ fld("subject",          "Subject",            "text", {required:true}) ],
   [ fld("description",      "Description",        "richtext") ],
-  [ fld("status",           "Status",             "select") ],
+  [ fld("status",           "Status",             "select", {half:true}) ],
   [ fld("priority", "Priority", "select"), fld("urgency",  "Urgency",  "select") ],
   [ fld("impact",   "Impact",   "select"), fld("category", "Category", "select") ],
   [ fld("tech_group", "Technician Group", "select"), fld("assignee", "Assignee", "select", {placeholder:"Select Technician"}) ],
   [ fld("department", "Department", "select"), fld("vendor", "Vendor", "select") ],
-  [ fld("location",  "Location", "select") ],
+  [ fld("location",  "Location", "select", {half:true}) ],
   [ fld("tags",      "Tags",     "adder") ],
   [ fld("attachment","Attachment","attach") ],
 ];
@@ -191,6 +201,73 @@ const OPS_NOVALUE = ["Is Empty","Is Not Empty","Is Blank","Is Not Blank"];
 const OPS_MULTI = ["Match Any","Match All","In","Not In"];
 const OP_PHRASE = { "Equals":"is", "Not Equals":"is not", "Start With":"starts with", "End With":"ends with", "Contains":"contains", "Match Any":"is any of", "Match All":"is all of", "Is Empty":"is empty", "Is Not Empty":"is not empty", "Is Blank":"is blank", "Is Not Blank":"is not blank", "In":"is in", "Not In":"is not in" };
 const BEHAVIORS = ["Show","Hide","Mandate","Non-Mandate","Enable","Disable","Set Value","Clear Value","Show Options","Hide Options","Run Custom Script","Filter Data"];
+// ---- Action-pair conflict matrix -------------------------------------------------------------
+// The 45 unique pairs across the first 10 behaviours, evaluated for SAME-FIELD conflict. This is the single
+// source of truth for how a conflicting pair is styled and explained — nothing downstream re-decides severity.
+// The matrix is symmetric, so pairs are keyed order-independently.
+// Red cells (hard conflict) — 11 of the 45; every other off-diagonal pair is compatible.
+const ACTION_HARD_PAIRS = [
+  ["Show","Hide"], ["Hide","Mandate"], ["Hide","Set Value"],
+  ["Mandate","Non-Mandate"], ["Mandate","Disable"], ["Mandate","Clear Value"], ["Mandate","Hide Options"],
+  ["Enable","Disable"], ["Set Value","Clear Value"], ["Set Value","Hide Options"],
+  ["Show Options","Hide Options"],
+];
+const pairKey = (a,b) => [a,b].sort().join(" | ");
+const ACTION_HARD_SET = new Set(ACTION_HARD_PAIRS.map(p=> pairKey(p[0],p[1])));
+// Actions whose clash depends on the CONFIGURED VALUE, not the action type alone. The matrix classifies types,
+// so its diagonal is N/A: two Set Values aren't a type clash. They still collide when they write DIFFERENT
+// values, and are a harmless no-op when they write the same one — which the matrix alone can't tell you.
+const VALUE_ACTIONS = ["Set Value"];
+const isValueAct = a => VALUE_ACTIONS.indexOf(a) >= 0;
+// The verdict is binary — "conflict" or not. A same-value-action pair is judged on its values; every other
+// same-action pair is a no-op (two rules hiding one field agree); the rest is a straight matrix lookup.
+const pairVerdict = (a, b, va, vb) => {
+  if(a === b) return (isValueAct(a) && (va||"") !== (vb||"")) ? "conflict" : "compatible";
+  return ACTION_HARD_SET.has(pairKey(a,b)) ? "conflict" : "compatible";
+};
+// Display-only naming. The matrix and BEHAVIORS key off "Mandate"; a chip reads better as the state it produces.
+const ACT_LABEL = { "Mandate":"Mandatory", "Non-Mandate":"Optional" };
+const actLabel = a => ACT_LABEL[a] || a;
+// Chip label: a value-bearing action carries its value, so the current action reads "Set: High".
+const actChip = (act, val) => (isValueAct(act) && val) ? ("Set: " + val) : actLabel(act);
+// A conflicting chip drops the action name when it MATCHES the current action — the current chip above already
+// said "Set:", so repeating it on every conflict is noise. It stays explicit the moment the behaviour differs.
+const conflictChip = (cur, pr) => (pr.act === cur && pr.val) ? pr.val : actChip(pr.act, pr.val);
+// Why each red cell is red. Keyed by pairKey, so order never matters.
+const PAIR_WHY = {
+  "Hide | Show":                 "One rule takes the field off the form while the other puts it back.",
+  "Hide | Mandate":              "A hidden field can't be filled in, so it can never satisfy the required check.",
+  "Hide | Set Value":            "The value lands on a field nobody can see or correct.",
+  "Mandate | Non-Mandate":       "One rule demands an answer, the other says it's optional.",
+  "Disable | Mandate":           "A read-only field can't be filled in, so it can never satisfy the required check.",
+  "Clear Value | Mandate":       "One rule empties the field, the other insists it isn't empty.",
+  "Hide Options | Mandate":      "The options needed to answer are taken away from a required field.",
+  "Disable | Enable":            "One rule locks the field, the other unlocks it.",
+  "Clear Value | Set Value":     "One rule writes a value, the other wipes it.",
+  "Hide Options | Set Value":    "The value being set is one of the options the other rule removes.",
+  "Hide Options | Show Options": "The same option is shown by one rule and hidden by the other.",
+};
+const pairWhy = (a,b) => a===b
+  ? "These values conflict."
+  : (PAIR_WHY[pairKey(a,b)] || "These actions can't both apply to one field.");
+// Plain-English for what an action DOES, so a pair can narrate itself on hover without a stored sentence.
+const ACT_DOES = {
+  "Show":"shows this field", "Hide":"hides this field", "Mandate":"makes it mandatory",
+  "Non-Mandate":"makes it optional", "Enable":"enables it", "Disable":"makes it read-only",
+  "Set Value":"sets its value", "Clear Value":"clears its value",
+  "Show Options":"shows its options", "Hide Options":"hides some of its options",
+};
+const actDoes = (act, val) => (isValueAct(act) && val) ? ("sets " + val) : (ACT_DOES[act] || "acts on it");
+// The full action, named against its field — the hover's second line. A value action gets the arrow form
+// ("Sets Status → On Hold"); everything else reads as a sentence ("Makes Category mandatory.").
+const ACT_LINE = {
+  "Show":"Shows {f}.", "Hide":"Hides {f}.", "Mandate":"Makes {f} mandatory.",
+  "Non-Mandate":"Makes {f} optional.", "Enable":"Enables {f}.", "Disable":"Makes {f} read-only.",
+  "Set Value":"Sets {f} → {v}", "Clear Value":"Clears {f}.",
+  "Show Options":"Shows options on {f}.", "Hide Options":"Hides options on {f}.",
+};
+const actLine = (act, val, fieldLabel) =>
+  (ACT_LINE[act] || "Acts on {f}.").replace("{f}", fieldLabel).replace("{v}", val || "a value");
 const WHENS = ["When the form opens","While the form is being filled","When the form is submitted"];
 const AUDS  = ["Everyone","Requesters only","Technicians only","Signed-in users only"];
 // Rules that drive the hardcoded field-level conflict demo — their conditions/actions surface the ⚠ indicator.
@@ -204,6 +281,16 @@ const TEST_STEPS = [
   "Checking this rule against existing rules",
   "Analyzing possible conflicts",
   "Preparing your results",
+];
+// The PREVIEW path's wait (R23) tells a different story. The user isn't waiting on a server — they're asking
+// "will this break anything, and what will my form actually look like?" So the steps narrate a temporary copy of
+// their form being built, their rule applied, and conflicts checked. Nothing here names an engine or a process.
+// Three words each, no sub-copy: the motion carries the experience, the labels just name the stage.
+const SIM_STEPS = [
+  "Creating preview copy",
+  "Applying your rule",
+  "Checking existing rules",
+  "Preparing interactive preview",
 ];
 // Value pickers: fields with a known option set get a contextual picker instead of a free text box.
 const FIELD_OPTIONS = {
@@ -424,7 +511,7 @@ const RULE_DB = [
   // and the blocks touching each on the RIGHT. A search + field-filter toolbar narrows both sides. Maps to DEMO_S8.
   { id:"r23", name:"R23 - Rule Conflict Matrix", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:0, recommended:false,
     conditions:[{fieldId:"priority", op:"In", value:"High"}],
-    actions:[{behavior:"Set Value", fieldId:"status", value:"In Progress"},{behavior:"Set Value", fieldId:"priority", value:"High"},{behavior:"Hide", fieldId:"category"},{behavior:"Mandate", fieldId:"assignee"},{behavior:"Set Value", fieldId:"impact", value:"High"}],
+    actions:[{behavior:"Set Value", fieldId:"status", value:"In Progress"},{behavior:"Set Value", fieldId:"priority", value:"High"},{behavior:"Hide", fieldId:"category"},{behavior:"Mandate", fieldId:"assignee"},{behavior:"Set Value", fieldId:"impact", value:"High"},{behavior:"Mandate", fieldId:"tags"},{behavior:"Hide", fieldId:"fill_template"},{behavior:"Disable", fieldId:"transition_model"}],
     blocks:[
       { match:"all", time:"While the form is being filled", people:"Everyone",
         conditions:[{fieldId:"priority", op:"In", value:"High"}],
@@ -434,6 +521,11 @@ const RULE_DB = [
           {behavior:"Hide", fieldIds:["category"], fieldId:"category"},
           {behavior:"Mandate", fieldIds:["assignee"], fieldId:"assignee"},
           {behavior:"Set Value", fieldId:"impact", value:"High"},
+          // Three fields no other rule touches — they give Run Test's preview its CLEAN states
+          // (mandatory / hidden / read-only with no conflict), so the test doesn't read as "everything is broken".
+          {behavior:"Mandate", fieldIds:["tags"], fieldId:"tags"},
+          {behavior:"Hide", fieldIds:["fill_template"], fieldId:"fill_template"},
+          {behavior:"Disable", fieldIds:["transition_model"], fieldId:"transition_model"},
         ] },
     ] },
 ];
@@ -961,7 +1053,10 @@ const RULE_CREATED = ["02 Jun 2026","27 May 2026","14 Jun 2026","18 May 2026","0
 RULE_DB.forEach((r,i)=>{ if(!r.exec) r.exec = RULE_EXEC[i % RULE_EXEC.length]; if(!r.created) r.created = RULE_CREATED[i % RULE_CREATED.length]; });
 // ---- Local persistence: ONE inventory shared by Form Builder + Form Rules, surviving refresh/navigation ----
 // The store key is versioned — bump it to discard saved rules and fall back to the seeds above.
-const RULE_STORE_KEY = "v10_form_rules_v2";
+// Bumped to v3: r23 gained its three clean actions, and merge-by-id below lets a STORED r23 win over the
+// seed — so without this bump any browser that had already saved would keep the old 5-action r23 while the
+// Run Test preview (which resolves by rule name) still claimed effects on tags/fill_template/transition_model.
+const RULE_STORE_KEY = "v10_form_rules_v3";
 function saveStoredRules(){ try { localStorage.setItem(RULE_STORE_KEY, JSON.stringify(RULE_DB)); } catch(_){} }
 (function hydrateRules(){
   try {
@@ -2903,7 +2998,10 @@ function V7ActRow({a, onChange, onRemove, onDuplicate, ruleName, conflictFields,
           : (a.behavior==="Set Value" || a.behavior==="Show Options" || a.behavior==="Hide Options")
             ? <>
                 {/* dependent flow: pick ONE target field first, then the value/options control appears */}
-                <div className="w-44 shrink-0"><V7FieldPicker value={a.fieldId||""} onChange={v=>onChange({fieldId:v, fieldIds:[v], value:(a.behavior==="Show Options"||a.behavior==="Hide Options")?[]:""})} placeholder="Choose field"/></div>
+                {/* single-target behaviours carry the same conflict pip as the multi-target dropdown — without
+                    this, a conflicting Set Value field stays silent while Hide/Mandate next to it warns. */}
+                <div className="w-44 shrink-0"><V7FieldPicker value={a.fieldId||""} onChange={v=>onChange({fieldId:v, fieldIds:[v], value:(a.behavior==="Show Options"||a.behavior==="Hide Options")?[]:""})} placeholder="Choose field"
+                  conflict={!!a.fieldId && cfIds.indexOf(a.fieldId)>=0} onConflict={onFieldConflict} conflictLabel={a.fieldId?labelOf(a.fieldId):""}/></div>
                 {a.fieldId && a.behavior==="Set Value" && <span className="text-[12px] text-slate-400 shrink-0">To</span>}
                 {a.fieldId && a.behavior==="Set Value" && <div className="min-w-0 flex-1"><ValueControl fieldId={a.fieldId} op="Equals" value={a.value} onChange={v=>onChange({value:v})}/></div>}
                 {a.fieldId && (a.behavior==="Show Options"||a.behavior==="Hide Options") && <span className="text-[12px] text-slate-400 shrink-0">{a.behavior==="Show Options"?"show":"hide"}</span>}
@@ -3612,6 +3710,49 @@ const DEMO_S8 = {
     ]},
   ],
 };
+// ---- Run Test → Form preview (R23). ONE ENTRY PER FIELD r23 ACTUALLY TOUCHES; every FORM_ROWS field absent
+// from this array is untouched by the rule and renders as an ordinary, silent form field. DEMO_S8 itself is NOT
+// extended — the three clean actions are clean, so they correctly never reach the drawer and its
+// "5 rules affecting 5 fields" summary stays true.
+//
+// THE INVARIANT: each field the rule touches explains itself EXACTLY ONCE. `marker` and `pairs` are MUTUALLY
+// EXCLUSIVE — the chips already name what this rule does, so a marker beside them would restate it. Presence of
+// `pairs` IS the conflicted state: the field's only amber and its only click target. `phrase` appears only where
+// an absence needs a word and no chip supplies it. `value` overrides PREVIEW_VALUES; omit when it's already right.
+//
+// `cur`/`curVal` = what THIS rule does to the field. Each entry in `pairs` = what ONE other rule does to it —
+// one rule per entry, so a Set Value pair always carries exactly one value to compare against.
+// Severity and the hover's "why" are DERIVED from the action matrix, never stored here, so the chips can't
+// drift from it — and a pair the matrix rules compatible simply never renders.
+DEMO_S8.preview = [
+  // ---- CLEAN — no other rule touches these, so they get a quiet slate marker and no chips.
+  { id:"fill_template",    state:"hidden",    marker:"by this rule", phrase:"Won't appear on the form" },
+  { id:"transition_model", state:"readonly",  marker:"by this rule" },
+  { id:"tags",             state:"mandatory", marker:"by this rule" },
+  // ---- CONFLICTED — an action-pair chip per clashing rule.
+  { id:"status", state:"set", value:"In Progress", cur:"Set Value", curVal:"In Progress", pairs:[
+      { act:"Set Value", val:"On Hold", rule:"Escalation Workflow" },
+      { act:"Set Value", val:"Closed",  rule:"Auto-close Resolved Tickets" },
+      { act:"Hide",                     rule:"Escalation Workflow" },   // its Block 2 hides Status outright
+    ] },
+  { id:"priority", state:"overridden", value:"Urgent", cur:"Set Value", curVal:"High", pairs:[
+      { act:"Set Value", val:"Urgent", rule:"VIP Fast-track" },
+      { act:"Set Value", val:"Low",    rule:"Auto-close Resolved Tickets" },
+    ] },
+  { id:"impact", state:"set", value:"High", cur:"Set Value", curVal:"High", pairs:[
+      { act:"Set Value", val:"Low",      rule:"Escalation Workflow" },
+      { act:"Set Value", val:"Critical", rule:"VIP Fast-track" },
+    ] },
+  // No `phrase`: the [Hide] chip already names the absence, so the strip stays wordless.
+  { id:"category", state:"hidden", cur:"Hide", pairs:[
+      { act:"Mandate",                    rule:"HR Category Policy" },
+      { act:"Set Value", val:"Software",  rule:"Simplified Portal Form" },
+    ] },
+  { id:"assignee", state:"mandatory", cur:"Mandate", pairs:[
+      { act:"Hide", rule:"Simplified Portal Form" },
+    ] },
+];
+const previewFor = id => DEMO_S8.preview.find(p => p.id === id) || null;
 // Pick the scenario from the draft — by name, or by its distinctive fields/conditions.
 const demoFor = draft => { const s = JSON.stringify(draft||{}).toLowerCase(); const name=((draft&&draft.name)||"").toLowerCase();
   if(name.indexOf("rule conflict matrix")>=0) return DEMO_S8;
@@ -3706,6 +3847,248 @@ function FormPreviewModal({ conflictFields, onClose, width }){
         </div>
       </aside>
     </div>, document.body);
+}
+// One control, rendered exactly as the real form renders it — same vocabulary as FieldControl on the form
+// canvas: a select shows its placeholder + chevron, a text field is an empty box, an adder is the brand "+"
+// button, an attachment is the Attach Files button, and rich text carries its editor toolbar. The rule never
+// paints on the control (a value is just a value, grey just means disabled), so this reads as a form, not a diff.
+function PreviewControl({ f, v, readonly, conflict }){
+  const k = f.kind;
+  // A conflicted field is outlined so it's findable in one scan of the form. Border only — no fill tint and no
+  // glyph inside the box; the sentence below already carries the warning, and tinting the control would turn the
+  // preview into a diff view.
+  const edge = conflict ? "border-amber-400" : "border-slate-200";
+  if(k==="adder")
+    return (
+      <button type="button" disabled className={"grid h-9 w-9 place-items-center rounded-md text-white shadow-sm " + (readonly ? "cursor-not-allowed bg-slate-300 " : "") + (conflict ? "ring-2 ring-amber-400 ring-offset-1" : "")}
+        style={readonly ? undefined : {background:BRAND}}><Ico name="plus" size={18}/></button>
+    );
+  if(k==="attach")
+    return (
+      <button type="button" disabled className={"inline-flex h-9 items-center gap-2 rounded-md bg-sky-100 px-4 text-[13px] font-medium text-[#0f7fbe] " + (conflict ? "ring-2 ring-amber-400 ring-offset-1" : "")}>
+        <Ico name="upload" size={15}/> Attach Files
+      </button>
+    );
+  if(k==="richtext")
+    return (
+      <div className={"overflow-hidden rounded-md border " + edge + " " + (readonly ? "bg-slate-50" : "bg-white")}>
+        <div className={"min-h-[140px] px-3 py-2.5 text-[13px] " + (v && !readonly ? "text-slate-700" : "text-slate-400")}>{v || "Start typing here…"}</div>
+        <div className="flex flex-wrap items-center gap-0.5 border-t border-slate-100 px-2 py-1.5 text-slate-500">
+          {["B","I","U","¶","H1","H2","H3"].map((t,i)=>
+            <span key={i} className="grid h-6 place-items-center rounded px-1.5 text-[12px] font-semibold">{t}</span>)}
+          <span className="mx-1 h-4 w-px bg-slate-200"/>
+          {["code","tag","upload","section"].map((n,i)=>
+            <span key={i} className="grid h-6 w-6 place-items-center rounded"><Ico name={n} size={14}/></span>)}
+        </div>
+      </div>
+    );
+  if(k==="text")
+    return (
+      <div className={"flex h-9 items-center rounded-md border " + edge + " px-3 text-[13px] " + (readonly ? "cursor-not-allowed bg-slate-50 text-slate-400" : "bg-white text-slate-700")}>
+        {v && <span className="min-w-0 flex-1 truncate">{v}</span>}
+      </div>
+    );
+  return (
+    <div className={"flex h-9 items-center justify-between gap-2 rounded-md border " + edge + " px-3 text-[13px] " + (readonly ? "cursor-not-allowed bg-slate-50" : "bg-white")}>
+      <span className={"min-w-0 flex-1 truncate " + (v && !readonly ? "text-slate-700" : "text-slate-400")}>{v || f.placeholder}</span>
+      <Ico name="chevdown" size={15} cls={"shrink-0 " + (readonly ? "text-slate-300" : "text-slate-400")}/>
+    </div>
+  );
+}
+// ONE action pair, read at a glance: what this rule does ⇄ what another rule does. Metadata, not a button —
+// the chips carry no shadow or lift, only the amber side deepens on hover. Severity and the "why" line come
+// straight from the action matrix, so a chip can never disagree with it. Click opens the existing drawer.
+// ONE conflicting action. Only ever rendered for a pair the matrix calls a conflict, so there is a single
+// visible conflict state — a value clash and a red-cell clash look identical, and only the hover copy differs.
+// The chip carries no arrow and no repeat of the current action: the current chip above it is the referent.
+function ConflictChip({ f, cur, curVal, pr, onClick }){
+  return (
+    <span className="group/p relative inline-block">
+      <button type="button" onClick={onClick}
+        className="rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium leading-tight text-amber-700 transition hover:border-amber-400 hover:bg-amber-100/70">
+        {conflictChip(cur, pr)}
+      </button>
+      {/* who, what, and why — in that order */}
+      <span className="pointer-events-none absolute left-0 top-full z-10 mt-1 hidden w-max max-w-[240px] rounded-md bg-slate-800 px-2.5 py-1.5 text-[11px] font-normal leading-relaxed text-white shadow-lg group-hover/p:block">
+        <span className="block font-semibold">{pr.rule}</span>
+        <span className="block">{actLine(pr.act, pr.val, f.label)}</span>
+        <span className="mt-1 block text-slate-300">{pairWhy(cur, pr.act)}</span>
+      </span>
+    </span>
+  );
+}
+// A field as the rule leaves it. Untouched fields say nothing at all — that silence is what makes the eight
+// fields the rule DOES touch legible. Each of those explains itself exactly once: a clean field carries a
+// weightless slate "by this rule" marker; a conflicted field is outlined in amber and carries action-pair chips
+// INSTEAD of a marker (the chips already name what this rule does). The chips are the only thing clickable.
+function PreviewField({ f, onFieldConflict }){
+  const p  = previewFor(f.id);
+  const st = p ? p.state : "visible";
+  const v  = (p && p.value) || PREVIEW_VALUES[f.id] || "";
+  const hidden = st==="hidden";
+  // The MATRIX decides what a conflict is, not the fixture: a pair it rules compatible (same action, or two
+  // rules setting the same value) drops out here, and with it the field's amber outline.
+  const pairs = (p && p.pairs || []).filter(pr=> pairVerdict(p.cur, pr.act, p.curVal, pr.val)==="conflict");
+  const conflict = pairs.length > 0;
+  return (
+    <div className="relative">
+      <label className={"mb-1 flex items-center gap-2 text-[12px] font-medium " + (hidden ? "text-slate-400" : "text-slate-600")}>
+        {/* the rule made it required, so it looks required — the form's own rose asterisk, never a badge */}
+        <span>{f.label}{(f.required || st==="mandatory") && <span className="text-rose-400"> *</span>}</span>
+        {p && p.marker && <span className="text-[10px] font-medium text-slate-400">{p.marker}</span>}
+      </label>
+      {hidden
+        ? /* ghosted rather than deleted: a removed row can't explain itself, and Category is the sharpest
+             conflict here. Stays dashed (it's hidden) but goes amber when it also clashes. */
+          <div className={"flex h-9 items-center gap-2 rounded-md border border-dashed px-2.5 " + (conflict ? "border-amber-400 bg-amber-50/30" : "border-slate-200 bg-slate-50/60")}>
+            {p.phrase && <><Ico name="ban" size={13} cls="shrink-0 text-slate-300"/><span className="text-[13px] text-slate-400">{p.phrase}</span></>}
+          </div>
+        : <PreviewControl f={f} v={v} readonly={st==="readonly"} conflict={conflict}/>}
+      {/* Just the disagreements. The control above already shows what this rule leaves the field at, so restating
+          it as a chip was one more thing to read — the chips still drop "Set:" against a matching action. */}
+      {conflict &&
+        <div className="mt-2">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Conflicts ({pairs.length})</div>
+          <div className="mt-1 flex flex-wrap gap-1">
+            {pairs.map((pr,i)=>
+              <ConflictChip key={i} f={f} cur={p.cur} curVal={p.curVal} pr={pr} onClick={()=>onFieldConflict && onFieldConflict([f.id])}/>)}
+          </div>
+        </div>}
+    </div>
+  );
+}
+// A form being assembled, not a spinner. The sheet's rows fill in and their nodes light as each stage lands, and
+// the ring tracks the real step progress — so the motion is reporting the run rather than merely occupying the wait.
+function SimFormArt({ step, ready }){
+  const R = 50, C = 2*Math.PI*R;
+  const pct = ready ? 1 : Math.min(step, SIM_STEPS.length) / SIM_STEPS.length;
+  const rowY = i => 39 + i*13;
+  const thread = rowY(SIM_STEPS.length-1) - rowY(0);
+  return (
+    <svg viewBox="0 0 120 120" className="h-28 w-28">
+      <circle cx="60" cy="60" r="56" className="v10-simhalo fill-sky-50"/>
+      <circle cx="60" cy="60" r={R} fill="none" strokeWidth="2" className="stroke-slate-200"/>
+      <circle cx="60" cy="60" r={R} fill="none" strokeWidth="2.5" strokeLinecap="round" transform="rotate(-90 60 60)"
+        className={ready ? "stroke-emerald-500" : "stroke-sky-500"}
+        style={{strokeDasharray:C, strokeDashoffset:C*(1-pct), transition:"stroke-dashoffset 900ms cubic-bezier(.4,0,.2,1), stroke 500ms ease"}}/>
+      {/* the temporary copy of the form */}
+      <rect x="42" y="31" width="36" height="58" rx="4" className="fill-white stroke-slate-200" strokeWidth="1.5"/>
+      {/* the thread joining evaluated rows — draws in with the run */}
+      <line x1="81" y1={rowY(0)+4} x2="81" y2={rowY(SIM_STEPS.length-1)+4} strokeWidth="1" className="stroke-sky-200"
+        style={{strokeDasharray:thread, strokeDashoffset:thread*(1-pct), transition:"stroke-dashoffset 900ms cubic-bezier(.4,0,.2,1)"}}/>
+      {SIM_STEPS.map((s,i)=>{
+        const on = ready || step > i;
+        return (
+          <g key={i} style={{opacity: on ? 1 : .3, transition:"opacity 700ms ease"}}>
+            <rect x="48" y={rowY(i)} width="10" height="2.5" rx="1.25" className="fill-slate-300"/>
+            <rect x="48" y={rowY(i)+4.5} width="24" height="5" rx="2" className={on ? "fill-sky-100" : "fill-slate-100"} style={{transition:"fill 700ms ease"}}/>
+            <circle cx="81" cy={rowY(i)+4} r="2.1" className={on ? "fill-sky-400" : "fill-slate-200"} style={{transition:"fill 700ms ease"}}/>
+          </g>
+        );
+      })}
+      {/* the pass being made over the copy — stops the moment there's nothing left to read */}
+      {!ready && <rect x="43" y="32" width="34" height="1.5" rx="0.75" className="v10-simscan fill-sky-300"/>}
+      {ready &&
+        <g className="v10-simrise">
+          <circle cx="60" cy="60" r={R-1} className="fill-white/80"/>
+          <path d="M49 60.5l7.5 7.5L71 53" fill="none" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" className="stroke-emerald-500"/>
+        </g>}
+    </svg>
+  );
+}
+// The Run Test wait, for the preview path only. Answers the four things a user is actually anxious about before
+// testing — will it work, will it break anything, is it safe, what will my form look like — rather than narrating
+// a backend. On completion only the heading block swaps: the ticked list, counts and card stay mounted, so the
+// hand-off to the preview never collapses the layout.
+function SafePreviewSim({ step, ready }){
+  const pct = ready ? 1 : Math.min(step, SIM_STEPS.length) / SIM_STEPS.length;
+  const rules = RULE_DB.filter(r=>!r.disabled).length, fields = ALL_FIELDS.length;
+  const stats = [
+    ["Rules analysed",      Math.round(pct*rules) + " / " + rules],
+    ["Fields evaluated",    Math.round(pct*fields) + " / " + fields],
+    ["Behaviors simulated", pct>=1 ? "Completed" : "In progress"],
+  ];
+  return (
+    <div className="w-full max-w-md">
+      <div className="flex justify-center"><SimFormArt step={step} ready={ready}/></div>
+      {/* min-h holds the block steady so the "ready" copy doesn't shift everything below it */}
+      <div className="mt-5 min-h-[48px] text-center">
+        {ready
+          ? <div className="v10-simrise">
+              <div className="inline-flex items-center gap-1.5 text-[15px] font-semibold text-slate-900"><Ico name="tick" size={16} cls="text-emerald-500"/>Preview ready</div>
+              <div className="mt-1.5 text-[13px] font-medium text-slate-600">Opening preview…</div>
+            </div>
+          : <>
+              <div className="text-[15px] font-semibold text-slate-900">Creating a safe preview</div>
+              <div className="mt-1.5 text-[13px] text-slate-500">Your draft stays unchanged.</div>
+            </>}
+      </div>
+      <div className="mt-5 space-y-3">
+        {SIM_STEPS.map((s,i)=>{
+          const done = ready || i < step, active = !ready && i === step;
+          return (
+            <div key={i} className="flex items-center gap-2.5" style={{opacity: done||active ? 1 : .6, transition:"opacity 600ms ease"}}>
+              <span className="grid h-4 w-4 shrink-0 place-items-center">
+                {done ? <Ico name="tick" size={13} cls="text-emerald-500"/>
+                  : active ? <span className="v10-simhalo h-2 w-2 rounded-full bg-sky-500"/>
+                  : <span className="h-1.5 w-1.5 rounded-full bg-slate-200"/>}
+              </span>
+              <div className={"min-w-0 text-[12.5px] leading-snug transition-colors " + (active ? "font-medium text-slate-800" : done ? "text-slate-500" : "text-slate-400")}>{s}</div>
+            </div>
+          );
+        })}
+      </div>
+      {/* secondary to the narrative: no card, no border — just quiet evidence that real work is happening */}
+      <div className="mt-5 space-y-2 border-t border-slate-100 pt-4">
+        {stats.map(st=>(
+          <div key={st[0]} className="flex items-baseline justify-between gap-3">
+            <span className="text-[11.5px] text-slate-500">{st[0]}</span>
+            <span className="text-[11.5px] font-medium tabular-nums text-slate-700">{st[1]}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+// R23's Run Test result — the request form as it would actually behave with this rule live. Sits at z-[52]/[53],
+// BELOW ConflictInspector (z-[55]/[56]), so clicking a sentence layers the drawer cleanly on top and the
+// drawer's own Back button returns here with the form untouched.
+function RuleTestPreview({ width, onClose, onFieldConflict }){
+  return ReactDOM.createPortal(
+    <>
+      <div className="fixed inset-0 z-[52] bg-slate-900/25" onClick={onClose}/>
+      {/* NO v10-drawer here, deliberately. This panel always replaces the Run Test drawer, which already occupies
+          this exact width and position — sliding in again would look like a second thing arriving, when in truth
+          the surface never moved and only its contents changed. The swap is instant, so the panel reads as filling in. */}
+      <aside style={{width: width || 600}} className="fixed top-0 right-0 z-[53] flex h-full max-w-[97vw] flex-col border-l border-slate-200 bg-white shadow-2xl">
+        <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-6 py-3.5 shrink-0">
+          <div>
+            <h3 className="text-[16px] font-bold text-slate-800">Form preview</h3>
+            <p className="mt-0.5 text-[12px] leading-snug text-slate-500">How the request form behaves with this rule live. <span className="font-medium text-slate-600">Notes</span> mark where another rule does something different.</p>
+          </div>
+          <button onClick={onClose} title="Close" className="grid h-8 w-8 shrink-0 place-items-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-600"><Ico name="x" size={18}/></button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50/40 px-6 py-5">
+          <div className="mx-auto max-w-2xl space-y-3.5">
+            {/* items-start: a two-line note under Impact must never stretch Category's cell.
+                A lone `half` field sits in a two-column grid so it fills only the left column, as in production. */}
+            {FORM_ROWS.map((row,ri)=>(
+              <div key={ri} className={"grid items-start gap-x-10 gap-y-3.5 " + (row.length>1 || row[0].half ? "grid-cols-2" : "grid-cols-1")}>
+                {row.map(f=> <PreviewField key={f.id} f={f} onFieldConflict={onFieldConflict}/>)}
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="flex items-center justify-between gap-3 border-t border-slate-200 px-6 py-3 shrink-0">
+          {/* echoes the lock note the user read seconds ago on the transitional drawer */}
+          <span className="inline-flex items-center gap-1.5 text-[11.5px] text-slate-500"><Ico name="lock" size={13} cls="shrink-0 text-slate-400"/> Preview only — nothing is saved.</span>
+          <div className="flex items-center gap-2.5">
+            <button onClick={()=>onFieldConflict && onFieldConflict()} className="rounded-full border border-slate-200 bg-white px-4 py-1.5 text-[13px] font-medium text-slate-600 transition hover:bg-slate-50">Review all conflicts</button>
+            <button onClick={onClose} className="rounded-md bg-[#1180c1] px-4 py-1.5 text-[13px] font-semibold text-white transition hover:bg-[#0f72ab]">Done</button>
+          </div>
+        </div>
+      </aside>
+    </>, document.body);
 }
 function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onToggle, parentWidth, focusFields, autoPreview}){
   // Rule-first hierarchy — Conflicting rule → OUR blocks that clash → per-block field comparison. Levels independent.
@@ -3803,6 +4186,14 @@ function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onTogg
   const ff = (focusFields && focusFields.length) ? focusFields : null;
   const demoRows = ff ? demoData.rows.filter(r=> (r.blocks[0].fields||[]).some(f=> ff.indexOf(f.id)>=0)) : demoData.rows;
   useEffect(()=>{ if(!ff) return; const row = demoData.rows.find(r=> (r.blocks[0].fields||[]).some(f=> ff.indexOf(f.id)>=0)); if(row){ setOpenRule(row.id); const fld=(row.blocks[0].fields||[]).find(f=> ff.indexOf(f.id)>=0); if(fld) setSelField(t=>({...t,[row.id+":0"]:fld.id})); } }, [ff && ff.join(",")]);
+  // R23 — opened from a specific field's conflict pip: land in FIELD view scoped to just that field,
+  // instead of the whole rule-first drawer. (Widen again via the filter's "Select all".)
+  useEffect(()=>{
+    if(!ruleMatrixMode || !ff || !ff.length) return;
+    setMx2View("field");
+    setMx2Fields(ff.slice());
+    setMx2FieldSel(ff[0]);
+  }, [ruleMatrixMode, ff && ff.join(",")]);
   const N = demo ? demoData.fields.length : allFields.size;   // total conflicting fields
   const chipLabels = demo ? demoData.fields : [...allFields].map(labelOf);
   // RULE-FIRST — one row per conflicting rule: the fields it clashes on, and which of OUR blocks those live in.
@@ -4438,12 +4829,10 @@ function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onTogg
             const selIds = mx2Fields===null ? allF.map(f=>f.id) : mx2Fields;
             const selSet = new Set(selIds);
             const ql = mx2Q.trim().toLowerCase();
-            // rules kept: touch at least one selected field + match the search
-            const rules = rm.filter(r=>{
-              if(!r.fields.some(f=> selSet.has(f.id))) return false;
-              if(ql && r.name.toLowerCase().indexOf(ql)<0 && !r.fields.some(f=> selSet.has(f.id) && f.label.toLowerCase().indexOf(ql)>=0)) return false;
-              return true;
-            });
+            // RULE VIEW is narrowed by the rule-name search alone. It deliberately ignores the field filter (which
+            // now belongs to Field view only) — scoping it here too would leave an invisible second filter the
+            // user has no control to see or clear after switching views.
+            const rules = rm.filter(r=> !ql || r.name.toLowerCase().indexOf(ql)>=0);
             const activeRuleId = (mx2Rule && rules.some(r=>r.id===mx2Rule)) ? mx2Rule : (rules[0] && rules[0].id);
             const rule = rules.find(r=>r.id===activeRuleId);
             const toggleField = id => setMx2Fields(prev=>{ const cur = prev===null ? allF.map(f=>f.id) : prev.slice(); const i=cur.indexOf(id); if(i>=0) cur.splice(i,1); else cur.push(id); return cur; });
@@ -4478,37 +4867,16 @@ function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onTogg
                     {/* LEFT — conflicting rules + field filter */}
                     <div className="pr-4">
                       <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Conflicting rules</div>
-                      {/* field filter — dropdown below the heading, above the rules; all selected by default */}
+                      {/* rule search — same slot the field filter used to hold, in the drawer's own search style */}
                       <div className="relative mt-2">
-                        <button type="button" onClick={()=>setMx2FilterOpen(o=>!o)} className={"inline-flex w-full items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[12px] font-medium transition " + (selIds.length!==allF.length ? "border-sky-200 bg-sky-50 text-sky-700" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50")}>
-                          <Ico name="funnel" size={13}/><span className="flex-1 text-left">{filterLabel}</span><Ico name="chevupdown" size={13} cls="shrink-0 text-slate-400"/>
-                        </button>
-                        {mx2FilterOpen && <>
-                          <div className="fixed inset-0 z-10" onClick={()=>setMx2FilterOpen(false)}/>
-                          <div className="absolute left-0 z-20 mt-1 w-56 rounded-lg border border-slate-200 bg-white p-2 shadow-xl">
-                            <div className="flex items-center justify-between gap-2 px-1 pb-1.5">
-                              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Filter fields</span>
-                              <div className="flex items-center gap-1.5">
-                                <button type="button" onClick={()=>setMx2Fields(null)} className="text-[11px] font-medium text-sky-600 hover:text-sky-700">Select all</button>
-                                <span className="text-slate-300">·</span>
-                                <button type="button" onClick={()=>setMx2Fields([])} className="text-[11px] font-medium text-slate-500 hover:text-slate-700">Deselect all</button>
-                              </div>
-                            </div>
-                            {allF.map(f=>{ const on=selSet.has(f.id);
-                              return (
-                                <label key={f.id} className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1.5 text-[13px] hover:bg-slate-50">
-                                  <input type="checkbox" checked={on} onChange={()=>toggleField(f.id)} className="h-3.5 w-3.5 accent-sky-500"/>
-                                  <span className="text-slate-700">{f.label}</span>
-                                </label>
-                              );
-                            })}
-                          </div>
-                        </>}
+                        <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"><Ico name="search" size={14}/></span>
+                        <input value={mx2Q} onChange={e=>setMx2Q(e.target.value)} placeholder="Search rules..."
+                          className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50/60 pl-8 pr-3 text-[12.5px] outline-none focus:border-sky-300 focus:bg-white focus:ring-1 focus:ring-sky-200"/>
                       </div>
-                      {/* divider between the filter and the rule list */}
+                      {/* divider between the search and the rule list */}
                       <div className="my-2.5 border-t border-slate-100"/>
                       <div className="space-y-0.5">
-                        {rules.map(r=>{ const on=r.id===activeRuleId; const nF=r.fields.filter(f=>selSet.has(f.id)).length;
+                        {rules.map(r=>{ const on=r.id===activeRuleId; const nF=r.fields.length;
                           return (
                             <button key={r.id} type="button" onClick={()=>setMx2Rule(r.id)} title={r.name}
                               className={"block w-full rounded-md px-2.5 py-2 text-left transition " + (on ? "bg-slate-100" : "hover:bg-slate-50")}>
@@ -4516,7 +4884,11 @@ function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onTogg
                               <span className="mt-0.5 block text-[11px] text-slate-400">{nF} field{nF===1?"":"s"} affected</span></button>
                           );
                         })}
-                        {rules.length===0 && <div className="px-2.5 py-3 text-[12px] text-slate-400">No rules match.</div>}
+                        {rules.length===0 &&
+                          <div className="px-2.5 py-4 text-center">
+                            <div className="text-[12.5px] font-medium text-slate-600">No matching rules found</div>
+                            <div className="mt-1 text-[11.5px] leading-snug text-slate-400">Try searching with a different rule name.</div>
+                          </div>}
                       </div>
                     </div>
                     {/* RIGHT — the selected rule's affected fields (titles) + the blocks touching each */}
@@ -4528,7 +4900,7 @@ function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onTogg
                           <button type="button" onClick={()=> window.open(window.location.pathname + "?editRule=" + encodeURIComponent(rule.name), "_blank")} title={"Edit " + rule.name + " in a new tab"} className="inline-flex shrink-0 items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-[11.5px] font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-800"><Ico name="pencil" size={12}/> Edit</button>
                         </div>
                         <div className="mt-2 space-y-4">
-                          {rule.fields.filter(f=>selSet.has(f.id)).map(f=>(
+                          {rule.fields.map(f=>(
                             <div key={f.id}>
                               <div className="text-[13px] font-semibold text-slate-900">{f.label}</div>
                               <div className="mt-1.5 space-y-1.5">
@@ -4802,18 +5174,34 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
   const [testing, setTesting] = useState(false);
   const [testStep, setTestStep] = useState(0);
   const [testAutoPreview, setTestAutoPreview] = useState(false);  // R22 → the conflict drawer pops the form preview on top
-  const runTest = () => { if(!actionOk) return; setTestStep(0); setTesting(true); };
+  const [preview23, setPreview23] = useState(false);              // R23 → Run Test lands on the simulated form, not the drawer
+  const [simReady, setSimReady] = useState(false);                // the brief "Preview Ready" beat before the hand-off
+  const runTest = () => { if(!actionOk) return; setTestStep(0); setSimReady(false); setTesting(true); };
+  const endTest = () => { setTesting(false); setSimReady(false); };
+  // The rule-matrix scenario (R23) ends the test on the FORM PREVIEW; everything else ends on the conflict drawer.
+  const testGoesToPreview = !!demoFor(draft).preview;
   useEffect(()=>{
     if(!testing) return;
-    // ~12s total: each step holds ~2.8s so it's comfortably readable, then a short beat with all steps ticked.
-    const tick = setInterval(()=> setTestStep(s=> Math.min(s+1, TEST_STEPS.length)), 2800);
-    const done = setTimeout(()=>{
-      setTesting(false);
-      setInspectFields(null);
-      setTestAutoPreview(!!demoFor(draft).matrix);     // R22 → drawer opens with the form preview layered on top
-      setInspectOpen(true);
-    }, 12000);
-    return ()=>{ clearInterval(tick); clearTimeout(done); };
+    // Preview path: 4 stages × 1.8s, then an 0.8s "Preview ready" beat — ~8s end to end. The labels are three
+    // words apiece, so the time goes to the motion rather than to reading.
+    // The drawer run stays at ~12s, where the longer sequence itself is what the user reads.
+    const steps = testGoesToPreview ? SIM_STEPS.length : TEST_STEPS.length;
+    const total = testGoesToPreview ? 7200 : 12000;
+    const tick = setInterval(()=> setTestStep(s=> Math.min(s+1, steps)), total/steps);
+    const timers = [];
+    if(testGoesToPreview){
+      // land on completion for a beat before the preview takes over — cutting away mid-thought reads as a glitch
+      timers.push(setTimeout(()=> setSimReady(true), total));
+      timers.push(setTimeout(()=>{ endTest(); setInspectFields(null); setPreview23(true); }, total + 800));
+    } else {
+      timers.push(setTimeout(()=>{
+        setTesting(false);
+        setInspectFields(null);
+        setTestAutoPreview(!!demoFor(draft).matrix);   // R22 → drawer opens with the form preview layered on top
+        setInspectOpen(true);
+      }, total));
+    }
+    return ()=>{ clearInterval(tick); timers.forEach(clearTimeout); };
   }, [testing]);
   const [inspectOpen, setInspectOpen] = useState(false);
   const [inspectFields, setInspectFields] = useState(null);   // field ids to focus the drawer on (null = whole block)
@@ -4946,14 +5334,16 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
         {/* RUN TEST — transitional, read-only. Same width/position as the conflict drawer so it hands off seamlessly. */}
         {testing && ReactDOM.createPortal(
           <>
-            <div className="fixed inset-0 z-[55] bg-slate-900/25" onClick={()=>setTesting(false)}/>
+            <div className="fixed inset-0 z-[55] bg-slate-900/25" onClick={endTest}/>
             <aside style={{width: Math.round(rz.width * 0.9)}}
               className="fixed top-0 right-0 z-[56] h-full max-w-[97vw] bg-white shadow-2xl border-l border-slate-200 flex flex-col v10-drawer">
               <div className="flex items-center gap-3 border-b border-slate-200 px-6 py-3.5 shrink-0">
                 <h2 className="text-[16px] font-bold text-slate-800">Run Test</h2>
               </div>
-              <div className="flex flex-1 items-center justify-center px-6">
-                <div className="w-full max-w-sm">
+              {/* the preview path tells the "safe simulation" story; the drawer path keeps the original sequence,
+                  whose steps stay true for rules that end on the conflict drawer and never open a preview */}
+              <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-6 py-6">
+                {testGoesToPreview ? <SafePreviewSim step={testStep} ready={simReady}/> : <div className="w-full max-w-sm">
                   {/* calm analysis indicator — soft halo + one sweeping arc; no flashy motion */}
                   <div className="flex justify-center">
                     <span className="relative grid h-16 w-16 place-items-center">
@@ -4989,12 +5379,15 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
                       <div className="text-[12px] leading-relaxed text-slate-600">This test won't save or modify anything. Your existing rules remain unchanged — you're only previewing possible conflicts.</div>
                     </div>
                   </div>
-                </div>
+                </div>}
               </div>
             </aside>
           </>, document.body)}
         {/* Opened from the rule config drawer → render 10% narrower than it, so the config drawer's edge stays
             visible behind and the stack reads as "one level deeper" (+56 cancels the inspector's own inset). */}
+        {/* R23's Run Test result. Deliberately NOT closed when the conflict drawer opens over it — the drawer's
+            Back button then returns the user to the exact form they left, at the sentence they clicked. */}
+        {preview23 && <RuleTestPreview width={Math.round(rz.width * 0.9)} onClose={()=>setPreview23(false)} onFieldConflict={openFieldConflict}/>}
         {inspectOpen && <ConflictInspector draft={draft} conflicts={conflicts} parentWidth={Math.round(rz.width * 0.9) + 56} focusFields={inspectFields} autoPreview={testAutoPreview} onClose={()=>{ setInspectOpen(false); setInspectFields(null); setTestAutoPreview(false); }} onEdit={loadRule} onDisable={disableRule} onToggle={toggleRule}/>}
       </aside>
     </>
