@@ -202,28 +202,50 @@ const OPS_MULTI = ["Match Any","Match All","In","Not In"];
 const OP_PHRASE = { "Equals":"is", "Not Equals":"is not", "Start With":"starts with", "End With":"ends with", "Contains":"contains", "Match Any":"is any of", "Match All":"is all of", "Is Empty":"is empty", "Is Not Empty":"is not empty", "Is Blank":"is blank", "Is Not Blank":"is not blank", "In":"is in", "Not In":"is not in" };
 const BEHAVIORS = ["Show","Hide","Mandate","Non-Mandate","Enable","Disable","Set Value","Clear Value","Show Options","Hide Options","Run Custom Script","Filter Data"];
 // ---- Action-pair conflict matrix -------------------------------------------------------------
-// The 45 unique pairs across the first 10 behaviours, evaluated for SAME-FIELD conflict. This is the single
-// source of truth for how a conflicting pair is styled and explained — nothing downstream re-decides severity.
-// The matrix is symmetric, so pairs are keyed order-independently.
-// Red cells (hard conflict) — 11 of the 45; every other off-diagonal pair is compatible.
+// The OPPOSING action pairs from the Step-6 reference table — the single source of truth for what "opposes" on
+// a shared field. Symmetric, so keyed order-independently. Anything not listed here (and not a same-action case,
+// handled below) is INDEPENDENT → not a conflict — e.g. one rule hides while the other sets a value.
 const ACTION_HARD_PAIRS = [
+  ["Show","Hide"],                                              // visible vs gone
+  ["Mandate","Non-Mandate"],                                    // required vs optional
+  ["Enable","Disable"],                                         // editable vs locked
+  ["Set Value","Clear Value"],                                  // writes vs wipes
+  ["Hide","Mandate"],                                           // hidden AND required
+  ["Clear Value","Mandate"],                                    // emptied AND required
+  ["Disable","Mandate"],                                        // locked AND required
+  ["Hide Options","Mandate"],                                   // no options AND required (Hide Options = ALL)
+  ["Show","Hide Options"],                                      // visible but every option hidden
+  ["Show Options","Hide Options"],                              // same option key shown + hidden
+];
+const pairKey = (a,b) => [a,b].sort().join(" | ");
+const ACTION_HARD_SET = new Set(ACTION_HARD_PAIRS.map(p=> pairKey(p[0],p[1])));
+// Actions whose clash depends on the CONFIGURED VALUE, not the type alone (the matrix classifies types only).
+const VALUE_ACTIONS = ["Set Value"];
+const isValueAct = a => VALUE_ACTIONS.indexOf(a) >= 0;
+// THREE outcomes, mirroring the reference's two tabs + "Nothing":
+//   "conflict"   — opposing actions on the shared field (red).
+//   "duplicate"  — the SAME action (and, for value actions, the SAME value): the other rule is redundant (gold).
+//   "compatible" — independent actions or a same-value no-op: show nothing.
+// The reference's Steps 1–4 (do both rules certainly fire together?) are NOT modelled — this is a UI demo, so
+// every fixture pair is authored already knowing its two rules pass those gates.
+const pairVerdict = (a, b, va, vb) => {
+  if(a === b) return isValueAct(a)
+    ? ((va||"") === (vb||"") ? "duplicate" : "conflict")   // same field: same value = duplicate, different = conflict
+    : "duplicate";                                          // same non-value action = identical effect = redundant
+  return ACTION_HARD_SET.has(pairKey(a,b)) ? "conflict" : "compatible";
+};
+// LEGACY matrix — the pre-duplicate ruleset, kept ONLY for R23 (`DEMO_S8.legacy`), which is reverted to its
+// last-pushed behaviour: binary verdict (conflict | drop), Hide↔Set Value and Set Value↔Hide Options still count
+// as conflicts, and no duplicate concept. R24 and everything else use the current matrix above.
+const LEGACY_HARD_SET = new Set([
   ["Show","Hide"], ["Hide","Mandate"], ["Hide","Set Value"],
   ["Mandate","Non-Mandate"], ["Mandate","Disable"], ["Mandate","Clear Value"], ["Mandate","Hide Options"],
   ["Enable","Disable"], ["Set Value","Clear Value"], ["Set Value","Hide Options"],
   ["Show Options","Hide Options"],
-];
-const pairKey = (a,b) => [a,b].sort().join(" | ");
-const ACTION_HARD_SET = new Set(ACTION_HARD_PAIRS.map(p=> pairKey(p[0],p[1])));
-// Actions whose clash depends on the CONFIGURED VALUE, not the action type alone. The matrix classifies types,
-// so its diagonal is N/A: two Set Values aren't a type clash. They still collide when they write DIFFERENT
-// values, and are a harmless no-op when they write the same one — which the matrix alone can't tell you.
-const VALUE_ACTIONS = ["Set Value"];
-const isValueAct = a => VALUE_ACTIONS.indexOf(a) >= 0;
-// The verdict is binary — "conflict" or not. A same-value-action pair is judged on its values; every other
-// same-action pair is a no-op (two rules hiding one field agree); the rest is a straight matrix lookup.
-const pairVerdict = (a, b, va, vb) => {
+].map(p=> pairKey(p[0],p[1])));
+const legacyVerdict = (a, b, va, vb) => {
   if(a === b) return (isValueAct(a) && (va||"") !== (vb||"")) ? "conflict" : "compatible";
-  return ACTION_HARD_SET.has(pairKey(a,b)) ? "conflict" : "compatible";
+  return LEGACY_HARD_SET.has(pairKey(a,b)) ? "conflict" : "compatible";
 };
 // Display-only naming. The matrix and BEHAVIORS key off "Mandate"; a chip reads better as the state it produces.
 const ACT_LABEL = { "Mandate":"Mandatory", "Non-Mandate":"Optional" };
@@ -233,23 +255,32 @@ const actChip = (act, val) => (isValueAct(act) && val) ? ("Set: " + val) : actLa
 // A conflicting chip drops the action name when it MATCHES the current action — the current chip above already
 // said "Set:", so repeating it on every conflict is noise. It stays explicit the moment the behaviour differs.
 const conflictChip = (cur, pr) => (pr.act === cur && pr.val) ? pr.val : actChip(pr.act, pr.val);
-// Why each red cell is red. Keyed by pairKey, so order never matters.
+// Why each opposing pair is a conflict. Keyed by pairKey, so order never matters.
 const PAIR_WHY = {
   "Hide | Show":                 "One rule takes the field off the form while the other puts it back.",
   "Hide | Mandate":              "A hidden field can't be filled in, so it can never satisfy the required check.",
-  "Hide | Set Value":            "The value lands on a field nobody can see or correct.",
   "Mandate | Non-Mandate":       "One rule demands an answer, the other says it's optional.",
   "Disable | Mandate":           "A read-only field can't be filled in, so it can never satisfy the required check.",
   "Clear Value | Mandate":       "One rule empties the field, the other insists it isn't empty.",
   "Hide Options | Mandate":      "The options needed to answer are taken away from a required field.",
   "Disable | Enable":            "One rule locks the field, the other unlocks it.",
   "Clear Value | Set Value":     "One rule writes a value, the other wipes it.",
-  "Hide Options | Set Value":    "The value being set is one of the options the other rule removes.",
+  "Hide Options | Show":         "The field shows but every option is hidden — an empty dropdown, nothing to pick.",
   "Hide Options | Show Options": "The same option is shown by one rule and hidden by the other.",
 };
-const pairWhy = (a,b) => a===b
-  ? "These values conflict."
-  : (PAIR_WHY[pairKey(a,b)] || "These actions can't both apply to one field.");
+// The hover's "why" line, chosen by verdict. Conflict = the matrix reason; duplicate = the redundancy message.
+const pairReason = (verdict, cur, pr) => {
+  if(verdict==="duplicate") return "Does the same thing as this rule — the second is redundant. Consider merging.";
+  if(cur === pr.act) return "Both rules set this field to a value, and the two values differ — only the last to run wins.";
+  return PAIR_WHY[pairKey(cur, pr.act)] || "These actions can't both apply to one field.";
+};
+// Execution scope (Step 1 of the reference). Two rules interact only where their operation windows overlap —
+// "On Create" and "On Create and Edit" both fire on Create, so a Show-on-Create rule still clashes with a
+// Hide-on-Create+Edit rule. This is display-only phrasing for the hover; it never decides the verdict (the
+// action pair does that). No STOP/CONTINUE gating is modelled — the fixture authors pairs that already overlap.
+const SCOPE_PARTS = { "On Create":["Create"], "On Edit":["Edit"], "On Create and Edit":["Create","Edit"] };
+const scopeOverlap = (a, b) => (SCOPE_PARTS[a]||[]).filter(x => (SCOPE_PARTS[b]||[]).indexOf(x) >= 0);
+const scopePhrase = s => (s||"").replace(/^On /, "on ");   // "On Create" → "on Create"
 // Plain-English for what an action DOES, so a pair can narrate itself on hover without a stored sentence.
 const ACT_DOES = {
   "Show":"shows this field", "Hide":"hides this field", "Mandate":"makes it mandatory",
@@ -271,7 +302,7 @@ const actLine = (act, val, fieldLabel) =>
 const WHENS = ["When the form opens","While the form is being filled","When the form is submitted"];
 const AUDS  = ["Everyone","Requesters only","Technicians only","Signed-in users only"];
 // Rules that drive the hardcoded field-level conflict demo — their conditions/actions surface the ⚠ indicator.
-const DEMO_CONFLICT_RULES = ["HR Rule UI Exp","Critical Incident Handling","R20 - Request Routing Demo","R21 - Request Routing Demo 2","R22 - Conflict Matrix Demo","R23 - Rule Conflict Matrix"];
+const DEMO_CONFLICT_RULES = ["HR Rule UI Exp","Critical Incident Handling","R20 - Request Routing Demo","R21 - Request Routing Demo 2","R22 - Conflict Matrix Demo","R23 - Rule Conflict Matrix","R24 - Complex Combinations","R25 - Conflict & Duplicate Split"];
 const isDemoConflictRule = n => DEMO_CONFLICT_RULES.indexOf(n)>=0;
 const EXEC_OPTS = ["On Create and Edit","On Create","On Edit"];   // rule-level execution scope (ss2 vocabulary)
 // Run Test — the reassurance sequence shown while the rule engine "evaluates" the draft. Read-only: the test
@@ -526,6 +557,42 @@ const RULE_DB = [
           {behavior:"Mandate", fieldIds:["tags"], fieldId:"tags"},
           {behavior:"Hide", fieldIds:["fill_template"], fieldId:"fill_template"},
           {behavior:"Disable", fieldIds:["transition_model"], fieldId:"transition_model"},
+        ] },
+    ] },
+  // R24 — six clashing fields covering every outcome we discussed: opposing actions, composite conflicts
+  // (Hide+Mandate, Disable+Mandate), Set/Clear, same-value & same-action DUPLICATES, an independent pair that
+  // drops to nothing, and the execution-scope case (this rule Hides Category on Create+Edit while another Shows
+  // it on Create — different actions, overlapping windows → conflict). exec = On Create and Edit.
+  { id:"r24", name:"R24 - Complex Combinations", status:"Active", when:"When the form is submitted", audience:"Everyone", usedInForms:0, recommended:false, exec:"On Create and Edit",
+    conditions:[{fieldId:"priority", op:"In", value:"High"}],
+    actions:[{behavior:"Hide", fieldId:"category"},{behavior:"Set Value", fieldId:"priority", value:"High"},{behavior:"Mandate", fieldId:"status"},{behavior:"Mandate", fieldId:"assignee"},{behavior:"Hide", fieldId:"impact"},{behavior:"Set Value", fieldId:"department", value:"IT"}],
+    blocks:[
+      { match:"all", time:"When the form is submitted", people:"Everyone", exec:"On Create and Edit",
+        conditions:[{fieldId:"priority", op:"In", value:"High"}],
+        actions:[
+          {behavior:"Hide", fieldIds:["category"], fieldId:"category"},
+          {behavior:"Set Value", fieldId:"priority", value:"High"},
+          {behavior:"Mandate", fieldIds:["status"], fieldId:"status"},
+          {behavior:"Mandate", fieldIds:["assignee"], fieldId:"assignee"},
+          {behavior:"Hide", fieldIds:["impact"], fieldId:"impact"},
+          {behavior:"Set Value", fieldId:"department", value:"IT"},
+        ] },
+    ] },
+  // R25 — same clashing data as R24, but the drawer is entered via TWO buttons: View conflicts (both views,
+  // conflicts only) and View duplicates (Rule view only, duplicates only). See DEMO_S10 (dualEntry).
+  { id:"r25", name:"R25 - Conflict & Duplicate Split", status:"Active", when:"When the form is submitted", audience:"Everyone", usedInForms:0, recommended:false, exec:"On Create and Edit",
+    conditions:[{fieldId:"priority", op:"In", value:"High"}],
+    actions:[{behavior:"Hide", fieldId:"category"},{behavior:"Set Value", fieldId:"priority", value:"High"},{behavior:"Mandate", fieldId:"status"},{behavior:"Mandate", fieldId:"assignee"},{behavior:"Hide", fieldId:"impact"},{behavior:"Set Value", fieldId:"department", value:"IT"}],
+    blocks:[
+      { match:"all", time:"When the form is submitted", people:"Everyone", exec:"On Create and Edit",
+        conditions:[{fieldId:"priority", op:"In", value:"High"}],
+        actions:[
+          {behavior:"Hide", fieldIds:["category"], fieldId:"category"},
+          {behavior:"Set Value", fieldId:"priority", value:"High"},
+          {behavior:"Mandate", fieldIds:["status"], fieldId:"status"},
+          {behavior:"Mandate", fieldIds:["assignee"], fieldId:"assignee"},
+          {behavior:"Hide", fieldIds:["impact"], fieldId:"impact"},
+          {behavior:"Set Value", fieldId:"department", value:"IT"},
         ] },
     ] },
 ];
@@ -3686,6 +3753,7 @@ const DEMO_S7 = {
 // current rule does + the blocks (of that rule) that clash. 5 conflicting fields. `rows:[]` keeps shared
 // drawer computations safe; `ruleMatrix` drives R23's dedicated render.
 const DEMO_S8 = {
+  legacy: true,   // R23 is reverted to its last-pushed behaviour — the pushed preview/drawer + pre-duplicate matrix
   fields: ["Status","Priority","Category","Assignee","Impact"],
   rows: [],
   ruleMatrix: [
@@ -3729,7 +3797,7 @@ DEMO_S8.preview = [
   { id:"fill_template",    state:"hidden",    marker:"by this rule", phrase:"Won't appear on the form" },
   { id:"transition_model", state:"readonly",  marker:"by this rule" },
   { id:"tags",             state:"mandatory", marker:"by this rule" },
-  // ---- CONFLICTED — an action-pair chip per clashing rule.
+  // ---- CONFLICTED — an action-pair chip per clashing rule. (R23 reverted: conflict-only, pushed content.)
   { id:"status", state:"set", value:"In Progress", cur:"Set Value", curVal:"In Progress", pairs:[
       { act:"Set Value", val:"On Hold", rule:"Escalation Workflow" },
       { act:"Set Value", val:"Closed",  rule:"Auto-close Resolved Tickets" },
@@ -3752,9 +3820,69 @@ DEMO_S8.preview = [
       { act:"Hide", rule:"Simplified Portal Form" },
     ] },
 ];
-const previewFor = id => DEMO_S8.preview.find(p => p.id === id) || null;
+// R24 — six clashing fields, every outcome we discussed. `ruleMatrix` drives the drawer (like R23); `preview`
+// drives the Run Test form preview. Conflicting/duplicate rules here are fixture-only, not real RULE_DB entries.
+const DEMO_S9 = {
+  fields: ["Category","Priority","Status","Assignee","Department","Impact"],
+  rows: [],
+  ruleMatrix: [
+    { id:"pi",  name:"Portal Intake Rule",      audience:"Requesters only",     fields:[ {id:"category",  label:"Category",  cur:"Hides Category",         blocks:[ {label:"Block 1", con:"Shows Category — on Create"} ]} ]},
+    { id:"crp", name:"Category Required Policy", audience:"Everyone",            fields:[ {id:"category",  label:"Category",  cur:"Hides Category",         blocks:[ {label:"Block 1", con:"Makes Category mandatory"} ]} ]},
+    { id:"vip", name:"VIP Fast-track",          audience:"Signed-in users only", fields:[ {id:"priority",  label:"Priority",  cur:"Sets Priority to High",  blocks:[ {label:"Block 1", con:"Sets Priority to Urgent"} ]} ]},
+    { id:"psr", name:"Portal Simplify Rule",     audience:"Requesters only",     fields:[ {id:"status",    label:"Status",    cur:"Makes Status mandatory", blocks:[ {label:"Block 1", con:"Makes Status optional"} ]} ]},
+    { id:"lar", name:"Locked Assignment Rule",   audience:"Technicians only",    fields:[ {id:"assignee",  label:"Assignee",  cur:"Makes Assignee mandatory", blocks:[ {label:"Block 1", con:"Disables Assignee"} ]} ]},
+    { id:"rst", name:"Reset Rule",               audience:"Everyone",            fields:[ {id:"department", label:"Department", cur:"Sets Department to IT",  blocks:[ {label:"Block 1", con:"Clears Department"} ]} ]},
+    { id:"pcr", name:"Portal Cleanup Rule",      audience:"Requesters only",     fields:[ {id:"impact",    label:"Impact",    cur:"Hides Impact",           blocks:[ {label:"Block 1", con:"Hides Impact — same action"} ]} ]},
+  ],
+};
+// `cur`/`curVal` = what R24 does. `curScope` = R24's execution window (surfaced only where a pair's differs).
+// Each pair = one other rule; `scope` = that rule's window. Verdict + hover "why" are DERIVED from the matrix.
+// R24 runs `On Create and Edit`, so every entry's curScope is that. Each conflict pair carries the OTHER rule's
+// execution window (`scope`) → shown as a trigger pill per column. Each DUPLICATE pair carries `ruleActions` —
+// the other rule's FULL action set (a subset of R24's) — so a duplicate is compared whole-rule vs whole-rule.
+DEMO_S9.preview = [
+  // Show-on-Create vs Hide-on-Create+Edit — different actions, overlapping windows → CONFLICT (the scenario).
+  { id:"category", state:"hidden", cur:"Hide", curScope:"On Create and Edit", pairs:[
+      { act:"Show",    rule:"Portal Intake Rule",      scope:"On Create" },
+      { act:"Mandate", rule:"Category Required Policy", scope:"On Create and Edit" },
+    ] },
+  { id:"priority", state:"set", value:"High", cur:"Set Value", curVal:"High", curScope:"On Create and Edit", pairs:[
+      { act:"Set Value", val:"Urgent", rule:"VIP Fast-track", scope:"On Create and Edit" },
+      { act:"Set Value", val:"High",   rule:"Major Incident Rule", scope:"On Create and Edit",
+        ruleActions:[ {field:"priority",act:"Set Value",val:"High"}, {field:"category",act:"Hide"},
+                      {field:"urgency",act:"Set Value",val:"High"}, {field:"description",act:"Mandate"} ] },
+    ] },
+  { id:"status", state:"mandatory", cur:"Mandate", curScope:"On Create and Edit", pairs:[
+      { act:"Non-Mandate", rule:"Portal Simplify Rule", scope:"On Edit" },
+    ] },
+  { id:"assignee", state:"mandatory", cur:"Mandate", curScope:"On Create and Edit", pairs:[
+      { act:"Disable", rule:"Locked Assignment Rule", scope:"On Create and Edit" },
+      { act:"Mandate", rule:"Assignment Policy", scope:"On Create and Edit",
+        ruleActions:[ {field:"assignee",act:"Mandate"}, {field:"status",act:"Mandate"},
+                      {field:"tech_group",act:"Set Value",val:"Service Desk"} ] },
+    ] },
+  { id:"impact", state:"hidden", cur:"Hide", curScope:"On Create and Edit", pairs:[
+      { act:"Hide", rule:"Portal Cleanup Rule", scope:"On Create and Edit",
+        ruleActions:[ {field:"impact",act:"Hide"}, {field:"category",act:"Hide"},
+                      {field:"vendor",act:"Hide"}, {field:"location",act:"Hide"} ] },
+      { act:"Set Value", val:"High", rule:"SLA Timer Setup" },   // independent (Hide+Set) → nothing
+    ] },
+  { id:"department", state:"set", value:"IT", cur:"Set Value", curVal:"IT", curScope:"On Create and Edit", pairs:[
+      { act:"Set Value", val:"IT", rule:"Org Default Rule", scope:"On Create and Edit",
+        ruleActions:[ {field:"department",act:"Set Value",val:"IT"}, {field:"priority",act:"Set Value",val:"High"},
+                      {field:"location",act:"Set Value",val:"Remote"} ] },
+      { act:"Clear Value", rule:"Reset Rule", scope:"On Edit" },
+    ] },
+];
+// R25 — reuses R24's conflict/duplicate data; `dualEntry` gives it the two-button (View conflicts / View
+// duplicates) entry instead of the single "View conflicts".
+const DEMO_S10 = { dualEntry:true, fields: DEMO_S9.fields, rows: [], ruleMatrix: DEMO_S9.ruleMatrix, preview: DEMO_S9.preview };
+// Resolve a field's preview entry from the ACTIVE scenario's preview array (threaded down from the editor).
+const previewFor = (preview, id) => (preview||[]).find(p => p.id === id) || null;
 // Pick the scenario from the draft — by name, or by its distinctive fields/conditions.
 const demoFor = draft => { const s = JSON.stringify(draft||{}).toLowerCase(); const name=((draft&&draft.name)||"").toLowerCase();
+  if(name.indexOf("duplicate split")>=0) return DEMO_S10;
+  if(name.indexOf("complex combinations")>=0) return DEMO_S9;
   if(name.indexOf("rule conflict matrix")>=0) return DEMO_S8;
   if(name.indexOf("conflict matrix")>=0) return DEMO_S7;
   if(name.indexOf("routing demo 2")>=0) return DEMO_S6;
@@ -3848,15 +3976,9 @@ function FormPreviewModal({ conflictFields, onClose, width }){
       </aside>
     </div>, document.body);
 }
-// One control, rendered exactly as the real form renders it — same vocabulary as FieldControl on the form
-// canvas: a select shows its placeholder + chevron, a text field is an empty box, an adder is the brand "+"
-// button, an attachment is the Attach Files button, and rich text carries its editor toolbar. The rule never
-// paints on the control (a value is just a value, grey just means disabled), so this reads as a form, not a diff.
-function PreviewControl({ f, v, readonly, conflict }){
+// ===== R23 LEGACY preview (reverted to last push) — conflict-only, amber. R24 uses the components below. =====
+function PreviewControlLegacy({ f, v, readonly, conflict }){
   const k = f.kind;
-  // A conflicted field is outlined so it's findable in one scan of the form. Border only — no fill tint and no
-  // glyph inside the box; the sentence below already carries the warning, and tinting the control would turn the
-  // preview into a diff view.
   const edge = conflict ? "border-amber-400" : "border-slate-200";
   if(k==="adder")
     return (
@@ -3895,41 +4017,161 @@ function PreviewControl({ f, v, readonly, conflict }){
     </div>
   );
 }
-// ONE action pair, read at a glance: what this rule does ⇄ what another rule does. Metadata, not a button —
-// the chips carry no shadow or lift, only the amber side deepens on hover. Severity and the "why" line come
-// straight from the action matrix, so a chip can never disagree with it. Click opens the existing drawer.
-// ONE conflicting action. Only ever rendered for a pair the matrix calls a conflict, so there is a single
-// visible conflict state — a value clash and a red-cell clash look identical, and only the hover copy differs.
-// The chip carries no arrow and no repeat of the current action: the current chip above it is the referent.
-function ConflictChip({ f, cur, curVal, pr, onClick }){
+function ConflictChipLegacy({ f, cur, pr, onClick }){
   return (
     <span className="group/p relative inline-block">
       <button type="button" onClick={onClick}
         className="rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium leading-tight text-amber-700 transition hover:border-amber-400 hover:bg-amber-100/70">
         {conflictChip(cur, pr)}
       </button>
-      {/* who, what, and why — in that order */}
       <span className="pointer-events-none absolute left-0 top-full z-10 mt-1 hidden w-max max-w-[240px] rounded-md bg-slate-800 px-2.5 py-1.5 text-[11px] font-normal leading-relaxed text-white shadow-lg group-hover/p:block">
         <span className="block font-semibold">{pr.rule}</span>
         <span className="block">{actLine(pr.act, pr.val, f.label)}</span>
-        <span className="mt-1 block text-slate-300">{pairWhy(cur, pr.act)}</span>
+        <span className="mt-1 block text-slate-300">{pairReason("conflict", cur, pr)}</span>
       </span>
     </span>
   );
 }
-// A field as the rule leaves it. Untouched fields say nothing at all — that silence is what makes the eight
-// fields the rule DOES touch legible. Each of those explains itself exactly once: a clean field carries a
-// weightless slate "by this rule" marker; a conflicted field is outlined in amber and carries action-pair chips
-// INSTEAD of a marker (the chips already name what this rule does). The chips are the only thing clickable.
-function PreviewField({ f, onFieldConflict }){
-  const p  = previewFor(f.id);
+function PreviewFieldLegacy({ f, preview, onFieldConflict }){
+  const p  = previewFor(preview, f.id);
   const st = p ? p.state : "visible";
   const v  = (p && p.value) || PREVIEW_VALUES[f.id] || "";
   const hidden = st==="hidden";
-  // The MATRIX decides what a conflict is, not the fixture: a pair it rules compatible (same action, or two
-  // rules setting the same value) drops out here, and with it the field's amber outline.
-  const pairs = (p && p.pairs || []).filter(pr=> pairVerdict(p.cur, pr.act, p.curVal, pr.val)==="conflict");
+  // Pushed behaviour: the pre-duplicate matrix, conflict-only.
+  const pairs = (p && p.pairs || []).filter(pr=> legacyVerdict(p.cur, pr.act, p.curVal, pr.val)==="conflict");
   const conflict = pairs.length > 0;
+  return (
+    <div className="relative">
+      <label className={"mb-1 flex items-center gap-2 text-[12px] font-medium " + (hidden ? "text-slate-400" : "text-slate-600")}>
+        <span>{f.label}{(f.required || st==="mandatory") && <span className="text-rose-400"> *</span>}</span>
+        {p && p.marker && <span className="text-[10px] font-medium text-slate-400">{p.marker}</span>}
+      </label>
+      {hidden
+        ? <div className={"flex h-9 items-center gap-2 rounded-md border border-dashed px-2.5 " + (conflict ? "border-amber-400 bg-amber-50/30" : "border-slate-200 bg-slate-50/60")}>
+            {p.phrase && <><Ico name="ban" size={13} cls="shrink-0 text-slate-300"/><span className="text-[13px] text-slate-400">{p.phrase}</span></>}
+          </div>
+        : <PreviewControlLegacy f={f} v={v} readonly={st==="readonly"} conflict={conflict}/>}
+      {conflict &&
+        <div className="mt-2">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Conflicts ({pairs.length})</div>
+          <div className="mt-1 flex flex-wrap gap-1">
+            {pairs.map((pr,i)=>
+              <ConflictChipLegacy key={i} f={f} cur={p.cur} pr={pr} onClick={()=>onFieldConflict && onFieldConflict([f.id])}/>)}
+          </div>
+        </div>}
+    </div>
+  );
+}
+// ===== R24 (current) preview =====
+// One control, rendered exactly as the real form renders it — same vocabulary as FieldControl on the form
+// canvas: a select shows its placeholder + chevron, a text field is an empty box, an adder is the brand "+"
+// button, an attachment is the Attach Files button, and rich text carries its editor toolbar. The rule never
+// paints on the control (a value is just a value, grey just means disabled), so this reads as a form, not a diff.
+function PreviewControl({ f, v, readonly, tone }){
+  const k = f.kind;
+  // A clashing field is outlined so it's findable in one scan — red for a conflict, gold for a duplicate.
+  // Border only, no fill tint and no in-box glyph; the chips below carry the detail, and tinting the control
+  // would turn the preview into a diff view.
+  const edge = tone==="conflict" ? "border-rose-400" : tone==="duplicate" ? "border-amber-400" : "border-slate-200";
+  const ring = tone==="conflict" ? "ring-2 ring-rose-400 ring-offset-1" : tone==="duplicate" ? "ring-2 ring-amber-400 ring-offset-1" : "";
+  if(k==="adder")
+    return (
+      <button type="button" disabled className={"grid h-9 w-9 place-items-center rounded-md text-white shadow-sm " + (readonly ? "cursor-not-allowed bg-slate-300 " : "") + ring}
+        style={readonly ? undefined : {background:BRAND}}><Ico name="plus" size={18}/></button>
+    );
+  if(k==="attach")
+    return (
+      <button type="button" disabled className={"inline-flex h-9 items-center gap-2 rounded-md bg-sky-100 px-4 text-[13px] font-medium text-[#0f7fbe] " + ring}>
+        <Ico name="upload" size={15}/> Attach Files
+      </button>
+    );
+  if(k==="richtext")
+    return (
+      <div className={"overflow-hidden rounded-md border " + edge + " " + (readonly ? "bg-slate-50" : "bg-white")}>
+        <div className={"min-h-[140px] px-3 py-2.5 text-[13px] " + (v && !readonly ? "text-slate-700" : "text-slate-400")}>{v || "Start typing here…"}</div>
+        <div className="flex flex-wrap items-center gap-0.5 border-t border-slate-100 px-2 py-1.5 text-slate-500">
+          {["B","I","U","¶","H1","H2","H3"].map((t,i)=>
+            <span key={i} className="grid h-6 place-items-center rounded px-1.5 text-[12px] font-semibold">{t}</span>)}
+          <span className="mx-1 h-4 w-px bg-slate-200"/>
+          {["code","tag","upload","section"].map((n,i)=>
+            <span key={i} className="grid h-6 w-6 place-items-center rounded"><Ico name={n} size={14}/></span>)}
+        </div>
+      </div>
+    );
+  if(k==="text")
+    return (
+      <div className={"flex h-9 items-center rounded-md border " + edge + " px-3 text-[13px] " + (readonly ? "cursor-not-allowed bg-slate-50 text-slate-400" : "bg-white text-slate-700")}>
+        {v && <span className="min-w-0 flex-1 truncate">{v}</span>}
+      </div>
+    );
+  return (
+    <div className={"flex h-9 items-center justify-between gap-2 rounded-md border " + edge + " px-3 text-[13px] " + (readonly ? "cursor-not-allowed bg-slate-50" : "bg-white")}>
+      <span className={"min-w-0 flex-1 truncate " + (v && !readonly ? "text-slate-700" : "text-slate-400")}>{v || f.placeholder}</span>
+      <Ico name="chevdown" size={15} cls={"shrink-0 " + (readonly ? "text-slate-300" : "text-slate-400")}/>
+    </div>
+  );
+}
+// ONE action from another rule that clashes with this one — a conflict (red) or a duplicate (gold). Metadata,
+// not a button: no shadow or lift, only the edge deepens on hover. The chip carries no arrow and no repeat of
+// the current action; the field's own control above is the referent. Click opens the existing drawer.
+const CHIP_TONE = {
+  conflict:  "border-rose-300 bg-rose-50 text-rose-700 hover:border-rose-400 hover:bg-rose-100/70",
+  duplicate: "border-amber-300 bg-amber-50 text-amber-700 hover:border-amber-400 hover:bg-amber-100/70",
+};
+function SignalChip({ f, cur, curScope, pr, verdict, onClick }){
+  // When the other rule fires on a DIFFERENT window than this one, name the overlap — that's the "why" for a
+  // clash between rules that seem to run at different times (Show on Create vs Hide on Create+Edit).
+  const scoped = pr.scope && curScope && pr.scope !== curScope;
+  const shared = scoped ? scopeOverlap(curScope, pr.scope) : [];
+  return (
+    <span className="group/p relative inline-block">
+      <button type="button" onClick={onClick}
+        className={"rounded border px-1.5 py-0.5 text-[11px] font-medium leading-tight transition " + CHIP_TONE[verdict]}>
+        {conflictChip(cur, pr)}
+      </button>
+      {/* who, what, why — plus the firing-window overlap when the two rules run on different scopes */}
+      <span className="pointer-events-none absolute left-0 top-full z-10 mt-1 hidden w-max max-w-[240px] rounded-md bg-slate-800 px-2.5 py-1.5 text-[11px] font-normal leading-relaxed text-white shadow-lg group-hover/p:block">
+        <span className="block font-semibold">{pr.rule}</span>
+        <span className="block">{actLine(pr.act, pr.val, f.label)}{pr.scope ? " · " + scopePhrase(pr.scope) : ""}</span>
+        <span className="mt-1 block text-slate-300">{pairReason(verdict, cur, pr)}</span>
+        {scoped && shared.length>0 &&
+          <span className="mt-1 block text-slate-300">This rule runs {scopePhrase(curScope)} — the two overlap on {shared.join(" and ")}.</span>}
+      </span>
+    </span>
+  );
+}
+// One block of same-verdict chips under a labelled count — "CONFLICTS (2)" / "DUPLICATES (1)".
+function SignalGroup({ f, cur, curScope, label, items, onFieldConflict }){
+  if(!items.length) return null;
+  return (
+    <div className="mt-2">
+      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{label} ({items.length})</div>
+      <div className="mt-1 flex flex-wrap gap-1">
+        {items.map((x,i)=>
+          <SignalChip key={i} f={f} cur={cur} curScope={curScope} pr={x.pr} verdict={x.verdict} onClick={()=>onFieldConflict && onFieldConflict([f.id])}/>)}
+      </div>
+    </div>
+  );
+}
+// A field as the rule leaves it. Untouched fields say nothing at all — that silence is what makes the touched
+// fields legible. A touched field carries a slate "by this rule" marker when clean, or — when other rules clash —
+// an outline (red for a conflict, gold for a duplicate-only field) plus per-verdict chip groups below.
+function PreviewField({ f, preview, onFieldConflict }){
+  const p  = previewFor(preview, f.id);
+  const st = p ? p.state : "visible";
+  const v  = (p && p.value) || PREVIEW_VALUES[f.id] || "";
+  const hidden = st==="hidden";
+  // The MATRIX decides each pair's verdict, not the fixture. Compatible pairs (independent, or same-value no-op)
+  // drop out entirely. What's left is split into conflicts (red) and duplicates (gold).
+  const evald = (p && p.pairs || []).map(pr=> ({ pr, verdict: pairVerdict(p.cur, pr.act, p.curVal, pr.val) }));
+  const conflicts = evald.filter(x=> x.verdict==="conflict");
+  const duplicates = evald.filter(x=> x.verdict==="duplicate");
+  // The field's outline shows its strongest signal — a conflict outranks a duplicate.
+  const tone = conflicts.length ? "conflict" : duplicates.length ? "duplicate" : null;
+  // Surface this rule's execution window only where it's the crux — i.e. a shown clash whose other rule fires on
+  // a different scope (the Show-on-Create vs Hide-on-Create+Edit case). Elsewhere the timing is unremarkable.
+  const curScope = p && p.curScope;
+  const scopeNote = curScope && [...conflicts, ...duplicates].some(x=> x.pr.scope && x.pr.scope !== curScope);
   return (
     <div className="relative">
       <label className={"mb-1 flex items-center gap-2 text-[12px] font-medium " + (hidden ? "text-slate-400" : "text-slate-600")}>
@@ -3938,22 +4180,18 @@ function PreviewField({ f, onFieldConflict }){
         {p && p.marker && <span className="text-[10px] font-medium text-slate-400">{p.marker}</span>}
       </label>
       {hidden
-        ? /* ghosted rather than deleted: a removed row can't explain itself, and Category is the sharpest
-             conflict here. Stays dashed (it's hidden) but goes amber when it also clashes. */
-          <div className={"flex h-9 items-center gap-2 rounded-md border border-dashed px-2.5 " + (conflict ? "border-amber-400 bg-amber-50/30" : "border-slate-200 bg-slate-50/60")}>
+        ? /* ghosted rather than deleted: a removed row can't explain itself. Stays dashed (it's hidden) but takes
+             the tone of its strongest signal when other rules clash. */
+          <div className={"flex h-9 items-center gap-2 rounded-md border border-dashed px-2.5 " + (tone==="conflict" ? "border-rose-400 bg-rose-50/30" : tone==="duplicate" ? "border-amber-400 bg-amber-50/30" : "border-slate-200 bg-slate-50/60")}>
             {p.phrase && <><Ico name="ban" size={13} cls="shrink-0 text-slate-300"/><span className="text-[13px] text-slate-400">{p.phrase}</span></>}
           </div>
-        : <PreviewControl f={f} v={v} readonly={st==="readonly"} conflict={conflict}/>}
-      {/* Just the disagreements. The control above already shows what this rule leaves the field at, so restating
-          it as a chip was one more thing to read — the chips still drop "Set:" against a matching action. */}
-      {conflict &&
-        <div className="mt-2">
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Conflicts ({pairs.length})</div>
-          <div className="mt-1 flex flex-wrap gap-1">
-            {pairs.map((pr,i)=>
-              <ConflictChip key={i} f={f} cur={p.cur} curVal={p.curVal} pr={pr} onClick={()=>onFieldConflict && onFieldConflict([f.id])}/>)}
-          </div>
-        </div>}
+        : <PreviewControl f={f} v={v} readonly={st==="readonly"} tone={tone}/>}
+      {/* the execution window, shown only when a differently-scoped rule is the reason for a clash */}
+      {scopeNote && <div className="mt-1 flex items-center gap-1 text-[10.5px] text-slate-400"><Ico name="history" size={11} cls="shrink-0 text-slate-300"/>Runs {scopePhrase(curScope)}</div>}
+      {/* the disagreements, grouped by kind. The control above already shows what this rule leaves the field at,
+          so the chips only name the OTHER rules — and drop "Set:" when the action matches. */}
+      <SignalGroup f={f} cur={p && p.cur} curScope={curScope} label="Conflicts" items={conflicts} onFieldConflict={onFieldConflict}/>
+      <SignalGroup f={f} cur={p && p.cur} curScope={curScope} label="Duplicates" items={duplicates} onFieldConflict={onFieldConflict}/>
     </div>
   );
 }
@@ -4053,7 +4291,8 @@ function SafePreviewSim({ step, ready }){
 // R23's Run Test result — the request form as it would actually behave with this rule live. Sits at z-[52]/[53],
 // BELOW ConflictInspector (z-[55]/[56]), so clicking a sentence layers the drawer cleanly on top and the
 // drawer's own Back button returns here with the form untouched.
-function RuleTestPreview({ width, onClose, onFieldConflict }){
+function RuleTestPreview({ width, preview, legacy, onClose, onFieldConflict }){
+  const Field = legacy ? PreviewFieldLegacy : PreviewField;
   return ReactDOM.createPortal(
     <>
       <div className="fixed inset-0 z-[52] bg-slate-900/25" onClick={onClose}/>
@@ -4074,7 +4313,7 @@ function RuleTestPreview({ width, onClose, onFieldConflict }){
                 A lone `half` field sits in a two-column grid so it fills only the left column, as in production. */}
             {FORM_ROWS.map((row,ri)=>(
               <div key={ri} className={"grid items-start gap-x-10 gap-y-3.5 " + (row.length>1 || row[0].half ? "grid-cols-2" : "grid-cols-1")}>
-                {row.map(f=> <PreviewField key={f.id} f={f} onFieldConflict={onFieldConflict}/>)}
+                {row.map(f=> <Field key={f.id} f={f} preview={preview} onFieldConflict={onFieldConflict}/>)}
               </div>
             ))}
           </div>
@@ -4090,7 +4329,109 @@ function RuleTestPreview({ width, onClose, onFieldConflict }){
       </aside>
     </>, document.body);
 }
-function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onToggle, parentWidth, focusFields, autoPreview}){
+// The drawer's clash list, derived from a scenario's PREVIEW fixture and classified by the SAME matrix as the
+// form-preview chips — so the two can never disagree. Each entry is one (other-rule, field) clash. Compatible
+// pairs are dropped, exactly as the chips drop them.
+const actShort = (act, val, fieldLabel) => actLine(act, val, fieldLabel).replace(/\.$/, "");
+function buildClashEntries(preview){
+  const out = [];
+  (preview||[]).forEach(p=>{
+    (p.pairs||[]).forEach(pr=>{
+      const verdict = pairVerdict(p.cur, pr.act, p.curVal, pr.val);
+      if(verdict==="compatible") return;
+      out.push({ rule: pr.rule, fieldId: p.id, fieldLabel: labelOf(p.id), verdict,
+                 cur: actShort(p.cur, p.curVal, labelOf(p.id)),
+                 con: actShort(pr.act, pr.val, labelOf(p.id)),
+                 scope: pr.scope || null, curScope: p.curScope || null,
+                 ruleActions: pr.ruleActions || null });   // the other rule's FULL action set (duplicates)
+    });
+  });
+  return out;
+}
+// One clash as a two-column compare — this rule's action vs the other rule's — the other side tinted by verdict
+// (red conflict / gold duplicate), with the firing-window overlap spelled out when the two rules run on
+// different scopes (the "conflicting trigger" — e.g. Show on Create vs Hide on Create + Edit).
+// A small execution-window pill: "🕘 on Create". Shown beside a column's label so each side carries its own
+// trigger (the current rule's and the other rule's, respectively).
+function TriggerPill({ scope }){
+  if(!scope) return null;
+  return <span className="inline-flex shrink-0 items-center gap-1 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10.5px] font-medium text-slate-500"><Ico name="history" size={10}/>{scopePhrase(scope)}</span>;
+}
+// A clash card. CONFLICT: the compact single-field compare — this rule's action vs the other's, each column
+// carrying its own trigger pill, with the overlap spelled out when the windows differ. DUPLICATE: the whole
+// rule is redundant, so both columns list EVERY action of each rule side by side — that's the comparison that
+// justifies merging.
+function ClashCard({ e, title, editName, curActions }){
+  const dup = e.verdict==="duplicate";
+  const conCls = dup ? "text-amber-700" : "text-rose-700";
+  const scoped = e.scope && e.curScope && e.scope !== e.curScope;
+  const shared = scoped ? scopeOverlap(e.curScope, e.scope) : [];
+  const conActions = dup ? (e.ruleActions||[]).map(a=> actShort(a.act, a.val, labelOf(a.field))) : [];
+  // The actions present in BOTH rules are the duplicated ones — highlight them in each column so the overlap
+  // (the thing to act on) is obvious at a glance. Matched by the identical action phrase.
+  const curSet = new Set(curActions||[]), conSet = new Set(conActions);
+  const ActionList = ({ items, otherSet }) => (
+    <ul className="mt-1 space-y-1">
+      {items.map((a,i)=>{ const m = otherSet.has(a);
+        return (
+          <li key={i} className="flex items-start gap-1.5">
+            {m ? <Ico name="tick" size={12} cls="mt-0.5 shrink-0 text-amber-500"/> : <span className="mt-0.5 h-3 w-3 shrink-0"/>}
+            <span className={"text-[12.5px] leading-snug " + (m ? "font-medium text-amber-800" : "text-slate-700")}>{a}</span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2.5">
+      {/* header — a field title for conflicts (which field clashes); duplicates are whole-rule, so no field title.
+          Edit (Field view only) rides here. */}
+      {((!dup && title) || editName) &&
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <div className="min-w-0 truncate text-[12px] font-semibold text-slate-800" title={title}>{dup ? "" : title}</div>
+          {editName && <button type="button" onClick={()=> window.open(window.location.pathname + "?editRule=" + encodeURIComponent(editName), "_blank")} title={"Edit " + editName + " in a new tab"} className="inline-flex shrink-0 items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11.5px] font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-800"><Ico name="pencil" size={12}/> Edit</button>}
+        </div>}
+      <div className="grid grid-cols-2 divide-x divide-slate-200/70">
+        <div className="min-w-0 pr-4">
+          <div className="flex items-center gap-1.5">
+            <div className="text-[10px] font-medium uppercase tracking-wide text-slate-400">This rule</div>
+            {/* triggers shown only when the two windows DIFFER — identical windows add nothing */}
+            <TriggerPill scope={scoped ? e.curScope : null}/>
+          </div>
+          {dup
+            ? <ActionList items={curActions||[]} otherSet={conSet}/>
+            : <div className="mt-1 text-[13px] font-medium leading-snug text-slate-900">{e.cur}</div>}
+        </div>
+        <div className="min-w-0 pl-4">
+          <div className="flex items-center gap-1.5">
+            <div className="text-[10px] font-medium uppercase tracking-wide text-slate-400">{dup ? "Duplicate rule" : "Conflicting rule"}</div>
+            <TriggerPill scope={scoped ? e.scope : null}/>
+          </div>
+          {dup
+            ? <ActionList items={conActions} otherSet={curSet}/>
+            : <div className={"mt-1 text-[13px] font-semibold leading-snug " + conCls}>{e.con}</div>}
+        </div>
+      </div>
+      {!dup && scoped && shared.length>0 &&
+        <div className="mt-2 flex items-start gap-1.5 border-t border-slate-100 pt-2 text-[11px] leading-snug text-slate-500">
+          <Ico name="history" size={12} cls="mt-0.5 shrink-0 text-slate-400"/>
+          <span>This rule runs {scopePhrase(e.curScope)}, the other {scopePhrase(e.scope)} — they overlap on {shared.join(" and ")}, so both fire.</span>
+        </div>}
+    </div>
+  );
+}
+// A left-list row's verdict summary — a rose "N conflicts" and/or a gold "M duplicates", each with its own dot.
+// Both show when a rule/field has both, so the list can never imply a field is conflict-only when it also
+// duplicates. Replaces the old single dot + vague "N rules".
+function VerdictBreakdown({ nConf, nDup }){
+  return (
+    <span className="mt-0.5 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11px] text-slate-500">
+      {nConf>0 && <span className="inline-flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-rose-400"/>{nConf} conflict{nConf===1?"":"s"}</span>}
+      {nDup>0 && <span className="inline-flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-amber-400"/>{nDup} duplicate{nDup===1?"":"s"}</span>}
+    </span>
+  );
+}
+function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onToggle, parentWidth, focusFields, autoPreview, focusVerdict}){
   // Rule-first hierarchy — Conflicting rule → OUR blocks that clash → per-block field comparison. Levels independent.
   const [openRule, setOpenRule] = useState(null);   // one conflicting rule expanded at a time
   const [openBlk, setOpenBlk] = useState({});       // "<ruleId>:<blockIdx>" → expanded
@@ -4178,18 +4519,36 @@ function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onTogg
   const simplified = /request routing demo 2/i.test(draft.name||"");
   const matrixMode = !!(demo && demoData.matrix);   // R22 — field → rules → blocks → detail master-detail layout
   const ruleMatrixMode = !!(demo && demoData.ruleMatrix);   // R23 — rule → fields → blocks, with a field filter
-  // R23 header summary — "N rules affecting N fields" (lives beside the drawer title; hover shows the field names).
-  const rmxRules = ruleMatrixMode ? demoData.ruleMatrix : [];
-  const rmxFields = (()=>{ const a=[]; rmxRules.forEach(r=> r.fields.forEach(f=>{ if(!a.some(x=>x.id===f.id)) a.push(f); })); return a; })();
+  // R23 is reverted to its last-pushed drawer (rule→fields→blocks from ruleMatrix); R24 uses the new
+  // derive-from-preview drawer. `legacy` picks which renders.
+  const legacy = ruleMatrixMode && !!demoData.legacy;
+  const lgRules = legacy ? demoData.ruleMatrix : [];
+  const lgFields = (()=>{ const a=[]; lgRules.forEach(r=> r.fields.forEach(f=>{ if(!a.some(x=>x.id===f.id)) a.push(f); })); return a; })();
+  // NEW drawer content — derived from the SAME preview fixture + matrix as the form-preview chips (single source
+  // of truth). Each entry is one (other-rule, field) clash, verdict conflict|duplicate; rolled up per rule + field.
+  const clashEntries = (ruleMatrixMode && !legacy) ? buildClashEntries(demoData.preview) : [];
+  // nConf/nDup are COUNTS (not booleans) so a rule/field with both shows both — a single dot would hide one.
+  const clashRules = (()=>{ const m=[]; clashEntries.forEach(e=>{ let r=m.find(x=>x.name===e.rule); if(!r){r={name:e.rule,fields:[],nConf:0,nDup:0};m.push(r);} if(r.fields.indexOf(e.fieldId)<0) r.fields.push(e.fieldId); if(e.verdict==="conflict") r.nConf++; else r.nDup++; }); return m; })();
+  const clashFields = (()=>{ const m=[]; clashEntries.forEach(e=>{ let f=m.find(x=>x.id===e.fieldId); if(!f){f={id:e.fieldId,label:e.fieldLabel,rules:[],nConf:0,nDup:0};m.push(f);} if(f.rules.indexOf(e.rule)<0) f.rules.push(e.rule); if(e.verdict==="conflict") f.nConf++; else f.nDup++; }); return m; })();
+  const nConf = clashEntries.filter(e=>e.verdict==="conflict").length;
+  const nDup  = clashEntries.filter(e=>e.verdict==="duplicate").length;
+  const rmxFields = legacy ? lgFields : clashFields;   // header tooltip lists the affected field names
   // If opened by clicking a specific field's flag, show ONLY that field's conflicting rule and expand it.
   // focusFields = the field ids to scope the drawer to (an action's conflicts). null → the whole block (all rows).
   const ff = (focusFields && focusFields.length) ? focusFields : null;
   const demoRows = ff ? demoData.rows.filter(r=> (r.blocks[0].fields||[]).some(f=> ff.indexOf(f.id)>=0)) : demoData.rows;
   useEffect(()=>{ if(!ff) return; const row = demoData.rows.find(r=> (r.blocks[0].fields||[]).some(f=> ff.indexOf(f.id)>=0)); if(row){ setOpenRule(row.id); const fld=(row.blocks[0].fields||[]).find(f=> ff.indexOf(f.id)>=0); if(fld) setSelField(t=>({...t,[row.id+":0"]:fld.id})); } }, [ff && ff.join(",")]);
-  // R23 — opened from a specific field's conflict pip: land in FIELD view scoped to just that field,
-  // instead of the whole rule-first drawer. (Widen again via the filter's "Select all".)
+  // Opened from a specific field's pip: land scoped to it. Field view is conflict-only, so a duplicate-only field
+  // (no conflicts) opens RULE view on its duplicate rule instead — that's where duplicates live. R23 (legacy)
+  // keeps the original always-field-view behaviour.
   useEffect(()=>{
     if(!ruleMatrixMode || !ff || !ff.length) return;
+    if(!legacy && !clashFields.some(f=> f.id===ff[0] && f.nConf>0)){
+      setMx2View("rule");
+      const de = clashEntries.find(e=> e.fieldId===ff[0] && e.verdict==="duplicate");
+      if(de) setMx2Rule(de.rule);
+      return;
+    }
     setMx2View("field");
     setMx2Fields(ff.slice());
     setMx2FieldSel(ff[0]);
@@ -4519,14 +4878,23 @@ function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onTogg
           <div className="flex min-w-0 items-center gap-3">
             <button onClick={onClose} title="Back" className="grid h-8 w-8 shrink-0 place-items-center rounded-md text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"><Ico name="back" size={18}/></button>
             <h2 className="shrink-0 text-[16px] font-bold text-slate-800">Review Conflict</h2>
-            {/* R23 — the summary rides beside the title; hover reveals the conflicting field names */}
-            {ruleMatrixMode &&
+            {/* R23 (legacy) — the pushed "N rules affecting N fields" amber pill */}
+            {ruleMatrixMode && legacy &&
               <span className="group relative min-w-0">
                 <span className="inline-flex cursor-default items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-[12px] font-medium text-amber-700 ring-1 ring-amber-100">
-                  <Ico name="warn" size={12} cls="shrink-0 text-amber-500"/><span className="truncate"><span className="font-semibold">{rmxRules.length} rule{rmxRules.length===1?"":"s"}</span> affecting <span className="font-semibold">{rmxFields.length} field{rmxFields.length===1?"":"s"}</span></span>
+                  <Ico name="warn" size={12} cls="shrink-0 text-amber-500"/><span className="truncate"><span className="font-semibold">{lgRules.length} rule{lgRules.length===1?"":"s"}</span> affecting <span className="font-semibold">{lgFields.length} field{lgFields.length===1?"":"s"}</span></span>
                 </span>
                 <span className="pointer-events-none absolute left-0 top-full z-30 mt-1.5 hidden w-max max-w-[220px] rounded-md bg-slate-800 px-2.5 py-1.5 text-[11px] font-normal leading-relaxed text-white shadow-lg group-hover:block">
-                  <span className="text-slate-300">Conflicting fields:</span> {rmxFields.map(f=>f.label).join(", ")}
+                  <span className="text-slate-300">Conflicting fields:</span> {lgFields.map(f=>f.label).join(", ")}
+                </span>
+              </span>}
+            {/* R24/R25 (new) — conflict + duplicate counts. focusVerdict (R25) shows only the matching one. */}
+            {ruleMatrixMode && !legacy &&
+              <span className="group relative flex min-w-0 items-center gap-1.5">
+                {nConf>0 && focusVerdict!=="duplicate" && <span className="inline-flex shrink-0 cursor-default items-center gap-1.5 rounded-full bg-rose-50 px-2.5 py-1 text-[12px] font-medium text-rose-700 ring-1 ring-rose-100"><span className="h-1.5 w-1.5 rounded-full bg-rose-500"/>{nConf} conflict{nConf===1?"":"s"}</span>}
+                {nDup>0 && focusVerdict!=="conflict" && <span className="inline-flex shrink-0 cursor-default items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-[12px] font-medium text-amber-700 ring-1 ring-amber-100"><span className="h-1.5 w-1.5 rounded-full bg-amber-400"/>{nDup} duplicate{nDup===1?"":"s"}</span>}
+                <span className="pointer-events-none absolute left-0 top-full z-30 mt-1.5 hidden w-max max-w-[240px] rounded-md bg-slate-800 px-2.5 py-1.5 text-[11px] font-normal leading-relaxed text-white shadow-lg group-hover:block">
+                  <span className="text-slate-300">Across {rmxFields.length} field{rmxFields.length===1?"":"s"}:</span> {rmxFields.map(f=>f.label).join(", ")}
                 </span>
               </span>}
           </div>
@@ -4822,7 +5190,8 @@ function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onTogg
               </div>
             );
           })()}
-          {ruleMatrixMode && (()=>{
+          {/* ===== R23 LEGACY drawer — reverted to last push: rule→fields→blocks from ruleMatrix, amber. ===== */}
+          {ruleMatrixMode && legacy && (()=>{
             const rm = demoData.ruleMatrix;
             // union of fields across all rules (for the filter + right-hand scoping)
             const allF = []; rm.forEach(r=> r.fields.forEach(f=>{ if(!allF.some(x=>x.id===f.id)) allF.push({id:f.id, label:f.label}); }));
@@ -5006,6 +5375,162 @@ function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onTogg
                           ))}
                         </div>
                       </> : <div className="text-[12px] text-slate-400">Select a field to see the rules it affects.</div>}
+                    </div>
+                  </div>}
+                </div>
+              </div>
+            );
+          })()}
+          {ruleMatrixMode && !legacy && (()=>{
+            // Everything below is derived from clashEntries (built from the preview fixture) — no separate matrix.
+            // focusVerdict (R25's two-button entry) scopes the whole drawer to one kind: "conflict" (both views)
+            // or "duplicate" (rule view only). null = show both (R24).
+            const fv = focusVerdict || null;
+            const view = fv==="duplicate" ? "rule" : mx2View;   // duplicates are whole-rule → rule view only
+            const ql = mx2Q.trim().toLowerCase();
+            const rules = clashRules.filter(r=> (!ql || r.name.toLowerCase().indexOf(ql)>=0) && (!fv || (fv==="conflict" ? r.nConf>0 : r.nDup>0)));
+            const activeRuleName = (mx2Rule && rules.some(r=>r.name===mx2Rule)) ? mx2Rule : (rules[0] && rules[0].name);
+            const ruleEntries = activeRuleName ? clashEntries.filter(e=> e.rule===activeRuleName && (!fv || e.verdict===fv)) : [];
+            // Field view is conflict-only, so its field list/filter shows only fields that actually conflict.
+            const allF = clashFields.filter(f=> f.nConf>0);
+            const selIds = mx2Fields===null ? allF.map(f=>f.id) : mx2Fields;
+            const selSet = new Set(selIds);
+            const toggleField = id => setMx2Fields(prev=>{ const cur = prev===null ? allF.map(f=>f.id) : prev.slice(); const i=cur.indexOf(id); if(i>=0) cur.splice(i,1); else cur.push(id); return cur; });
+            const flds = allF.filter(f=> selSet.has(f.id));
+            const activeFid = (mx2FieldSel && flds.some(f=>f.id===mx2FieldSel)) ? mx2FieldSel : (flds[0] && flds[0].id);
+            const fieldEntries = activeFid ? clashEntries.filter(e=> e.fieldId===activeFid) : [];
+            const filterLabel = selIds.length===0 ? "No fields" : (selIds.length===allF.length ? "All fields" : (selIds.length + " field" + (selIds.length===1?"":"s")));
+            // This rule's FULL action list (all fields it touches) — the left column of every duplicate card,
+            // so a duplicate is judged whole-rule-vs-whole-rule, not on the single field that flagged it.
+            const curActions = (demoData.preview||[]).filter(p=> p.cur).map(p=> actShort(p.cur, p.curVal, labelOf(p.id)));
+            // Conflicts group then Duplicates group, each a titled set of compare cards. `editOf` (Field view)
+            // gives each card an Edit button for its rule; omit it in Rule view (the rule's Edit is up top).
+            const renderGroups = (entries, titleOf, editOf) => (
+              <div className="space-y-4">
+                {entries.filter(e=>e.verdict==="conflict").length>0 &&
+                  <div>
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-rose-500">Conflicts ({entries.filter(e=>e.verdict==="conflict").length})</div>
+                    <div className="mt-1.5 space-y-1.5">{entries.filter(e=>e.verdict==="conflict").map((e,i)=> <ClashCard key={i} e={e} title={titleOf(e)} editName={editOf ? editOf(e) : null} curActions={curActions}/>)}</div>
+                  </div>}
+                {entries.filter(e=>e.verdict==="duplicate").length>0 &&
+                  <div>
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-amber-500">Duplicates ({entries.filter(e=>e.verdict==="duplicate").length})</div>
+                    <div className="mt-1.5 space-y-1.5">{entries.filter(e=>e.verdict==="duplicate").map((e,i)=> <ClashCard key={i} e={e} title={titleOf(e)} editName={editOf ? editOf(e) : null} curActions={curActions}/>)}</div>
+                  </div>}
+                {!entries.length && <div className="text-[12px] text-slate-400">Nothing to show.</div>}
+              </div>
+            );
+            return (
+              <div>
+                {/* VIEW SWITCHER — left-aligned. (Section 1 removed; its summary now rides beside the drawer title.)
+                    Custom narrow tooltips wrap to 3–4 lines rather than the wide single-line native title. */}
+                {/* Group-by switcher — hidden in duplicate-only mode (duplicates are whole-rule, so Rule view only) */}
+                {fv!=="duplicate" &&
+                <div className="flex items-center gap-2.5">
+                  <span className="text-[11px] font-medium text-slate-400">Group by</span>
+                  <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+                    <div className="relative">
+                      <button type="button" onMouseEnter={()=>setMx2Tip("rule")} onMouseLeave={()=>setMx2Tip(null)} onClick={()=>setMx2View("rule")} className={"rounded-md px-3 py-1 text-[12px] font-medium transition " + (view!=="field" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}>Rule view</button>
+                      {mx2Tip==="rule" && <span className="pointer-events-none absolute left-0 top-full z-30 mt-1.5 w-44 rounded-md bg-slate-800 px-2.5 py-1.5 text-[11px] font-normal leading-relaxed text-white shadow-lg">Group by rule — every rule that conflicts with or duplicates this one, and the fields it touches.</span>}
+                    </div>
+                    <div className="relative">
+                      <button type="button" onMouseEnter={()=>setMx2Tip("field")} onMouseLeave={()=>setMx2Tip(null)} onClick={()=>setMx2View("field")} className={"rounded-md px-3 py-1 text-[12px] font-medium transition " + (view==="field" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}>Field view</button>
+                      {mx2Tip==="field" && <span className="pointer-events-none absolute left-0 top-full z-30 mt-1.5 w-44 rounded-md bg-slate-800 px-2.5 py-1.5 text-[11px] font-normal leading-relaxed text-white shadow-lg">Group by field — every field where another rule conflicts or duplicates, and which rules do.</span>}
+                    </div>
+                  </div>
+                </div>}
+                {/* SECTION 2 — grouped by rule (default) or by field */}
+                <div className={fv!=="duplicate" ? "mt-4" : ""}>
+                  {view!=="field" &&
+                  <div className="grid grid-cols-[minmax(150px,210px)_1fr]">
+                    {/* LEFT — every rule that clashes (a rose dot = conflicts, gold = duplicate-only) */}
+                    <div className="pr-4">
+                      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Rules</div>
+                      {/* rule search — same slot the field filter used to hold, in the drawer's own search style */}
+                      <div className="relative mt-2">
+                        <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"><Ico name="search" size={14}/></span>
+                        <input value={mx2Q} onChange={e=>setMx2Q(e.target.value)} placeholder="Search rules..."
+                          className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50/60 pl-8 pr-3 text-[12.5px] outline-none focus:border-sky-300 focus:bg-white focus:ring-1 focus:ring-sky-200"/>
+                      </div>
+                      {/* divider between the search and the rule list */}
+                      <div className="my-2.5 border-t border-slate-100"/>
+                      <div className="space-y-0.5">
+                        {rules.map(r=>{ const on=r.name===activeRuleName;
+                          return (
+                            <button key={r.name} type="button" onClick={()=>setMx2Rule(r.name)} title={r.name}
+                              className={"block w-full rounded-md px-2.5 py-2 text-left transition " + (on ? "bg-slate-100" : "hover:bg-slate-50")}>
+                              <span className={"block truncate text-[13px] " + (on ? "font-semibold text-slate-900" : "text-slate-700")}>{r.name}</span>
+                              <VerdictBreakdown nConf={r.nConf} nDup={r.nDup}/></button>
+                          );
+                        })}
+                        {rules.length===0 &&
+                          <div className="px-2.5 py-4 text-center">
+                            <div className="text-[12.5px] font-medium text-slate-600">No matching rules found</div>
+                            <div className="mt-1 text-[11.5px] leading-snug text-slate-400">Try searching with a different rule name.</div>
+                          </div>}
+                      </div>
+                    </div>
+                    {/* RIGHT — the selected rule's clashes, split into Conflicts and Duplicates */}
+                    <div className="border-l border-slate-200/70 pl-4">
+                      {activeRuleName ? <>
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <div className="min-w-0 truncate text-[10px] font-semibold uppercase tracking-wide text-slate-400" title={activeRuleName}>{activeRuleName}</div>
+                          <button type="button" onClick={()=> window.open(window.location.pathname + "?editRule=" + encodeURIComponent(activeRuleName), "_blank")} title={"Edit " + activeRuleName + " in a new tab"} className="inline-flex shrink-0 items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-[11.5px] font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-800"><Ico name="pencil" size={12}/> Edit</button>
+                        </div>
+                        {renderGroups(ruleEntries, e=> e.fieldLabel)}
+                      </> : <div className="text-[12px] text-slate-400">Select a rule to see what it clashes on.</div>}
+                    </div>
+                  </div>}
+                  {/* FIELD VIEW — fields (left) → the rules clashing on the selected field (right) */}
+                  {view==="field" &&
+                  <div className="grid grid-cols-[minmax(150px,210px)_1fr]">
+                    {/* LEFT — every field with a clash + the field filter */}
+                    <div className="pr-4">
+                      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Fields</div>
+                      <div className="relative mt-2">
+                        <button type="button" onClick={()=>setMx2FilterOpen(o=>!o)} className={"inline-flex w-full items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[12px] font-medium transition " + (selIds.length!==allF.length ? "border-sky-200 bg-sky-50 text-sky-700" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50")}>
+                          <Ico name="funnel" size={13}/><span className="flex-1 text-left">{filterLabel}</span><Ico name="chevupdown" size={13} cls="shrink-0 text-slate-400"/>
+                        </button>
+                        {mx2FilterOpen && <>
+                          <div className="fixed inset-0 z-10" onClick={()=>setMx2FilterOpen(false)}/>
+                          <div className="absolute left-0 z-20 mt-1 w-56 rounded-lg border border-slate-200 bg-white p-2 shadow-xl">
+                            <div className="flex items-center justify-between gap-2 px-1 pb-1.5">
+                              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Filter fields</span>
+                              <div className="flex items-center gap-1.5">
+                                <button type="button" onClick={()=>setMx2Fields(null)} className="text-[11px] font-medium text-sky-600 hover:text-sky-700">Select all</button>
+                                <span className="text-slate-300">·</span>
+                                <button type="button" onClick={()=>setMx2Fields([])} className="text-[11px] font-medium text-slate-500 hover:text-slate-700">Deselect all</button>
+                              </div>
+                            </div>
+                            {allF.map(f=>{ const on=selSet.has(f.id);
+                              return (
+                                <label key={f.id} className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1.5 text-[13px] hover:bg-slate-50">
+                                  <input type="checkbox" checked={on} onChange={()=>toggleField(f.id)} className="h-3.5 w-3.5 accent-sky-500"/>
+                                  <span className="text-slate-700">{f.label}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </>}
+                      </div>
+                      <div className="my-2.5 border-t border-slate-100"/>
+                      <div className="space-y-0.5">
+                        {flds.map(f=>{ const on=f.id===activeFid;
+                          return (
+                            <button key={f.id} type="button" onClick={()=>setMx2FieldSel(f.id)} title={f.label}
+                              className={"block w-full rounded-md px-2.5 py-2 text-left transition " + (on ? "bg-slate-100" : "hover:bg-slate-50")}>
+                              <span className={"block truncate text-[13px] " + (on ? "font-semibold text-slate-900" : "text-slate-700")}>{f.label}</span>
+                              <VerdictBreakdown nConf={f.nConf} nDup={0}/></button>
+                          );
+                        })}
+                        {flds.length===0 && <div className="px-2.5 py-3 text-[12px] text-slate-400">No fields selected.</div>}
+                      </div>
+                    </div>
+                    {/* RIGHT — the selected field's clashing rules, split into Conflicts and Duplicates */}
+                    <div className="border-l border-slate-200/70 pl-4">
+                      {/* Field view is conflict-only — a duplicate is a whole-rule concern, so it belongs in Rule view */}
+                      {activeFid ? renderGroups(fieldEntries.filter(e=> e.verdict==="conflict"), e=> e.rule, e=> e.rule)
+                        : <div className="text-[12px] text-slate-400">Select a field to see the rules that clash on it.</div>}
                     </div>
                   </div>}
                 </div>
@@ -5206,6 +5731,8 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
   const [inspectOpen, setInspectOpen] = useState(false);
   const [inspectFields, setInspectFields] = useState(null);   // field ids to focus the drawer on (null = whole block)
   const openFieldConflict = fids => { setInspectFields(fids && fids.length ? fids : null); setInspectOpen(true); };
+  const [inspectVerdict, setInspectVerdict] = useState(null);   // R25 two-button entry: "conflict" | "duplicate" | null
+  const openInspect = verdict => { setInspectFields(null); setInspectVerdict(verdict||null); setInspectOpen(true); };
   // Disable a conflicting rule from the inspector → it stops running (excluded from conflicts) and persists.
   const disableRule = rule => { rule.disabled = true; persistRule(rule); bumpRules(); };
   // Inspector Action toggle — enable/disable a conflicting rule inline; disabling drops it from conflictsFor on recompute.
@@ -5310,10 +5837,22 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
           <div className="flex items-center gap-5">
             {/* PROTOTYPE: hardcoded to the fixed demo — always surfaces the scenario's conflicts */}
             <span className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-amber-700"><span className="w-2 h-2 rounded-full bg-amber-500"/>{demoFor(draft).fields.length} conflicts with existing rules</span>
-            <button type="button" onClick={()=>{ setInspectFields(null); setInspectOpen(true); }}
-              className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-[12px] font-semibold text-amber-700 transition hover:bg-amber-100">
-              View conflicts<Ico name="chevdown" size={12} cls="-rotate-90"/>
-            </button>
+            {demoFor(draft).dualEntry
+              ? /* R25 — two separate drawer entries, verdict-scoped */
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={()=>openInspect("conflict")}
+                    className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1 text-[12px] font-semibold text-rose-700 transition hover:bg-rose-100">
+                    <span className="h-1.5 w-1.5 rounded-full bg-rose-500"/>View conflicts<Ico name="chevdown" size={12} cls="-rotate-90"/>
+                  </button>
+                  <button type="button" onClick={()=>openInspect("duplicate")}
+                    className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-[12px] font-semibold text-amber-700 transition hover:bg-amber-100">
+                    <span className="h-1.5 w-1.5 rounded-full bg-amber-400"/>View duplicates<Ico name="chevdown" size={12} cls="-rotate-90"/>
+                  </button>
+                </div>
+              : <button type="button" onClick={()=>{ setInspectFields(null); setInspectOpen(true); }}
+                  className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-[12px] font-semibold text-amber-700 transition hover:bg-amber-100">
+                  View conflicts<Ico name="chevdown" size={12} cls="-rotate-90"/>
+                </button>}
           </div>
           <div className="flex items-center gap-3">
             {/* always-visible reason the save is blocked — no click needed to discover what's missing */}
@@ -5387,8 +5926,8 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
             visible behind and the stack reads as "one level deeper" (+56 cancels the inspector's own inset). */}
         {/* R23's Run Test result. Deliberately NOT closed when the conflict drawer opens over it — the drawer's
             Back button then returns the user to the exact form they left, at the sentence they clicked. */}
-        {preview23 && <RuleTestPreview width={Math.round(rz.width * 0.9)} onClose={()=>setPreview23(false)} onFieldConflict={openFieldConflict}/>}
-        {inspectOpen && <ConflictInspector draft={draft} conflicts={conflicts} parentWidth={Math.round(rz.width * 0.9) + 56} focusFields={inspectFields} autoPreview={testAutoPreview} onClose={()=>{ setInspectOpen(false); setInspectFields(null); setTestAutoPreview(false); }} onEdit={loadRule} onDisable={disableRule} onToggle={toggleRule}/>}
+        {preview23 && <RuleTestPreview width={Math.round(rz.width * 0.9)} preview={demoFor(draft).preview} legacy={!!demoFor(draft).legacy} onClose={()=>setPreview23(false)} onFieldConflict={openFieldConflict}/>}
+        {inspectOpen && <ConflictInspector draft={draft} conflicts={conflicts} parentWidth={Math.round(rz.width * 0.9) + 56} focusFields={inspectFields} focusVerdict={inspectVerdict} autoPreview={testAutoPreview} onClose={()=>{ setInspectOpen(false); setInspectFields(null); setInspectVerdict(null); setTestAutoPreview(false); }} onEdit={loadRule} onDisable={disableRule} onToggle={toggleRule}/>}
       </aside>
     </>
   );
