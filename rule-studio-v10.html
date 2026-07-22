@@ -103,6 +103,13 @@ const ICON = {
   user:      <><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 016-6h4a6 6 0 016 6v1"/></>,
   wrench:    <path d="M14.7 6.3a4 4 0 00-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 005.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z"/>,
   funnel:    <path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/>,
+  move:      <path d="M12 2v20M2 12h20M12 2l-3 3M12 2l3 3M12 22l-3-3M12 22l3-3M2 12l3-3M2 12l3 3M22 12l-3-3M22 12l-3 3"/>,
+  external:  <><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><path d="M15 3h6v6M10 14L21 3"/></>,
+  expand:    <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>,
+  collapse:  <path d="M4 14h6v6M20 10h-6V4M14 10l6-6M10 14l-6 6"/>,
+  download:  <><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></>,
+  checks:    <path d="M2 12l4 4 8-9M9 15l1 1 8-9"/>,
+  sparkles:  <><path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6z"/><path d="M18 14l.8 2.2L21 17l-2.2.8L18 20l-.8-2.2L15 17l2.2-.8z"/></>,
   chevupdown:<path d="M7 15l5 5 5-5M7 9l5-5 5 5"/>,
   tick:      <path d="M20 6L9 17l-5-5"/>,
 };
@@ -562,14 +569,13 @@ const RULE_DB = [
   // blocks → expand a block to see what the current rule vs that block does to the field. Maps to DEMO_S7.
   { id:"r22", name:"R22 - Conflict Matrix Demo", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:0, recommended:false,
     conditions:[{fieldId:"priority", op:"In", value:"High"}],
-    actions:[{behavior:"Set Value", fieldId:"status", value:"In Progress"},{behavior:"Hide", fieldId:"category"},{behavior:"Set Value", fieldId:"priority", value:"High"},{behavior:"Mandate", fieldId:"assignee"}],
+    actions:[{behavior:"Set Value", fieldId:"status", value:"In Progress"},{behavior:"Hide", fieldId:"category"},{behavior:"Mandate", fieldId:"assignee"}],
     blocks:[
       { match:"all", time:"While the form is being filled", people:"Everyone",
         conditions:[{fieldId:"priority", op:"In", value:"High"}],
         actions:[
           {behavior:"Set Value", fieldId:"status", value:"In Progress"},
           {behavior:"Hide", fieldIds:["category"], fieldId:"category"},
-          {behavior:"Set Value", fieldId:"priority", value:"High"},
           {behavior:"Mandate", fieldIds:["assignee"], fieldId:"assignee"},
         ] },
     ] },
@@ -577,13 +583,12 @@ const RULE_DB = [
   // and the blocks touching each on the RIGHT. A search + field-filter toolbar narrows both sides. Maps to DEMO_S8.
   { id:"r23", name:"R23 - Rule Conflict Matrix", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:0, recommended:false,
     conditions:[{fieldId:"priority", op:"In", value:"High"}],
-    actions:[{behavior:"Set Value", fieldId:"status", value:"In Progress"},{behavior:"Set Value", fieldId:"priority", value:"High"},{behavior:"Hide", fieldId:"category"},{behavior:"Mandate", fieldId:"assignee"},{behavior:"Set Value", fieldId:"impact", value:"High"},{behavior:"Mandate", fieldId:"tags"},{behavior:"Hide", fieldId:"fill_template"},{behavior:"Disable", fieldId:"transition_model"}],
+    actions:[{behavior:"Set Value", fieldId:"status", value:"In Progress"},{behavior:"Hide", fieldId:"category"},{behavior:"Mandate", fieldId:"assignee"},{behavior:"Set Value", fieldId:"impact", value:"High"},{behavior:"Mandate", fieldId:"tags"},{behavior:"Hide", fieldId:"fill_template"},{behavior:"Disable", fieldId:"transition_model"}],
     blocks:[
       { match:"all", time:"While the form is being filled", people:"Everyone",
         conditions:[{fieldId:"priority", op:"In", value:"High"}],
         actions:[
           {behavior:"Set Value", fieldId:"status", value:"In Progress"},
-          {behavior:"Set Value", fieldId:"priority", value:"High"},
           {behavior:"Hide", fieldIds:["category"], fieldId:"category"},
           {behavior:"Mandate", fieldIds:["assignee"], fieldId:"assignee"},
           {behavior:"Set Value", fieldId:"impact", value:"High"},
@@ -600,13 +605,12 @@ const RULE_DB = [
   // it on Create — different actions, overlapping windows → conflict). exec = On Create and Edit.
   { id:"r24", name:"R24 - Complex Combinations", status:"Active", when:"When the form is submitted", audience:"Everyone", usedInForms:0, recommended:false, exec:"On Create and Edit",
     conditions:[{fieldId:"priority", op:"In", value:"High"}],
-    actions:[{behavior:"Hide", fieldId:"category"},{behavior:"Set Value", fieldId:"priority", value:"High"},{behavior:"Mandate", fieldId:"status"},{behavior:"Mandate", fieldId:"assignee"},{behavior:"Hide", fieldId:"impact"},{behavior:"Set Value", fieldId:"department", value:"IT"}],
+    actions:[{behavior:"Hide", fieldId:"category"},{behavior:"Mandate", fieldId:"status"},{behavior:"Mandate", fieldId:"assignee"},{behavior:"Hide", fieldId:"impact"},{behavior:"Set Value", fieldId:"department", value:"IT"}],
     blocks:[
       { match:"all", time:"When the form is submitted", people:"Everyone", exec:"On Create and Edit",
         conditions:[{fieldId:"priority", op:"In", value:"High"}],
         actions:[
           {behavior:"Hide", fieldIds:["category"], fieldId:"category"},
-          {behavior:"Set Value", fieldId:"priority", value:"High"},
           {behavior:"Mandate", fieldIds:["status"], fieldId:"status"},
           {behavior:"Mandate", fieldIds:["assignee"], fieldId:"assignee"},
           {behavior:"Hide", fieldIds:["impact"], fieldId:"impact"},
@@ -617,13 +621,12 @@ const RULE_DB = [
   // conflicts only) and View duplicates (Rule view only, duplicates only). See DEMO_S10 (dualEntry).
   { id:"r25", name:"R25 - Conflict & Similar Split", status:"Active", when:"When the form is submitted", audience:"Everyone", usedInForms:0, recommended:false, exec:"On Create and Edit",
     conditions:[{fieldId:"priority", op:"In", value:"High"}],
-    actions:[{behavior:"Hide", fieldId:"category"},{behavior:"Set Value", fieldId:"priority", value:"High"},{behavior:"Mandate", fieldId:"status"},{behavior:"Mandate", fieldId:"assignee"},{behavior:"Hide", fieldId:"impact"},{behavior:"Set Value", fieldId:"department", value:"IT"}],
+    actions:[{behavior:"Hide", fieldId:"category"},{behavior:"Mandate", fieldId:"status"},{behavior:"Mandate", fieldId:"assignee"},{behavior:"Hide", fieldId:"impact"},{behavior:"Set Value", fieldId:"department", value:"IT"}],
     blocks:[
       { match:"all", time:"When the form is submitted", people:"Everyone", exec:"On Create and Edit",
         conditions:[{fieldId:"priority", op:"In", value:"High"}],
         actions:[
           {behavior:"Hide", fieldIds:["category"], fieldId:"category"},
-          {behavior:"Set Value", fieldId:"priority", value:"High"},
           {behavior:"Mandate", fieldIds:["status"], fieldId:"status"},
           {behavior:"Mandate", fieldIds:["assignee"], fieldId:"assignee"},
           {behavior:"Hide", fieldIds:["impact"], fieldId:"impact"},
@@ -908,32 +911,32 @@ function FieldControl({field}){
    engine-driven off RULE_DB. */
 const STATUS_FIELD_RULES = [
   // 1 — action only, no conditions
-  { id:"sf1", name:"Hides Status on the portal", audience:"Requesters only",
+  { id:"sf1", name:"Hides Status on the portal", audience:"Requesters only", exec:"On Create and Edit", when:"When the form opens",
     conditions:[], actions:[{behavior:"Hide", fieldId:"status"}] },
   // 2 — condition only → triggers an action on another field
-  { id:"sf2", name:"Reveal Cc Emails when On Hold", audience:"Everyone",
+  { id:"sf2", name:"Reveal Cc Emails when On Hold", audience:"Everyone", exec:"On Edit", when:"While the form is being filled",
     conditions:[{fieldId:"status", op:"In", value:"On Hold"}], actions:[{behavior:"Show", fieldId:"cc_emails"}] },
   // 3 — condition only → clears another field
-  { id:"sf3", name:"Clear Assignee when reopened", audience:"Technicians only",
+  { id:"sf3", name:"Clear Assignee when reopened", audience:"Technicians only", exec:"On Edit", when:"When the form is submitted",
     conditions:[{fieldId:"status", op:"In", value:"Reopened"}], actions:[{behavior:"Clear Value", fieldId:"assignee"}] },
   // 4 — KEY example: Status in all 3 blocks, a different role in each (condition / action / both)
-  { id:"sf4", name:"Priority & assignment workflow", audience:"Technicians only",
+  { id:"sf4", name:"Priority & assignment workflow", audience:"Technicians only", exec:"On Create and Edit", when:"While the form is being filled",
     blocks:[
       { conditions:[{fieldId:"status", op:"In", value:"In Progress"}], actions:[{behavior:"Mandate", fieldId:"assignee"}] },
       { conditions:[{fieldId:"impact",  op:"In", value:"High"}],        actions:[{behavior:"Set Value", fieldId:"status", value:"On Hold"}] },
       { conditions:[{fieldId:"status", op:"In", value:"Resolved"}],    actions:[{behavior:"Set Value", fieldId:"status", value:"Closed"},{behavior:"Clear Value", fieldId:"cc_emails"}] },
     ] },
   // 5 — condition only → locks another field
-  { id:"sf5", name:"Lock Priority after assignment", audience:"Technicians only",
+  { id:"sf5", name:"Lock Priority after assignment", audience:"Technicians only", exec:"On Edit", when:"While the form is being filled",
     conditions:[{fieldId:"status", op:"In", value:"Assigned"}], actions:[{behavior:"Disable", fieldId:"priority"}] },
   // 6 — action only, opposite behavior to rule 1
-  { id:"sf6", name:"Show Status on the portal", audience:"Everyone",
+  { id:"sf6", name:"Show Status on the portal", audience:"Everyone", exec:"On Create and Edit", when:"When the form opens",
     conditions:[], actions:[{behavior:"Show", fieldId:"status"}] },
 ];
 // Description (scalability stress test) — a single action gated by TWO condition groups of three
 // conditions each, i.e. (a AND b AND c) AND (d AND e AND f) → make Description mandatory.
 const DESCRIPTION_FIELD_RULES = [
-  { id:"df1", name:"Require Description for major incidents", audience:"Everyone",
+  { id:"df1", name:"Require Description for major incidents", audience:"Everyone", exec:"On Create and Edit", when:"When the form is submitted",
     conditions:[
       { group:true, conditions:[
         {fieldId:"priority", op:"In", value:"High"},
@@ -948,7 +951,16 @@ const DESCRIPTION_FIELD_RULES = [
     ],
     actions:[{behavior:"Mandate", fieldId:"description"}] },
 ];
-const FIELD_RULE_FIXTURES = { status: STATUS_FIELD_RULES, description: DESCRIPTION_FIELD_RULES };
+// Impact drawer demo — ONE rule that acts on Impact across all three blocks (a different action + condition each).
+const IMPACT_FIELD_RULES = [
+  { id:"imf1", name:"Impact handling workflow", audience:"Everyone",
+    blocks:[
+      { time:"When the form is submitted",      exec:"On Create and Edit", conditions:[{fieldId:"priority", op:"In", value:"High"}],     actions:[{behavior:"Set Value", fieldId:"impact", value:"High"}] },
+      { time:"While the form is being filled",  exec:"On Edit",            conditions:[{fieldId:"status",   op:"In", value:"On Hold"}],  actions:[{behavior:"Mandate",   fieldId:"impact"}] },
+      { time:"When the form opens",             exec:"On Create",          conditions:[{fieldId:"category", op:"In", value:"Hardware"}], actions:[{behavior:"Hide",      fieldId:"impact"}] },
+    ] },
+];
+const FIELD_RULE_FIXTURES = { status: STATUS_FIELD_RULES, description: DESCRIPTION_FIELD_RULES, impact: IMPACT_FIELD_RULES };
 const fxBlocks = r => (r.blocks && r.blocks.length) ? r.blocks : [{conditions:r.conditions||[], actions:r.actions||[]}];
 const fxLeaves = b => { const raw=b.conditions||[]; return raw.some(c=>c&&c.group) ? raw.filter(c=>c&&c.group).reduce((a,g)=>a.concat(g.conditions||[]),[]) : raw; };
 const fixtureUses = (r, fid, kind) => fxBlocks(r).some(b => kind==="cond"
@@ -1256,14 +1268,14 @@ function ConfirmDeleteRule({name, onCancel, onConfirm}){
 function ConflictTag({count, open, onClick}){
   return (
     <button type="button" onClick={onClick} title="View conflicts"
-      className={"inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-semibold ring-1 transition shrink-0 " + (open ? "bg-amber-100 text-amber-800 ring-amber-300" : "bg-amber-50 text-amber-700 ring-amber-200 hover:bg-amber-100")}>
-      <Ico name="warn" size={10}/> {count} conflict{count===1?"":"s"}<Ico name="chevdown" size={9} cls={open?"":"-rotate-90"}/>
+      className={"inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 transition shrink-0 " + (open ? "bg-rose-100 text-rose-700 ring-rose-300" : "bg-rose-50 text-rose-600 ring-rose-200 hover:bg-rose-100")}>
+      <Ico name="warn" size={10}/> {count} conflict{count===1?"":"s"}
     </button>
   );
 }
 function RulesListing({customSel, onEditRule, onCustom, onToast}){
   const [q, setQ] = useState("");
-  const [tab, setTab] = useState("all");   // all | form | custom
+  const [tab, setTab] = useState("form");   // form | custom
   const [sel, setSel] = useState(()=>new Set());
   const [enabled, setEnabled] = useState({});   // key → on (overrides the default)
   const [conflictRule, setConflictRule] = useState(null);   // rule whose Review Conflict drawer is open
@@ -1308,48 +1320,57 @@ function RulesListing({customSel, onEditRule, onCustom, onToast}){
   const allOn = visKeys.length>0 && visKeys.every(k=>sel.has(k));
   const toggleAll = () => setSel(allOn ? new Set() : new Set(visKeys));
   const open = row => row.kind==="custom" ? (onCustom && onCustom(row.id)) : (onEditRule && onEditRule(row.id));
-  const Seg = ({id, label, n}) => (
+  const Seg = ({id, label}) => (
     <button onClick={()=>setTab(id)}
-      className={"h-8 px-3 rounded-md text-[12.5px] font-medium transition inline-flex items-center gap-1.5 " + (tab===id ? "bg-white text-slate-800 shadow-sm ring-1 ring-slate-200" : "text-slate-500 hover:text-slate-700")}>
-      {label}<span className={"text-[10.5px] rounded-full px-1.5 " + (tab===id ? "bg-sky-50 text-[#1180c1]" : "bg-slate-200/70 text-slate-500")}>{n}</span>
+      className={"h-8 px-4 rounded-full text-[12.5px] font-medium transition " + (tab===id ? "bg-white text-slate-800 shadow-sm ring-1 ring-slate-200" : "text-slate-500 hover:text-slate-700")}>
+      {label}
     </button>
   );
-  const COLS = "grid grid-cols-[34px_minmax(320px,2.2fr)_140px_150px_180px_120px_84px_116px] gap-3 items-center";
+  const COLS = "grid grid-cols-[minmax(300px,2.4fr)_150px_130px_150px_180px_96px_140px] gap-3 items-center";
   return (
     <div className="h-full overflow-y-auto bg-slate-50 px-8 py-6">
       <div className="max-w-[1400px] mx-auto">
+        {/* page title */}
         <div className="mb-4">
-          <h3 className="text-[18px] font-semibold text-slate-800">Form Rules</h3>
-          <p className="text-[13px] text-slate-500 mt-0.5">Every saved rule on this form — field rules and configured custom governance policies.</p>
-        </div>
-        <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
-          <div className="inline-flex items-center gap-1 rounded-lg bg-slate-100 p-1">
-            <Seg id="all" label="All" n={all.length}/>
-            <Seg id="form" label="Form Rules" n={formRows.length}/>
-            <Seg id="custom" label="Custom Rules" n={customRows.length}/>
+          <div className="flex items-center gap-2">
+            <h3 className="text-[19px] font-semibold text-slate-800">Request Form Management</h3>
           </div>
-          <div className="relative">
-            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"><Ico name="search" size={14}/></span>
-            <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search rules"
-              className="h-9 w-60 pl-8 pr-3 rounded-lg border border-slate-200 bg-white text-[13px] outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100"/>
+          <p className="text-[13px] text-slate-500 mt-0.5">Build rule-based flows that route, validate and act on requests.
+            <a className="ml-1.5 inline-flex items-center gap-1 text-[#1180c1] font-medium hover:underline cursor-pointer">view_setup_guide<Ico name="external" size={12}/></a>
+          </p>
+        </div>
+        {/* sub-tab pills + search / filter */}
+        <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+          <div className="inline-flex items-center gap-1 rounded-full bg-slate-100 p-1">
+            <Seg id="form" label="Form Rules"/>
+            <Seg id="custom" label="Custom rules"/>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"><Ico name="search" size={14}/></span>
+              <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search"
+                className="h-9 w-56 pl-8 pr-3 rounded-lg border border-slate-200 bg-white text-[13px] outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100"/>
+            </div>
+            <button className="h-9 inline-flex items-center gap-1.5 px-3 rounded-lg border border-slate-200 bg-white text-[13px] text-slate-600 hover:bg-slate-50 transition">
+              <Ico name="funnel" size={14} cls="text-slate-400"/> All <Ico name="chevdown" size={13} cls="text-slate-400"/>
+            </button>
           </div>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
           <div className="overflow-x-auto">
-            <div className="min-w-[1160px]">
+            <div className="min-w-[1120px]">
               {/* column header */}
               <div className={COLS + " px-4 py-2.5 bg-slate-50 border-b border-slate-200 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400"}>
-                <CheckBox on={allOn} onChange={toggleAll}/>
-                <span>Name</span>
-                <span>Rule Execution On</span>
-                <span>Rule Applicable For</span>
-                <span>Rule Event</span>
+                <span>Rule Name</span>
+                <span>Execution</span>
+                <span>Applies to</span>
+                <span>Event</span>
                 <span>Created Date</span>
                 <span className="text-center">Enabled</span>
-                <span className="text-right">Actions</span>
+                <span className="text-center">Actions</span>
               </div>
               <div className="divide-y divide-slate-100">
-                {rows.map(row=>{
+                {rows.map((row, idx)=>{
                   const k = keyOf(row);
                   const conflicts = conflictsFor(row.rule);
                   return (
@@ -1358,35 +1379,33 @@ function RulesListing({customSel, onEditRule, onCustom, onToast}){
                       onClick={()=>open(row)}
                       onDragOver={e=>{ if(!dragKey || dragKey===k) return; e.preventDefault(); const r=e.currentTarget.getBoundingClientRect(); const edge=(e.clientY-r.top)<r.height/2?"before":"after"; setDropTarget(dt=> (dt&&dt.key===k&&dt.edge===edge)?dt:{key:k,edge}); }}
                       onDrop={e=>{ if(!dragKey || dragKey===k){ setDropTarget(null); return; } e.preventDefault(); const r=e.currentTarget.getBoundingClientRect(); const before=(e.clientY-r.top)<r.height/2; reorder(dragKey, k, before); setDragKey(null); setDropTarget(null); }}
-                      className={COLS + " relative px-4 py-3 cursor-pointer transition hover:bg-slate-50/80 group " + (sel.has(k) ? "bg-sky-50/40 " : "") + (dragKey===k ? "opacity-40 " : "")}>
-                      {/* drag affordance — grip in the left padding, visible on hover; only the grip starts a drag */}
-                      <span draggable
-                        onDragStart={e=>{ e.stopPropagation(); setDragKey(k); e.dataTransfer.effectAllowed="move"; try{ e.dataTransfer.setData("text/plain", k); }catch(_){} }}
-                        onDragEnd={()=>{ setDragKey(null); setDropTarget(null); }}
-                        onClick={e=>e.stopPropagation()} title="Drag to reorder"
-                        className="absolute left-0 top-1/2 -translate-y-1/2 grid place-items-center w-4 h-7 text-slate-300 opacity-0 group-hover:opacity-100 cursor-grab active:cursor-grabbing transition"><Ico name="grip" size={14}/></span>
+                      className={COLS + " relative px-4 py-3 cursor-pointer transition hover:bg-slate-50/80 group " + (dragKey===k ? "opacity-40 " : "")}>
                       {/* drop indicator line */}
                       {dropTarget && dropTarget.key===k && <span className={"absolute left-0 right-0 h-0.5 bg-sky-500 z-10 pointer-events-none " + (dropTarget.edge==="before" ? "top-0" : "-bottom-px")}/>}
-                      <CheckBox on={sel.has(k)} onChange={()=>toggleSel(row)}/>
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 min-w-0">
-                          <span className="text-[13.5px] font-semibold text-slate-800 truncate">{row.name}</span>
+                          <span className="text-[13.5px] font-semibold text-slate-800 truncate"><span className="text-slate-400 font-medium mr-1">{idx+1}.</span>{row.name}</span>
                           {row.kind==="custom" && <TypeBadge kind="custom"/>}
                           {/* clicking the pill opens THIS rule's Review Conflict drawer directly */}
                           {conflicts.length>0 && <ConflictTag count={conflicts.length} open={false} onClick={e=>{ e.stopPropagation(); setConflictRule(row.rule); }}/>}
                         </div>
-                        <div className="text-[12px] text-slate-500 truncate">{row.summary}</div>
                       </div>
                       <div className="text-[12.5px] text-slate-600 truncate">{row.exec}</div>
                       <div className="text-[12.5px] text-slate-600 truncate">{row.applicable}</div>
                       <div className="text-[12.5px] text-slate-600 truncate">{row.event}</div>
                       <div className="text-[12.5px] text-slate-500 truncate">{row.created}</div>
                       <div className="flex justify-center"><RowToggle on={isOn(row)} onChange={v=>setOn(row,v)}/></div>
-                      <div className="flex items-center justify-end gap-1">
-                        <button onClick={e=>{ e.stopPropagation(); open(row); }} title={row.kind==="custom" ? "Configure" : "Edit"}
-                          className="w-7 h-7 grid place-items-center rounded-md text-slate-400 hover:text-[#1180c1] hover:bg-sky-50 transition"><Ico name={row.kind==="custom" ? "sliders" : "pencil"} size={15}/></button>
+                      <div className="flex items-center justify-center gap-1">
+                        {/* move / reorder — drag from this handle */}
+                        <button draggable
+                          onDragStart={e=>{ e.stopPropagation(); setDragKey(k); e.dataTransfer.effectAllowed="move"; try{ e.dataTransfer.setData("text/plain", k); }catch(_){} }}
+                          onDragEnd={()=>{ setDragKey(null); setDropTarget(null); }}
+                          onClick={e=>e.stopPropagation()} title="Drag to reorder"
+                          className="w-7 h-7 grid place-items-center rounded-md text-slate-400 hover:text-[#1180c1] hover:bg-sky-50 cursor-grab active:cursor-grabbing transition"><Ico name="move" size={15}/></button>
                         {row.kind==="form" &&
                           <button onClick={e=>{ e.stopPropagation(); doDuplicate(row); }} title="Duplicate rule" className="w-7 h-7 grid place-items-center rounded-md text-slate-400 hover:text-[#1180c1] hover:bg-sky-50 transition"><Ico name="copy" size={15}/></button>}
+                        <button onClick={e=>{ e.stopPropagation(); open(row); }} title={row.kind==="custom" ? "Configure" : "Edit"}
+                          className="w-7 h-7 grid place-items-center rounded-md text-slate-400 hover:text-[#1180c1] hover:bg-sky-50 transition"><Ico name={row.kind==="custom" ? "sliders" : "pencil"} size={15}/></button>
                         {row.kind==="form" &&
                           <button onClick={e=>{ e.stopPropagation(); setConfirmDel(row); }} title="Delete rule" className="w-7 h-7 grid place-items-center rounded-md text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition"><Ico name="trash" size={15}/></button>}
                       </div>
@@ -2845,23 +2864,37 @@ function V7FieldPicker({value, onChange, placeholder, conflict, onConflict, conf
   );
 }
 // Action target selector — collapsed control. Empty → "Choose fields"; 1 → the field; many → "Status + N more".
-// Opens the dual-pane transfer modal; NEVER renders the full selection as chips.
+// Click opens a compact popover (search + live multi-select); its expand button opens the full dual-pane "Select fields" modal.
 function V7TargetSelect({ ids, onChange, conflictIds, onConflict }){
-  const [open, setOpen] = useState(false);
-  const [tip, setTip] = useState(null);     // {left, top} for the portaled hover preview of all selected fields
-  const [cfTip, setCfTip] = useState(null); // hover tooltip for the conflict indicator
+  const [view, setView] = useState(null);   // null | "pop" | "modal"
+  const [pq, setPq] = useState("");          // popover search query
+  const [pos, setPos] = useState(null);      // popover anchor position
+  const [tip, setTip] = useState(null);      // {left, top} for the portaled hover preview of all selected fields
+  const [cfTip, setCfTip] = useState(null);  // hover tooltip for the conflict indicator
   const btn = useRef(null);
   const cf = useRef(null);
   const n = ids.length;
   const cfList = conflictIds || [];         // ids among the selection that conflict
   const cfN = cfList.length;
   const label = n===0 ? "Choose fields" : (n===1 ? labelOf(ids[0]) : labelOf(ids[0]) + " + " + (n-1) + " more");
-  const showTip = () => { if(!n || !btn.current) return; const r=btn.current.getBoundingClientRect(); const W=240; let left=r.left; if(left+W>window.innerWidth-8) left=window.innerWidth-W-8; if(left<8) left=8; setTip({left, top:r.bottom+6}); };
+  const openPop = () => {
+    if(!btn.current) return;
+    const r = btn.current.getBoundingClientRect();
+    const W = 440, H = 380;
+    let left = r.left; if(left+W>window.innerWidth-8) left=window.innerWidth-W-8; if(left<8) left=8;
+    const fitsBelow = r.bottom+4+H <= window.innerHeight-8;
+    setPos((fitsBelow || r.top<H) ? {left, top:r.bottom+4} : {left, bottom:(window.innerHeight-r.top)+4});
+    setPq(""); setTip(null); setView("pop");
+  };
+  const toggle = id => onChange(ids.indexOf(id)>=0 ? ids.filter(x=>x!==id) : [...ids, id]);
+  const pql = pq.trim().toLowerCase();
+  const popList = V7_FIELD_FLAT.filter(f=> !pql || f.label.toLowerCase().indexOf(pql)>=0);
+  const showTip = () => { if(!n || !btn.current || view) return; const r=btn.current.getBoundingClientRect(); const W=240; let left=r.left; if(left+W>window.innerWidth-8) left=window.innerWidth-W-8; if(left<8) left=8; setTip({left, top:r.bottom+6}); };
   const hideTip = () => setTip(null);
   const showCfTip = () => { if(!cf.current) return; const r=cf.current.getBoundingClientRect(); const W=220; let left=r.right-W; if(left<8) left=8; setCfTip({left, top:r.bottom+8}); };
   return (
     <>
-      <button ref={btn} type="button" onClick={()=>setOpen(true)} onMouseEnter={showTip} onMouseLeave={hideTip}
+      <button ref={btn} type="button" onClick={()=> view?setView(null):openPop()} onMouseEnter={showTip} onMouseLeave={hideTip}
         className={"cursor-pointer h-9 w-full rounded-md border bg-white px-2.5 text-[13px] transition inline-flex items-center justify-between gap-1.5 " + (n ? "border-slate-200 text-slate-700 hover:border-slate-300" : "border-slate-200 italic text-slate-400 hover:border-slate-300")}>
         <span className="truncate">{label}</span>
         {/* right cluster — conflict indicator (metadata about the selected fields) sits ~10px before the chevron */}
@@ -2878,7 +2911,7 @@ function V7TargetSelect({ ids, onChange, conflictIds, onConflict }){
         </span>
       </button>
       {/* Hover preview — portaled so it escapes the THEN card's overflow-hidden; lists every selected field */}
-      {tip && n>0 && ReactDOM.createPortal(
+      {tip && n>0 && !view && ReactDOM.createPortal(
         <div style={{left:tip.left, top:tip.top}} className="fixed z-[65] w-[240px] rounded-lg bg-white shadow-xl ring-1 ring-slate-200 p-2.5 pointer-events-none">
           <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1.5">Selected fields</div>
           <ul className="max-h-44 overflow-y-auto space-y-0.5 pr-0.5">
@@ -2895,7 +2928,33 @@ function V7TargetSelect({ ids, onChange, conflictIds, onConflict }){
           </ul>
           <div className="mt-2 border-t border-slate-100 pt-1.5 text-[11px] text-slate-400">Click to view conflict details.</div>
         </div>, document.body)}
-      {open && <V7TargetModal ids={ids} onApply={next=>{ onChange(next); setOpen(false); }} onClose={()=>setOpen(false)}/>}
+      {/* Compact popover — quick multi-select (live), with a search + expand-to-modal button */}
+      {view==="pop" && pos && ReactDOM.createPortal(
+        <div className="fixed inset-0 z-[60]" onMouseDown={()=>setView(null)}>
+          <div onMouseDown={e=>e.stopPropagation()} className="absolute v10-pop flex flex-col bg-white rounded-xl shadow-2xl ring-1 ring-slate-200 overflow-hidden w-[440px] max-w-[calc(100vw-16px)]" style={{left:pos.left, ...(pos.top!=null ? {top:pos.top} : {bottom:pos.bottom}), maxHeight:"380px"}}>
+            <div className="flex items-center gap-2 p-2.5 border-b border-slate-100">
+              <div className="relative flex-1">
+                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"><Ico name="search" size={14}/></span>
+                <input autoFocus value={pq} onChange={e=>setPq(e.target.value)} placeholder="Search"
+                  className="w-full h-9 pl-8 pr-2.5 rounded-lg border border-slate-200 text-[13px] outline-none focus:border-sky-300"/>
+              </div>
+              <button type="button" onClick={()=>setView("modal")} title="Expand"
+                className="h-9 w-9 grid place-items-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700"><Ico name="expand" size={15}/></button>
+            </div>
+            <div className="overflow-y-auto py-1">
+              {popList.map(f=>{ const on=ids.indexOf(f.id)>=0; return (
+                <button key={f.id} type="button" onClick={()=>toggle(f.id)}
+                  className={"w-full text-left px-4 py-2 text-[14px] flex items-center justify-between " + (on ? "bg-sky-50 text-[#1180c1] font-semibold" : "text-slate-700 hover:bg-slate-50")}>
+                  {f.label}{on && <Ico name="check" size={15}/>}
+                </button>); })}
+              {popList.length===0 && <p className="px-4 py-6 text-center text-[12px] text-slate-400">No matches</p>}
+            </div>
+          </div>
+        </div>, document.body)}
+      {view==="modal" && <V7TargetModal ids={ids}
+        onApply={next=>{ onChange(next); setView(null); }}
+        onClose={()=>setView(null)}
+        onCollapse={next=>{ onChange(next); openPop(); }}/>}
     </>
   );
 }
@@ -2916,78 +2975,123 @@ function V7Search({value, onChange, placeholder, inputRef}){
     </div>
   );
 }
-function V7TargetModal({ ids, onApply, onClose }){
+const MATCH_OPTS = [["starts","Starts with"],["contains","Contains"],["ends","Ends with"],["exact","Exactly"]];
+const MATCH_LABEL = { starts:"Starts with", contains:"Contains", ends:"Ends with", exact:"Exactly" };
+// Dual-pane "Select fields" transfer modal — LEFT: available (match-mode search + Select all visible),
+// RIGHT: selected (search, Clear-all with confirm, export). Edits a local draft; commits on Apply Fields.
+function V7TargetModal({ ids, onApply, onClose, onCollapse }){
   const [sel, setSel] = useState(ids || []);
+  const [mMode, setMMode] = useState("contains");   // starts | contains | ends | exact
+  const [mOpen, setMOpen] = useState(false);
   const [lq, setLq] = useState("");
   const [rq, setRq] = useState("");
+  const [confirmClear, setConfirmClear] = useState(false);
   const selSet = useMemo(()=> new Set(sel), [sel]);
-  const add    = id => setSel(s=> s.indexOf(id)>=0 ? s : [...s, id]);
-  const remove = id => setSel(s=> s.filter(x=>x!==id));
-  const lql = lq.trim().toLowerCase();
+  const total  = V7_FIELD_FLAT.length;
+  const lqA = lq.trim().length>0;
+  const matchFn = f => { const L=f.label.toLowerCase(), Q=lq.trim().toLowerCase(); if(!Q) return true;
+    if(mMode==="starts") return L.indexOf(Q)===0;
+    if(mMode==="ends")   return Q.length<=L.length && L.lastIndexOf(Q)===L.length-Q.length;
+    if(mMode==="exact")  return L===Q;
+    return L.indexOf(Q)>=0; };
+  const available = V7_FIELD_FLAT.filter(f=> !selSet.has(f.id) && matchFn(f));
   const rql = rq.trim().toLowerCase();
-  const available = V7_FIELD_FLAT.filter(f=> !selSet.has(f.id) && (!lql || f.label.toLowerCase().indexOf(lql)>=0));
-  const LCAP = 200;                                   // render cap keeps the left pane fast for 500+ fields
-  const availShown = available.slice(0, LCAP);
   const selected = sel.map(id=> V7_FIELD_FLAT.find(f=>f.id===id) || {id, label:labelOf(id)})
                       .filter(f=> !rql || f.label.toLowerCase().indexOf(rql)>=0);
-  const pane = "flex flex-col min-h-0";
-  const lref = useRef(null), rref = useRef(null);
-  // Auto-focus the Available search the moment the modal opens (start typing without a click).
-  useEffect(()=>{ const t=setTimeout(()=>{ if(lref.current) lref.current.focus(); }, 0); return ()=>clearTimeout(t); }, []);
+  const add    = id => setSel(s=> s.indexOf(id)>=0 ? s : [...s, id]);
+  const remove = id => setSel(s=> s.filter(x=>x!==id));
+  const selectVisible = () => setSel(s=> [...s, ...available.map(f=>f.id).filter(id=> s.indexOf(id)<0)]);
+  const availCount = lqA ? (available.length + " of " + total) : String(available.length);
+  // Export the current selection as a plain-text list (harmless, client-side only).
+  const exportSel = () => { try { const text = sel.map(id=> (V7_FIELD_FLAT.find(f=>f.id===id)||{label:labelOf(id)}).label).join("\n"); const blob=new Blob([text],{type:"text/plain"}); const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download="selected-fields.txt"; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); } catch(_){} };
   return ReactDOM.createPortal(
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/30" onClick={onClose}/>
-      <div className="relative v10-pop w-[660px] max-w-[95vw] bg-white rounded-xl shadow-2xl ring-1 ring-slate-200 flex flex-col h-[600px] max-h-[calc(100vh-64px)]">
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100">
-          <div>
-            <h3 className="text-[14px] font-semibold text-slate-800">Select target fields</h3>
-            <p className="text-[12px] text-slate-400">{sel.length} field{sel.length===1?"":"s"} selected</p>
+      <div className="relative v10-pop w-[880px] max-w-[95vw] bg-white rounded-2xl shadow-2xl ring-1 ring-slate-200 flex flex-col h-[620px] max-h-[calc(100vh-64px)]">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+          <h3 className="text-[18px] font-semibold text-slate-800">Select fields</h3>
+          <div className="flex items-center gap-1">
+            {onCollapse && <button onClick={()=>onCollapse(sel)} className="w-8 h-8 grid place-items-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-600" title="Collapse"><Ico name="collapse" size={17}/></button>}
+            <button onClick={onClose} className="w-8 h-8 grid place-items-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-600" title="Close"><Ico name="x" size={18}/></button>
           </div>
-          <button onClick={onClose} className="w-7 h-7 grid place-items-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-600" title="Close"><Ico name="x" size={16}/></button>
         </div>
         <div className="grid grid-cols-2 flex-1 min-h-0 divide-x divide-slate-100">
           {/* LEFT — available */}
-          <div className={pane}>
-            <div className="px-4 pt-3 pb-2">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-2">Available fields</p>
-              <V7Search value={lq} onChange={setLq} placeholder="Search fields" inputRef={lref}/>
+          <div className="flex flex-col min-h-0 px-6 pt-4">
+            <div className="flex items-stretch rounded-lg border border-slate-200 bg-white">
+              <div className="relative shrink-0">
+                <button type="button" onClick={()=>setMOpen(o=>!o)} className="h-10 inline-flex items-center gap-1.5 rounded-l-lg border-r border-slate-200 px-3 text-[13px] text-slate-600 hover:bg-slate-50 whitespace-nowrap">
+                  {MATCH_LABEL[mMode]}<Ico name="chevdown" size={13} cls="text-slate-400"/>
+                </button>
+                {mOpen && <>
+                  <div className="fixed inset-0 z-[71]" onClick={()=>setMOpen(false)}/>
+                  <div className="absolute left-0 top-full z-[72] mt-1 w-40 rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+                    {MATCH_OPTS.map(([v,l])=> <button key={v} onClick={()=>{ setMMode(v); setMOpen(false); }} className={"w-full px-3 py-1.5 text-left text-[13px] " + (v===mMode?"bg-sky-50 font-semibold text-[#1180c1]":"text-slate-600 hover:bg-slate-50")}>{l}</button>)}
+                  </div>
+                </>}
+              </div>
+              <input value={lq} onChange={e=>setLq(e.target.value)} placeholder="Search by keyword"
+                className="h-10 min-w-0 flex-1 px-3 text-[13px] outline-none rounded-r-lg"/>
+              {lq && <button type="button" onClick={()=>setLq("")} title="Clear" className="grid w-9 place-items-center text-slate-400 hover:text-slate-600"><Ico name="x" size={15}/></button>}
             </div>
-            <div className="flex-1 min-h-0 overflow-y-auto px-2 pb-2">
-              {availShown.map(f=>(
+            <div className="flex items-center justify-between py-3">
+              <span className="text-[13px] font-medium text-slate-500">Available Fields : {availCount}</span>
+              {available.length>0
+                ? <button onClick={selectVisible} className="inline-flex items-center gap-1.5 text-[13px] font-medium text-slate-600 hover:text-slate-800"><Ico name="checks" size={16} cls="text-slate-400"/>{lqA ? "Select all visible" : "Select all"}</button>
+                : <span className="inline-flex items-center gap-1.5 text-[13px] font-medium text-slate-300"><Ico name="checks" size={16}/>All Selected</span>}
+            </div>
+            <div className="-mx-2 flex-1 min-h-0 overflow-y-auto px-2 pb-3">
+              {available.map(f=>(
                 <button key={f.id} type="button" onClick={()=>add(f.id)}
-                  className="group w-full text-left px-2.5 py-1.5 rounded-md text-[13px] text-slate-700 hover:bg-sky-50 flex items-center justify-between">
+                  className="group w-full text-left px-2 py-2.5 rounded-md text-[14.5px] text-slate-700 hover:bg-sky-50 flex items-center justify-between">
                   <span>{f.label}</span>
-                  <span className="text-sky-500 opacity-0 group-hover:opacity-100 text-[15px] leading-none">+</span>
+                  <span className="text-sky-500 opacity-0 group-hover:opacity-100 text-[16px] leading-none">+</span>
                 </button>
               ))}
-              {available.length===0 && <p className="px-2.5 py-6 text-center text-[12px] text-slate-400">{lql ? "No matching fields" : "All fields selected"}</p>}
-              {available.length>LCAP && <p className="px-2.5 py-2 text-center text-[11px] text-slate-400">Showing {LCAP} of {available.length} — keep typing to narrow</p>}
+              {available.length===0 && <p className="px-2 py-8 text-center text-[13px] text-slate-400">{lqA ? "No matching fields" : "All fields selected"}</p>}
             </div>
           </div>
           {/* RIGHT — selected */}
-          <div className={pane}>
-            <div className="px-4 pt-3 pb-2">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Selected · {sel.length}</p>
-                {sel.length>0 && <button onClick={()=>setSel([])} className="text-[11.5px] font-medium text-rose-500 hover:underline">Clear all</button>}
+          <div className="flex flex-col min-h-0 px-6 pt-4">
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><Ico name="search" size={15}/></span>
+                <input value={rq} onChange={e=>setRq(e.target.value)} placeholder="Search your selection"
+                  className="h-10 w-full rounded-lg border border-slate-200 pl-9 pr-3 text-[13px] outline-none focus:border-sky-300"/>
               </div>
-              <V7Search value={rq} onChange={setRq} placeholder="Search selected" inputRef={rref}/>
+              <button type="button" onClick={exportSel} disabled={!sel.length} title="Export selection"
+                className={"h-10 w-10 grid place-items-center rounded-lg border border-slate-200 " + (sel.length ? "text-slate-500 hover:bg-slate-50 hover:text-slate-700" : "text-slate-300 cursor-not-allowed")}><Ico name="download" size={16}/></button>
             </div>
-            <div className="flex-1 min-h-0 overflow-y-auto px-2 pb-2">
+            <div className="flex min-h-[42px] items-center justify-between py-3">
+              {confirmClear
+                ? <>
+                    <span className="text-[13px] font-medium text-slate-600">Clear {sel.length} selected field{sel.length===1?"":"s"}?</span>
+                    <span className="flex items-center gap-4">
+                      <button onClick={()=>{ setSel([]); setConfirmClear(false); }} className="text-[13px] font-semibold text-rose-500 hover:underline">Confirm</button>
+                      <button onClick={()=>setConfirmClear(false)} className="text-[13px] font-medium text-slate-500 hover:underline">Cancel</button>
+                    </span>
+                  </>
+                : <>
+                    <span className="text-[13px] font-medium text-slate-500">Selected Fields : {sel.length}</span>
+                    {sel.length>0 && <button onClick={()=>setConfirmClear(true)} className="inline-flex items-center gap-1.5 text-[13px] font-medium text-rose-500 hover:text-rose-600"><Ico name="x" size={14}/>Clear all</button>}
+                  </>}
+            </div>
+            <div className="-mx-2 flex-1 min-h-0 overflow-y-auto px-2 pb-3">
               {selected.map(f=>(
-                <div key={f.id} className="w-full px-2.5 py-1.5 rounded-md text-[13px] text-slate-700 hover:bg-slate-50 flex items-center justify-between">
+                <div key={f.id} className="group w-full px-2 py-2.5 rounded-md text-[14.5px] text-slate-700 hover:bg-slate-50 flex items-center justify-between">
                   <span>{f.label}</span>
-                  <button onClick={()=>remove(f.id)} className="text-slate-300 hover:text-rose-500" title="Remove"><Ico name="x" size={13}/></button>
+                  <button onClick={()=>remove(f.id)} className="text-slate-300 opacity-0 group-hover:opacity-100 hover:text-rose-500" title="Remove"><Ico name="x" size={15}/></button>
                 </div>
               ))}
-              {sel.length===0 && <p className="px-2.5 py-6 text-center text-[12px] text-slate-400">No fields selected yet</p>}
-              {sel.length>0 && selected.length===0 && <p className="px-2.5 py-6 text-center text-[12px] text-slate-400">No selected fields match</p>}
+              {sel.length===0 && <p className="px-2 py-8 text-center text-[13px] text-slate-400">No fields selected yet</p>}
+              {sel.length>0 && selected.length===0 && <p className="px-2 py-8 text-center text-[13px] text-slate-400">No selected fields match</p>}
             </div>
           </div>
         </div>
-        <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-slate-100">
-          <button onClick={onClose} className="rounded-md px-3.5 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-100">Cancel</button>
-          <button onClick={()=>onApply(sel)} className="rounded-md bg-[#1180c1] px-4 py-1.5 text-[13px] font-semibold text-white hover:bg-[#0f72ab]">Apply</button>
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-100">
+          <button onClick={onClose} className="h-10 rounded-lg border border-slate-200 bg-white px-5 text-[13px] font-medium text-slate-600 hover:bg-slate-50">Cancel</button>
+          <button onClick={()=>onApply(sel)} disabled={!sel.length}
+            className={"h-10 rounded-lg px-6 text-[13px] font-semibold text-white transition " + (sel.length ? "bg-slate-900 hover:bg-slate-800" : "bg-slate-400 cursor-not-allowed")}>Apply Fields</button>
         </div>
       </div>
     </div>, document.body);
@@ -3002,7 +3106,7 @@ function V7StepHead({tone, tag, title}){
   return (
     <div className="mb-3 flex items-center gap-2.5">
       <span className={"rounded-md px-2.5 py-1 text-[12.5px] font-semibold " + (STEP_BADGE[tone]||"bg-slate-100 text-slate-600")}>{tag}</span>
-      <span className="text-[14px] text-slate-600">{title}</span>
+      <span className="text-[14.5px] font-semibold text-slate-700">{title}</span>
     </div>
   );
 }
@@ -3369,7 +3473,7 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
   const dupAct  = i => onChange({actions: block.actions.flatMap((a,j)=> j===i ? [a, {...a, behavior:"", fieldIds:(a.fieldIds||[]).slice()}] : [a])});
   // Reset this block's content to a fresh state (keeps the block; clears WHEN / IF / THEN / Advanced).
   // Clears the block's own content — the audience (people) is rule-level/common, so it is left intact.
-  const clearBlock = ()=> onChange({ time:"", exec:"", match:"all", advanced:false, advOpen:false, conditions:[{fieldId:"", op:"", value:""}], actions:[{behavior:"", fieldIds:[], value:""}] });
+  const clearBlock = ()=> onChange({ time:"", exec:"", match:"all", advanced:false, advOpen:false, conditions:[], actions:[] });
   // Tertiary block tools shown around the Advanced row (right-aligned, secondary to the rule content).
   const blockTools = (
     <div className="flex items-center gap-1">
@@ -3435,20 +3539,17 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
   return (
     <div className="shadow-sm rounded-xl">
     <div className={"border border-slate-200 bg-white " + (blockCfCount>0 ? "rounded-t-xl" : "rounded-xl shadow-sm")}>
-      {/* collapsible-group row: numbered indicator (→ chevron on hover) + status dot + title (tooltip on hover) */}
-      <div className="flex items-center gap-2.5 px-4 py-3">
-        <button onClick={onToggle} className="flex min-w-0 flex-1 items-center gap-2.5 text-left">
-          {/* number by default; swaps to an expand/collapse chevron when the indicator is hovered (never both at once) */}
-          <span className="group/ind relative grid h-6 w-6 shrink-0 place-items-center" title={expanded ? "Collapse block" : "Expand block"}>
-            <span className="text-[12.5px] font-semibold text-slate-400 transition-opacity group-hover/ind:opacity-0">{index+1}</span>
-            <Ico name="chevdown" size={16} cls={"absolute text-slate-500 opacity-0 transition-opacity group-hover/ind:opacity-100 " + (expanded?"":"-rotate-90")}/>
+      {/* collapsible-group row: circular expand/collapse chevron + title (tooltip on hover) */}
+      <div className="flex items-center gap-3 px-4 py-3.5">
+        <button onClick={onToggle} className="group flex min-w-0 flex-1 items-center gap-3 text-left">
+          <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500 transition group-hover:bg-slate-200" title={expanded ? "Collapse block" : "Expand block"}>
+            <Ico name="chevdown" size={16} cls={expanded ? "rotate-180" : ""}/>
           </span>
-          <span className={"h-2 w-2 shrink-0 rounded-full " + (firstActDone ? "bg-emerald-400" : whenReady ? "bg-amber-400" : "bg-slate-300")}/>
           <span className="min-w-0">
             <BlockTip title={ruleName} summary={sum} started={tipHasContent} triggers={tipTriggers} condItems={tipCondItems} actItems={tipActItems} example={tipExample}>
-              <span className="block truncate text-[14px] font-semibold text-slate-800">Rule {index+1}</span>
+              <span className="block truncate text-[17px] font-bold text-slate-800">Rule {index+1}</span>
             </BlockTip>
-            <span className="block truncate text-[12px] text-slate-400">{block.time || "When…"} · {block.exec || "Execute on…"} <span className="text-slate-300">|</span> {condCount} Condition{condCount===1?"":"s"}{groupCount>0 ? " (" + groupCount + " Group" + (groupCount===1?"":"s") + ")" : ""} · {block.actions.length} Action{block.actions.length===1?"":"s"}</span>
+            <span className="block truncate text-[12px] text-slate-400">{block.time || "When…"} · {block.people || "Everyone"} <span className="text-slate-300">|</span> {condCount} Condition{condCount===1?"":"s"}{groupCount>0 ? " (" + groupCount + " Group" + (groupCount===1?"":"s") + ")" : ""} · {block.actions.length} Action{block.actions.length===1?"":"s"}</span>
           </span>
         </button>
         {/* collapsed → quick Duplicate + Delete on the right; expanded → these live in the Advanced footer */}
@@ -3462,7 +3563,7 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
         <div className="border-t border-slate-100 bg-slate-50/60 px-4 py-5 space-y-6">
           {/* WHEN — event + execution scope (audience is common, set once on the rule) */}
           <div>
-            <V7StepHead tone="when" tag="When" title="pick the event and when it runs"/>
+            <V7StepHead tone="when" tag="When" title="Pick the event and who it applies to"/>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className="mb-1.5 block text-[13px] font-medium text-slate-500">Select Rule Event <span className="text-rose-400">*</span></label>
@@ -3485,7 +3586,12 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
             return (
             <div className="v10-fade">
               <V7StepHead tone="if" tag="Check If" title="set the conditions that must match"/>
-              {items.length===0 && <p className="mb-2 text-[13px] italic text-slate-400">No conditions — this rule always runs.</p>}
+              {items.length===0 &&
+                <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-5">
+                  <div className="text-[14px] font-semibold text-slate-700">No conditions yet</div>
+                  <div className="mt-1 text-[13px] text-slate-500">Add a condition to control when this rule applies. Without one, it runs on every matching event.</div>
+                  <div className="mt-3.5"><button onClick={addCond} className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3.5 py-2 text-[13px] font-medium text-slate-700 transition hover:bg-slate-50"><Ico name="plus" size={14}/> Add Condition</button></div>
+                </div>}
               {(()=>{
                 // render EVERY top-level item as a card so nothing is dropped: bare leaves collapse into a
                 // leading "Condition group 1" card, explicit groups follow — pure-bares, pure-groups, and mixes all work.
@@ -3507,28 +3613,33 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
                       : <V7Group g={u.g} n={ui+1} onChange={p=>setCond(items.indexOf(u.g),p)} onRemove={()=>rmCond(items.indexOf(u.g))} onDuplicate={()=>dupGroup(items.indexOf(u.g))} conflictFields={conflictFields} onFieldConflict={onFieldConflict} ruleName={ruleName}/>}
                   </div>);
               })()}
-              {(firstCondDone || items.length===0) &&
+              {firstCondDone &&
                 <div className="mt-3 flex flex-wrap items-center gap-2 v10-fade">
                   {!hasGroups && bares.length===0 &&
                     <button onClick={addCond} className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[13px] font-medium text-[#1180c1] transition hover:bg-sky-50"><Ico name="plus" size={13}/> Add Condition</button>}
-                  <button onClick={addGroup} className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[13px] font-medium text-slate-600 transition hover:bg-slate-50"><Ico name="plus" size={13} cls="text-sky-500"/> Add Condition Group</button>
+                  <button onClick={addGroup} className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3.5 py-2 text-[13px] font-medium text-slate-700 transition hover:bg-slate-50"><Ico name="plus" size={14} cls="text-sky-500"/> Add Condition Group</button>
                 </div>}
             </div>);
           })()}
           {/* R26 — the "same condition" nudge lives in the bottom bar (View similar rules), not inline here */}
-          {/* ACTION — one behavior per row, applied to one or more fields */}
-          {whenReady && firstCondDone &&
+          {/* ACTION — shown once the trigger is set; conditions are optional (a rule can run with none) */}
+          {whenReady &&
             <div className="v10-fade">
               <V7StepHead tone="then" tag="Action" title="choose what the rule does"/>
-              <div className="space-y-2.5 rounded-xl border border-slate-200 bg-white p-3">
-                {block.actions.length===0 && <p className="text-[13px] italic text-slate-400">No actions yet — add one to define what happens.</p>}
-                {block.actions.map((a,i)=> <V7ActRow key={i} a={a} onChange={p=>setAct(i,p)} onRemove={()=>rmAct(i)} onDuplicate={()=>dupAct(i)} ruleName={ruleName} conflictFields={conflictFields} onFieldConflict={onFieldConflict}/>)}
-                {(firstActDone || block.actions.length===0) &&
-                  <button onClick={addAct} className="inline-flex items-center gap-1.5 text-[13px] font-medium text-slate-500 transition hover:text-slate-700"><Ico name="plus" size={13}/> Add Action</button>}
-              </div>
+              {block.actions.length===0
+                ? <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-5">
+                    <div className="text-[14px] font-semibold text-slate-700">No actions yet</div>
+                    <div className="mt-1 text-[13px] text-slate-500">Add an action to define what this rule does when it runs.</div>
+                    <div className="mt-3.5"><button onClick={addAct} className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3.5 py-2 text-[13px] font-medium text-slate-700 transition hover:bg-slate-50"><Ico name="plus" size={14}/> Add Action</button></div>
+                  </div>
+                : <div className="space-y-2.5 rounded-xl border border-slate-200 bg-white p-3">
+                    {block.actions.map((a,i)=> <V7ActRow key={i} a={a} onChange={p=>setAct(i,p)} onRemove={()=>rmAct(i)} onDuplicate={()=>dupAct(i)} ruleName={ruleName} conflictFields={conflictFields} onFieldConflict={onFieldConflict}/>)}
+                    {firstActDone &&
+                      <button onClick={addAct} className="inline-flex items-center gap-1.5 text-[13px] font-medium text-slate-500 transition hover:text-slate-700"><Ico name="plus" size={13}/> Add Action</button>}
+                  </div>}
             </div>}
           {/* ADVANCED — reverse-on-exit shown as a labelled toggle (matches the product's switch) */}
-          {whenReady && firstCondDone && firstActDone &&
+          {whenReady && firstActDone &&
             <div className="v10-fade">
               <p className="mb-2 text-[13px] text-slate-500">Advanced behavior for this block</p>
               <div className="flex items-start justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
@@ -3545,9 +3656,9 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
               </div>
             </div>}
           {/* FOOTER — block-level tools, always available while expanded (matches the screenshot's footer bar) */}
-          <div className="flex items-center justify-between border-t border-slate-200 pt-3">
-            <button onClick={onDuplicate} className="inline-flex items-center gap-1.5 text-[13px] font-medium text-slate-500 transition hover:text-slate-700"><Ico name="copy" size={14}/> Duplicate Block</button>
-            <button onClick={clearBlock} className="inline-flex items-center gap-1.5 text-[13px] font-medium text-rose-500 transition hover:text-rose-600"><Ico name="x" size={14}/> Clear</button>
+          <div className="flex items-center justify-between pt-1">
+            <button onClick={onDuplicate} className="inline-flex items-center gap-1.5 rounded-md bg-sky-50 px-3 py-1.5 text-[13px] font-medium text-[#1180c1] transition hover:bg-sky-100"><Ico name="copy" size={14}/> Duplicate Block</button>
+            <button onClick={clearBlock} className="inline-flex items-center gap-1.5 rounded-md bg-rose-50 px-3 py-1.5 text-[13px] font-medium text-rose-500 transition hover:bg-rose-100"><Ico name="x" size={14}/> Clear</button>
           </div>
         </div>}
     </div>
@@ -3815,13 +3926,6 @@ const DEMO_S7 = {
       { name:"HR Category Policy", blocks:[ {label:"Block 1", con:"Makes Category mandatory"} ] },
       { name:"Catalog Defaults",  blocks:[ {label:"Block 1", con:"Sets Category to Software"} ] },
     ]},
-    { id:"priority", label:"Priority", cur:"Sets Priority to High", rules:[
-      { name:"Auto-set Priority from Impact", blocks:[ {label:"Block 1", con:"Sets Priority to Urgent"} ] },
-      { name:"VIP Fast-track", blocks:[
-        {label:"Block 1", con:"Sets Priority to Urgent"},
-        {label:"Block 2", con:"Makes Priority read-only"},
-      ] },
-    ]},
     { id:"assignee", label:"Assignee", cur:"Makes Assignee mandatory", rules:[
       { name:"Simplified Portal Form",   blocks:[ {label:"Block 1", con:"Hides Assignee"} ] },
       { name:"Round-robin Assignment",   blocks:[ {label:"Block 1", con:"Clears Assignee"} ] },
@@ -3838,7 +3942,6 @@ const DEMO_S8 = {
   ruleMatrix: [
     { id:"ra", name:"Auto-close Resolved Tickets", audience:"Technicians only", fields:[
       { id:"status",  label:"Status",  cur:"Sets Status to In Progress", blocks:[ {label:"Block 1", con:"Sets Status to Closed"} ] },
-      { id:"priority",label:"Priority",cur:"Sets Priority to High",       blocks:[ {label:"Block 2", con:"Sets Priority to Low"} ] },
     ]},
     { id:"rb", name:"Escalation Workflow", audience:"Technicians only", fields:[
       { id:"status", label:"Status", cur:"Sets Status to In Progress", blocks:[ {label:"Block 1", con:"Sets Status to On Hold"}, {label:"Block 2", con:"Hides Status"} ] },
@@ -3852,7 +3955,6 @@ const DEMO_S8 = {
       { id:"category", label:"Category", cur:"Hides Category",           blocks:[ {label:"Block 2", con:"Sets Category to Software"} ] },
     ]},
     { id:"re", name:"VIP Fast-track", audience:"Signed-in users only", fields:[
-      { id:"priority", label:"Priority", cur:"Sets Priority to High", blocks:[ {label:"Block 1", con:"Sets Priority to Urgent"} ] },
       { id:"impact",   label:"Impact",   cur:"Sets Impact to High",   blocks:[ {label:"Block 1", con:"Sets Impact to Critical"} ] },
     ]},
   ],
@@ -3882,10 +3984,6 @@ DEMO_S8.preview = [
       { act:"Set Value", val:"Closed",  rule:"Auto-close Resolved Tickets" },
       { act:"Hide",                     rule:"Escalation Workflow" },   // its Block 2 hides Status outright
     ] },
-  { id:"priority", state:"overridden", value:"Urgent", cur:"Set Value", curVal:"High", pairs:[
-      { act:"Set Value", val:"Urgent", rule:"VIP Fast-track" },
-      { act:"Set Value", val:"Low",    rule:"Auto-close Resolved Tickets" },
-    ] },
   { id:"impact", state:"set", value:"High", cur:"Set Value", curVal:"High", pairs:[
       { act:"Set Value", val:"Low",      rule:"Escalation Workflow" },
       { act:"Set Value", val:"Critical", rule:"VIP Fast-track" },
@@ -3907,7 +4005,6 @@ const DEMO_S9 = {
   ruleMatrix: [
     { id:"pi",  name:"Portal Intake Rule",      audience:"Requesters only",     fields:[ {id:"category",  label:"Category",  cur:"Hides Category",         blocks:[ {label:"Block 1", con:"Shows Category — on Create"} ]} ]},
     { id:"crp", name:"Category Required Policy", audience:"Everyone",            fields:[ {id:"category",  label:"Category",  cur:"Hides Category",         blocks:[ {label:"Block 1", con:"Makes Category mandatory"} ]} ]},
-    { id:"vip", name:"VIP Fast-track",          audience:"Signed-in users only", fields:[ {id:"priority",  label:"Priority",  cur:"Sets Priority to High",  blocks:[ {label:"Block 1", con:"Sets Priority to Urgent"} ]} ]},
     { id:"psr", name:"Portal Simplify Rule",     audience:"Requesters only",     fields:[ {id:"status",    label:"Status",    cur:"Makes Status mandatory", blocks:[ {label:"Block 1", con:"Makes Status optional"} ]} ]},
     { id:"lar", name:"Locked Assignment Rule",   audience:"Technicians only",    fields:[ {id:"assignee",  label:"Assignee",  cur:"Makes Assignee mandatory", blocks:[ {label:"Block 1", con:"Disables Assignee"} ]} ]},
     { id:"rst", name:"Reset Rule",               audience:"Everyone",            fields:[ {id:"department", label:"Department", cur:"Sets Department to IT",  blocks:[ {label:"Block 1", con:"Clears Department"} ]} ]},
@@ -3924,12 +4021,6 @@ DEMO_S9.preview = [
   { id:"category", state:"hidden", cur:"Hide", curScope:"On Create and Edit", pairs:[
       { act:"Show",    rule:"Portal Intake Rule",      scope:"On Create" },
       { act:"Mandate", rule:"Category Required Policy", scope:"On Create and Edit" },
-    ] },
-  { id:"priority", state:"set", value:"High", cur:"Set Value", curVal:"High", curScope:"On Create and Edit", pairs:[
-      { act:"Set Value", val:"Urgent", rule:"VIP Fast-track", scope:"On Create and Edit" },
-      { act:"Set Value", val:"High",   rule:"Major Incident Rule", scope:"On Create and Edit",
-        ruleActions:[ {field:"priority",act:"Set Value",val:"High"}, {field:"category",act:"Hide"},
-                      {field:"urgency",act:"Set Value",val:"High"}, {field:"description",act:"Mandate"} ] },
     ] },
   { id:"status", state:"mandatory", cur:"Mandate", curScope:"On Create and Edit", pairs:[
       { act:"Non-Mandate", rule:"Portal Simplify Rule", scope:"On Edit" },
@@ -3959,7 +4050,6 @@ DEMO_S9.preview = [
 // so the conflict view shows a rule clashing on multiple fields. Derived so R24 (DEMO_S9) stays unchanged.
 const DEMO_S10 = { dualEntry:true, fields: DEMO_S9.fields, rows: [], ruleMatrix: DEMO_S9.ruleMatrix,
   preview: DEMO_S9.preview.map(p=>{
-    if(p.id==="priority") return {...p, pairs:[...p.pairs, {act:"Set Value", val:"Low", rule:"Escalation Workflow", scope:"On Create and Edit"}]};
     if(p.id==="status")   return {...p, pairs:[...p.pairs, {act:"Hide",                rule:"Escalation Workflow", scope:"On Create and Edit"}]};
     if(p.id==="impact")   return {...p, pairs:[...p.pairs, {act:"Mandate",             rule:"Escalation Workflow", scope:"On Create and Edit"}]};
     return p;
@@ -3978,6 +4068,11 @@ const demoFor = draft => { const s = JSON.stringify(draft||{}).toLowerCase(); co
   if(name.indexOf("hr rule ui exp")>=0 || s.indexOf("designation")>=0 || s.indexOf("employee_id")>=0) return DEMO_S3;
   if(/hr requests/i.test((draft&&draft.name)||"") || s.indexOf("priya")>=0) return DEMO_S2;
   return DEMO_S1; };
+// Only the seeded demo rules carry a scripted conflict scenario. A NEW, user-created rule (or any rule whose
+// name isn't one of the demo names) must show NO conflicts — the conflict banner, the field pips and the
+// Run-Test drawer are all gated on this so user testing starts from a clean slate.
+const DEMO_NAME_KEYS = ["similar split","complex combinations","rule conflict matrix","conflict matrix","routing demo 2","request routing","critical incident","hr rule ui exp","hr requests"];
+const isConflictDemo = draft => { const n=((draft&&draft.name)||"").toLowerCase(); return DEMO_NAME_KEYS.some(k=> n.indexOf(k)>=0); };
 // Collapsed-row roles for a demo conflicting rule: the field is an Action if the conflicting rule
 // changes it (a `their` behavior), and a Condition if its label heads any of that block's condition
 // tokens. Aggregated across all blocks and de-duplicated to one entry per field.
@@ -5848,8 +5943,8 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
             conditions: (baseRule.conditions||[]).map(c=>({...c})), actions: (baseRule.actions||[]).map(a=>({...a})) }];
       return { name: baseRule.name, exec: baseRule.exec||"", people: aud, description: baseRule.description||"", tags: (baseRule.tags||[]).slice(), blocks };
     }
-    // New rule → one block with a ready-to-fill condition + action row already open (default-open).
-    return { name:"", exec:"", people:"", description:"", tags:[], blocks:[{ match:"all", advanced:false, advOpen:false, time:"", people:"", exec:"", conditions:[{fieldId:"", op:"", value:""}], actions:[{behavior:"", fieldIds:[], value:""}] }] };
+    // New rule → one empty block; conditions and actions start empty so their "add" prompts show once the trigger is set.
+    return { name:"", exec:"", people:"", description:"", tags:[], blocks:[{ match:"all", advanced:false, advOpen:false, time:"", people:"", exec:"", conditions:[], actions:[] }] };
   }, [baseRule]);
   const [draft, setDraft] = useState(init);
   const [saved, setSaved] = useState(false);
@@ -5857,6 +5952,9 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
   const patch = p => setDraft(d=>({...d, ...p}));
   // Optional metadata (V7): description (revealed by a link) + tag chips with inline entry.
   const [showDesc, setShowDesc] = useState(!!(baseRule && baseRule.description));
+  // One-time coaching for the multi-block feature — shown on the FIRST new-rule creation, dismissed forever after.
+  const [blockHint, setBlockHint] = useState(()=>{ try { return !baseRule && !localStorage.getItem("v10_blocks_hint_v1"); } catch(_){ return !baseRule; } });
+  const dismissBlockHint = ()=>{ try{ localStorage.setItem("v10_blocks_hint_v1","1"); }catch(_){} setBlockHint(false); };
   const [tagEditing, setTagEditing] = useState(false);
   const [tagDraft, setTagDraft] = useState("");
   const rmTag = i => setDraft(d=>({...d, tags: (d.tags||[]).filter((_,j)=>j!==i)}));
@@ -5866,7 +5964,7 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
   const dupBlock = i => setDraft(d=>{ const src=d.blocks[i]; const copy={...src, conditions:src.conditions.map(c=>({...c})), actions:src.actions.map(a=>({...a}))}; const blocks=d.blocks.slice(); blocks.splice(i+1,0,copy); return {...d, blocks}; });
   const rmBlock = i => setDraft(d=>({...d, blocks: d.blocks.filter((_,j)=>j!==i)}));
   // New blocks inherit the rule's common audience; their Execute-on starts empty (it's per block).
-  const addBlock = ()=> setDraft(d=>{ const blocks=[...d.blocks, {match:"all", advanced:false, advOpen:false, time:"", people:d.people||"", exec:"", conditions:[{fieldId:"", op:"", value:""}], actions:[{behavior:"", fieldIds:[], value:""}]}]; setExpandedIdx(blocks.length-1); return {...d, blocks}; });
+  const addBlock = ()=> setDraft(d=>{ const blocks=[...d.blocks, {match:"all", advanced:false, advOpen:false, time:"", people:d.people||"", exec:"", conditions:[], actions:[]}]; setExpandedIdx(blocks.length-1); return {...d, blocks}; });
   // Applies-to is COMMON — setting it writes the rule-level value AND mirrors it onto every block, so all
   // the block-level consumers (summary, conflict helpers, draftToRule) keep seeing a per-block audience.
   const setAudience = v => setDraft(d=>({...d, people:v, blocks:(d.blocks||[]).map(b=>({...b, people:v}))}));
@@ -5875,9 +5973,18 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
   const [showErrors, setShowErrors] = useState(false);
   const nameOk   = (draft.name||"").trim().length>0;
   const appliesOk= !!(draft.people||"").trim();
-  const actionOk = draft.blocks.some(b=> b.time && b.actions.some(actComplete));
-  const canSave  = nameOk && appliesOk && actionOk;
-  const missing  = []; if(!nameOk) missing.push("rule name"); if(!appliesOk) missing.push("who it applies to"); if(!actionOk) missing.push("a When → Then action");
+  // A block is fully usable when it has an event + execute-on + at least one complete action.
+  const blockUsable = b => !!(b.time && b.exec && (b.actions||[]).some(actComplete));
+  const actionOk = draft.blocks.some(blockUsable);
+  // A block the user has started but left half-filled — flag it so nothing is saved silently incomplete.
+  const blockStarted = b => !!(b.time || b.exec || (b.conditions||[]).some(leafComplete) || (b.actions||[]).some(actComplete));
+  const incompleteBlock = draft.blocks.some(b=> blockStarted(b) && !blockUsable(b));
+  const canSave  = nameOk && appliesOk && actionOk && !incompleteBlock;
+  const missing  = [];
+  if(!nameOk) missing.push("rule name");
+  if(!appliesOk) missing.push("who it applies to");
+  if(!actionOk) missing.push("an event and at least one action");
+  else if(incompleteBlock) missing.push("finish every started block (event, execute-on and an action)");
   // Single source of truth: evaluate the SAME normalized rule the listing/inspector use, excluding this rule's own id.
   const [, bumpRules] = useReducer(x=>x+1, 0);   // recompute conflicts after disabling a conflicting rule
   const conflicts = conflictsFor(draftToRule(draft, baseRule));
@@ -5894,8 +6001,9 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
   const [testAutoPreview, setTestAutoPreview] = useState(false);  // R22 → the conflict drawer pops the form preview on top
   const [preview23, setPreview23] = useState(false);              // R23 → Run Test lands on the simulated form, not the drawer
   const [simReady, setSimReady] = useState(false);                // the brief "Preview Ready" beat before the hand-off
-  const runTest = () => { if(!actionOk) return; setTestStep(0); setSimReady(false); setTesting(true); };
-  const endTest = () => { setTesting(false); setSimReady(false); };
+  const [testDone, setTestDone] = useState(false);                // non-demo rule → the "All clear, no conflicts" result
+  const runTest = () => { if(!actionOk) return; setTestStep(0); setSimReady(false); setTestDone(false); setTesting(true); };
+  const endTest = () => { setTesting(false); setSimReady(false); setTestDone(false); };
   // The rule-matrix scenario (R23) ends the test on the FORM PREVIEW; everything else ends on the conflict drawer.
   const testGoesToPreview = !!demoFor(draft).preview;
   useEffect(()=>{
@@ -5911,13 +6019,16 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
       // land on completion for a beat before the preview takes over — cutting away mid-thought reads as a glitch
       timers.push(setTimeout(()=> setSimReady(true), total));
       timers.push(setTimeout(()=>{ endTest(); setInspectFields(null); setPreview23(true); }, total + 800));
-    } else {
+    } else if(isConflictDemo(draft)){
       timers.push(setTimeout(()=>{
         setTesting(false);
         setInspectFields(null);
         setTestAutoPreview(!!demoFor(draft).matrix);   // R22 → drawer opens with the form preview layered on top
         setInspectOpen(true);
       }, total));
+    } else {
+      // New / user-created rule → no scripted scenario, so the test lands on a clean "all clear" result.
+      timers.push(setTimeout(()=> setTestDone(true), total));
     }
     return ()=>{ clearInterval(tick); timers.forEach(clearTimeout); };
   }, [testing]);
@@ -5975,29 +6086,41 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
         <DrawerResizer onMouseDown={rz.onMouseDown} dragging={rz.dragging}/>
         <div className="border-b border-slate-200 px-7 py-4 flex items-start justify-between gap-4 shrink-0">
           <div>
-            <h1 className="text-[20px] font-bold text-slate-800">{baseRule ? "Edit Request Form Rule" : "Create Request Form Rule"}</h1>
+            <h1 className="text-[22px] font-bold text-slate-800">{baseRule ? "Edit Rule" : "Add Rule"}</h1>
+            <p className="mt-1 text-[13px] text-slate-500">Some dummy text that describes the form rule <a className="ml-0.5 inline-flex items-center gap-0.5 font-medium text-[#1180c1] hover:underline cursor-pointer">Doc<Ico name="external" size={12}/></a></p>
           </div>
           <button onClick={onClose} className="w-8 h-8 grid place-items-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-600 shrink-0" title="Close"><Ico name="x" size={18}/></button>
         </div>
-        <div className="flex-1 overflow-y-auto bg-slate-50">
-          <div className="mx-auto max-w-3xl px-6 py-6 space-y-4">
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="flex flex-wrap items-end gap-4">
-                <div className="min-w-[240px] flex-1">
+        <div className="flex-1 overflow-y-auto bg-white">
+          <div className="mx-auto max-w-3xl px-6 py-6 space-y-5">
+            {/* Save-blocked prompt — appears only after a failed save attempt, listing exactly what's missing */}
+            {showErrors && !canSave &&
+              <div className="flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 v10-fade">
+                <span className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full bg-rose-100 text-rose-500"><Ico name="warn" size={14}/></span>
+                <div className="min-w-0">
+                  <div className="text-[13px] font-semibold text-rose-700">Before you can save, a few things are still needed</div>
+                  <ul className="mt-1 space-y-0.5">
+                    {missing.map((m,i)=> <li key={i} className="flex items-center gap-1.5 text-[12.5px] text-rose-600"><span className="h-1 w-1 rounded-full bg-rose-400"/>{cap(m)}</li>)}
+                  </ul>
+                </div>
+              </div>}
+            <div className="pb-1">
+              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                <div>
                   <label className="block text-[13px] font-semibold text-slate-700">Rule name <span className="text-rose-500">*</span></label>
                   <input value={draft.name} onChange={e=>patch({name:e.target.value})} onBlur={()=>setShowErrors(s=> s || !nameOk)} placeholder="e.g. Hardware request automation"
                     className={"mt-1.5 w-full h-10 rounded-md border px-3 text-[14px] outline-none focus:ring-1 " + (showErrors && !nameOk ? "border-rose-400 focus:border-rose-400 focus:ring-rose-200 bg-rose-50/40" : "border-slate-300 focus:border-sky-400 focus:ring-sky-200")}/>
                   {showErrors && !nameOk && <p className="mt-1 text-[12px] font-medium text-rose-500">Give this rule a name to save it.</p>}
                 </div>
-                <div className="w-56">
+                <div>
                   {/* Applies to is COMMON to the whole rule; Execute on now lives on each block's When step. */}
-                  <label className="block text-[13px] font-semibold text-slate-700">Applies to <span className="text-rose-500">*</span></label>
+                  <label className="block text-[13px] font-semibold text-slate-700">Select Rule Applicable for <span className="text-rose-500">*</span></label>
                   <div className={"mt-1.5 rounded-md " + (showErrors && !appliesOk ? "ring-1 ring-rose-400" : "")}><GuidedDropdown value={draft.people} onChange={setAudience} options={AUDS} guide={AUD_GUIDE} placeholder="Choose people"/></div>
                   {showErrors && !appliesOk && <p className="mt-1 text-[12px] font-medium text-rose-500">Choose who this rule applies to.</p>}
                 </div>
               </div>
               {/* metadata — collapsed: "Add description" with "Add tag" beside it; once description opens, Tags drop below the box (V7) */}
-              <div className="mt-3">
+              <div className="mt-4">
                 {showDesc
                   ? <>
                       <label className="block text-[13px] font-semibold text-slate-700">Description</label>
@@ -6023,9 +6146,33 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
                   onToggle={()=>setExpandedIdx(expandedIdx===i?null:i)} onChange={p=>setBlock(i,p)}
                   onDuplicate={()=>dupBlock(i)} onRemove={()=>rmBlock(i)}/>)}
             </div>
-            <div className="rounded-xl border border-dashed border-slate-300 bg-white p-4 text-left">
-              <button onClick={addBlock} className="rounded-full px-5 py-2 text-[13px] font-semibold text-white shadow-sm" style={{background:BRAND}}>+ Add rule block</button>
-              <p className="mt-2 text-[12px] text-slate-400">Each block is one independent IF → THEN rule.</p>
+            {/* Add block — a one-time coaching callout points to it on the very first new rule, then the plain button */}
+            <div className="space-y-2.5">
+              {blockHint && draft.blocks.length===1 &&
+                <div className="relative rounded-xl border border-sky-200 bg-sky-50/70 px-4 py-3.5 v10-fade">
+                  <div className="flex items-start gap-3">
+                    <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white text-[#1180c1] ring-1 ring-sky-100"><Ico name="sparkles" size={16}/></span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[13.5px] font-semibold text-slate-800">One rule can now hold several blocks</span>
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">New</span>
+                      </div>
+                      <p className="mt-1 text-[12.5px] leading-relaxed text-slate-500">Each block is checked on its own, and every block that matches runs — so one rule can cover several cases without creating separate rules.</p>
+                      <div className="mt-3 flex items-center gap-1.5">
+                        <button onClick={()=>{ addBlock(); dismissBlockHint(); }} className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12.5px] font-semibold text-white shadow-sm transition hover:brightness-105" style={{background:BRAND}}><Ico name="plus" size={13}/> Add a block</button>
+                        <button onClick={dismissBlockHint} className="rounded-full px-3 py-1.5 text-[12.5px] font-medium text-slate-500 transition hover:bg-white/70 hover:text-slate-700">Got it</button>
+                      </div>
+                    </div>
+                    <button onClick={dismissBlockHint} title="Dismiss" className="-mr-1 -mt-1 grid h-6 w-6 shrink-0 place-items-center rounded-md text-slate-400 transition hover:bg-white/70 hover:text-slate-600"><Ico name="x" size={14}/></button>
+                  </div>
+                  {/* pointer connecting the callout to the Add Rule Block button below */}
+                  <span className="absolute -bottom-[7px] left-9 h-3 w-3 rotate-45 border-b border-r border-sky-200 bg-sky-50/70"/>
+                </div>}
+              <button onClick={addBlock}
+                className={"relative flex w-full items-center justify-center gap-2 rounded-xl border border-dashed px-5 py-4 text-[14px] font-semibold transition " + (blockHint ? "border-sky-300 bg-sky-50/40 text-[#1180c1] hover:bg-sky-50" : "border-slate-300 bg-white text-slate-700 hover:border-slate-400 hover:bg-slate-50")}>
+                <Ico name="plus" size={17}/> Add Rule Block
+                {blockHint && <span className="absolute right-4 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">New</span>}
+              </button>
             </div>
           </div>
         </div>
@@ -6040,7 +6187,10 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
                 <span className="whitespace-nowrap">{sameCondMatch.rules.length} rule{sameCondMatch.rules.length===1?"":"s"} with the same condition</span>
                 <span className="ml-0.5 inline-flex items-center gap-0.5 rounded-full bg-white/70 px-2 py-0.5 text-[11.5px] text-amber-700 transition group-hover:bg-white">View<Ico name="chevdown" size={12} cls="-rotate-90"/></span>
               </button>}
-            {!isSameCondDemo(draft.name) && <>
+            {/* New / user-created rules start clean — once an action is configured, reassure that nothing clashes */}
+            {!isSameCondDemo(draft.name) && !isConflictDemo(draft) && actionOk &&
+              <span className="inline-flex items-center gap-1.5 text-[12.5px] font-medium text-emerald-600"><Ico name="tick" size={14} cls="text-emerald-500"/>No conflicts with existing rules</span>}
+            {!isSameCondDemo(draft.name) && isConflictDemo(draft) && <>
             {/* PROTOTYPE: hardcoded to the fixed demo — always surfaces the scenario's conflicts */}
             <span className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-amber-700"><span className="w-2 h-2 rounded-full bg-amber-500"/>{demoFor(draft).fields.length} conflicts with existing rules</span>
             {demoFor(draft).dualEntry
@@ -6063,18 +6213,17 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
           </div>
           <div className="flex items-center gap-3">
             {/* always-visible reason the save is blocked — no click needed to discover what's missing */}
-            {!canSave && !saved && <span className="hidden sm:inline text-[12px] text-slate-400">Needed to save: <span className="font-medium text-slate-500">{missing.join(" · ")}</span></span>}
+            {!canSave && !saved && <span className="hidden lg:inline text-[12px] text-slate-400">Needed to save: <span className="font-medium text-slate-500">{missing.join(" · ")}</span></span>}
             {/* Run Test — secondary to Save; enabled once an action is configured. Read-only dry run. */}
             <button type="button" onClick={runTest} aria-disabled={!actionOk}
               title={actionOk ? "Test this rule against existing rules — nothing is saved or changed" : "Configure an action to enable the test"}
-              className={"inline-flex h-10 items-center gap-1.5 rounded-full border px-5 text-[13px] font-medium transition " + (actionOk ? "border-slate-300 bg-white text-slate-700 hover:bg-slate-50" : "border-slate-200 bg-white text-slate-300 cursor-not-allowed")}>
+              className={"inline-flex h-10 items-center gap-1.5 rounded-lg border px-4 text-[13px] font-medium transition " + (actionOk ? "border-slate-300 bg-white text-slate-700 hover:bg-slate-50" : "border-slate-200 bg-white text-slate-300 cursor-not-allowed")}>
               <Ico name="zap" size={14}/> Run Test
             </button>
-            <button onClick={onClose} className="h-10 rounded-full border border-slate-200 bg-white px-5 text-[13px] font-medium text-slate-600 hover:bg-slate-50">Cancel</button>
-            {/* styled as disabled when invalid, but still clickable so it can reveal inline validation */}
+            {/* Save Rule (dark) then Cancel — matching the screenshot's bottom bar */}
             <button onClick={save} aria-disabled={!canSave} title={canSave ? "" : ("Needed to save: " + missing.join(", "))}
-              className={"h-10 rounded-full px-6 text-[13px] font-semibold text-white shadow-sm transition " + (canSave?"hover:brightness-105":"opacity-50 cursor-not-allowed")}
-              style={{background: saved ? "#16a34a" : BRAND}}>{saved ? "Saved ✓" : (baseRule ? "Update rule" : "Save rule")}</button>
+              className={"h-10 rounded-lg px-6 text-[13px] font-semibold text-white shadow-sm transition " + (saved ? "bg-emerald-600" : canSave ? "bg-slate-900 hover:bg-slate-800" : "bg-slate-900 opacity-50 cursor-not-allowed")}>{saved ? "Saved ✓" : (baseRule ? "Update Rule" : "Save Rule")}</button>
+            <button onClick={onClose} className="h-10 rounded-lg border border-slate-300 bg-white px-5 text-[13px] font-medium text-slate-600 hover:bg-slate-50">Cancel</button>
           </div>
         </div>
         {/* RUN TEST — transitional, read-only. Same width/position as the conflict drawer so it hands off seamlessly. */}
@@ -6089,7 +6238,24 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
               {/* the preview path tells the "safe simulation" story; the drawer path keeps the original sequence,
                   whose steps stay true for rules that end on the conflict drawer and never open a preview */}
               <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-6 py-6">
-                {testGoesToPreview ? <SafePreviewSim step={testStep} ready={simReady}/> : <div className="w-full max-w-sm">
+                {testDone ? (
+                  /* Clean result — a genuinely new rule has no scripted conflict scenario */
+                  <div className="w-full max-w-sm text-center v10-fade">
+                    <div className="flex justify-center">
+                      <span className="relative grid h-16 w-16 place-items-center">
+                        <span className="absolute inset-0 rounded-full bg-emerald-50"/>
+                        <span className="absolute inset-1 rounded-full border-2 border-emerald-100"/>
+                        <Ico name="tick" size={26} cls="relative text-emerald-500"/>
+                      </span>
+                    </div>
+                    <div className="mt-5 text-[16px] font-semibold text-slate-900">No conflicts found</div>
+                    <div className="mt-1.5 text-[13px] leading-relaxed text-slate-500">We checked this rule against every existing rule on this form. It runs cleanly and is safe to save.</div>
+                    <div className="mt-6 flex justify-center gap-2.5">
+                      <button onClick={endTest} className="h-9 rounded-full border border-slate-200 bg-white px-4 text-[13px] font-medium text-slate-600 hover:bg-slate-50">Close</button>
+                      <button onClick={()=>{ endTest(); save(); }} className="h-9 rounded-full px-5 text-[13px] font-semibold text-white shadow-sm hover:brightness-105" style={{background:BRAND}}>Save rule</button>
+                    </div>
+                  </div>
+                ) : testGoesToPreview ? <SafePreviewSim step={testStep} ready={simReady}/> : <div className="w-full max-w-sm">
                   {/* calm analysis indicator — soft halo + one sweeping arc; no flashy motion */}
                   <div className="flex justify-center">
                     <span className="relative grid h-16 w-16 place-items-center">
@@ -6157,7 +6323,8 @@ function FieldRulesDrawer({fieldId, onClose}){
   // labels for known fields; title-cases any unknown id (e.g. requester_type → Requester Type)
   const flabel = id => { const l = labelOf(id); return l!==id ? l : id.split("_").map(w=> w.charAt(0).toUpperCase()+w.slice(1)).join(" "); };
   // --- per-field/block helpers ------------------------------------------------
-  const blocksOf   = r => (r.blocks && r.blocks.length) ? r.blocks : [{conditions:r.conditions||[], actions:r.actions||[]}];
+  // every block carries its trigger — `exec` (Execute on) + `time` (When it runs); block value wins, else the rule's.
+  const blocksOf   = r => { const bs = (r.blocks && r.blocks.length) ? r.blocks : [{conditions:r.conditions||[], actions:r.actions||[]}]; return bs.map(b=> ({...b, exec: b.exec || r.exec, time: b.time || r.when })); };
   const actFieldsOf = a => (a.fieldIds && a.fieldIds.length) ? a.fieldIds : (a.fieldId ? [a.fieldId] : []);
   const blkActs    = b => (b.actions||[]).filter(a=> actFieldsOf(a).indexOf(F)>=0);
   // conditions may be grouped ({group:true, conditions:[...]}) — expose the groups and a flat leaf list
@@ -6222,7 +6389,7 @@ function FieldRulesDrawer({fieldId, onClose}){
   const mixed = anyCond && anyAct;
 
   const TABS = [{k:"all",label:"All"},{k:"cond",label:"Conditions"},{k:"act",label:"Actions"},{k:"both",label:"Both"}];
-  const Lbl = ({children}) => <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{children}</div>;
+  const Lbl = ({children}) => <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{children}</div>;
 
   // Field-first detail card. The user clicked this field, so we lead with the field's own role,
   // then the rest of the block's conditions, then the outcome. Conditions are never re-labelled
@@ -6235,7 +6402,7 @@ function FieldRulesDrawer({fieldId, onClose}){
     const otherActs = allActs.filter(a=> actFieldsOf(a).indexOf(F)<0);
     const role = (stActs.length>0 && fC.length>0) ? "both" : (stActs.length>0 ? "action" : "condition");
     const Body  = ({children}) => <div className="text-[13px] font-medium text-slate-800">{children}</div>;
-    const Conds = ({items}) => <div className="space-y-0.5">{items.map((c,i)=><div key={i} className="flex gap-2 text-[12.5px] leading-snug text-slate-600"><span className="text-slate-300">•</span><span>{condText(c)}</span></div>)}</div>;
+    const Conds = ({items}) => <div className="space-y-1">{items.map((c,i)=><div key={i} className="flex items-start gap-2 text-[12.5px] leading-snug text-slate-600"><span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-slate-300"/><span>{condText(c)}</span></div>)}</div>;
     // one group → a plain list; several → each group reads as a unit, joined by AND
     const Groups = ({groups}) => groups.length<=1
       ? <Conds items={groups[0]||[]}/>
@@ -6243,79 +6410,84 @@ function FieldRulesDrawer({fieldId, onClose}){
           <div key={gi}>
             {gi>0 && <div className="my-2 flex items-center gap-2 text-[10px] font-semibold tracking-wide text-slate-400"><span>AND</span><div className="h-px flex-1 bg-slate-100"/></div>}
             <div className="border-l-2 border-slate-100 pl-2.5">
-              <div className="mb-1 text-[10.5px] font-medium text-slate-400">Condition group {gi+1}</div>
+              <div className="mb-1 text-[10.5px] font-medium text-slate-400">Group {gi+1}</div>
               <Conds items={g}/>
             </div>
           </div>
         ))}</div>;
-    // one logical zone; a hairline separates zones (the first zone has no rule above it)
+    // one labelled zone per line of meaning; a hairline separates zones (the field name is NOT repeated —
+    // the drawer title and the block summary already name it, so the detail leads straight with content)
     const Sec = ({label, children}) => <div className="border-t border-slate-100 pt-2.5 first:border-t-0 first:pt-0"><Lbl>{label}</Lbl><div className="mt-1">{children}</div></div>;
     return (
-      <div className="px-3.5 py-3">
-        <div className="text-[15px] font-semibold text-slate-800">{L}</div>
-        <div className="mt-2.5 space-y-2.5">
-          {role==="condition" && <>
-            <Sec label={"How " + L + " is used"}><Body>{condEq(fC[0])}</Body></Sec>
-            {otherGroups.length>0 && <Sec label="Along with"><Groups groups={otherGroups}/></Sec>}
-            {allActs.length>0 && <Sec label="Then">{allActs.map((a,i)=><Body key={i}>{actLine(a)}</Body>)}</Sec>}
-          </>}
-          {role==="action" && <>
-            <Sec label={"What happens to " + L}>{stActs.map((a,i)=><Body key={i}>{actArrow(a)}</Body>)}</Sec>
-            {otherGroups.length>0
-              ? <Sec label="When"><Groups groups={otherGroups}/></Sec>
-              : <div className="border-t border-slate-100 pt-2.5 text-[11.5px] text-slate-400">This happens whenever the block runs.</div>}
-            {otherActs.length>0 && <Sec label="Other actions">{otherActs.map((a,i)=><Body key={i}>{actLine(a)}</Body>)}</Sec>}
-          </>}
-          {role==="both" && <>
-            <Sec label={"How " + L + " is checked"}><Body>{condEq(fC[0])}</Body></Sec>
-            {otherGroups.length>0 && <Sec label="Along with"><Groups groups={otherGroups}/></Sec>}
-            {stActs.map((a,i)=> a.behavior==="Set Value"
-              ? <Sec key={"o"+i} label={"Then " + L + " changes to"}><Body>{a.value||"a value"}</Body></Sec>
-              : <Sec key={"o"+i} label="Then"><Body>{actArrow(a)}</Body></Sec>)}
-            {otherActs.length>0 && <Sec label="Other actions">{otherActs.map((a,i)=><Body key={i}>{actLine(a)}</Body>)}</Sec>}
-          </>}
-        </div>
+      <div className="space-y-2.5 px-4 py-3.5">
+        {/* the block's trigger, as a quiet single line — when it runs · which operations it executes on */}
+        {(b.time || b.exec) &&
+          <div className="flex items-center gap-1.5 text-[11.5px] text-slate-400">
+            <Ico name="history" size={12} cls="shrink-0"/>
+            <span className="min-w-0 truncate">{[b.time, b.exec].filter(Boolean).join(" · ")}</span>
+          </div>}
+        {role==="condition" && <>
+          <Sec label="Condition"><Body>{condEq(fC[0])}</Body></Sec>
+          {otherGroups.length>0 && <Sec label="Along with"><Groups groups={otherGroups}/></Sec>}
+          {allActs.length>0 && <Sec label="Then">{allActs.map((a,i)=><Body key={i}>{actLine(a)}</Body>)}</Sec>}
+        </>}
+        {role==="action" && <>
+          <Sec label="Action">{stActs.map((a,i)=><Body key={i}>{actArrow(a)}</Body>)}</Sec>
+          {otherGroups.length>0
+            ? <Sec label="Conditions"><Groups groups={otherGroups}/></Sec>
+            : <div className="border-t border-slate-100 pt-2.5 text-[11.5px] italic text-slate-400">Runs whenever the block runs.</div>}
+          {otherActs.length>0 && <Sec label="Other actions in this rule">{otherActs.map((a,i)=><Body key={i}>{actLine(a)}</Body>)}</Sec>}
+        </>}
+        {role==="both" && <>
+          <Sec label="Condition"><Body>{condEq(fC[0])}</Body></Sec>
+          {otherGroups.length>0 && <Sec label="Along with"><Groups groups={otherGroups}/></Sec>}
+          {stActs.map((a,i)=> a.behavior==="Set Value"
+            ? <Sec key={"o"+i} label="Then changes to"><Body>{a.value||"a value"}</Body></Sec>
+            : <Sec key={"o"+i} label="Then"><Body>{actArrow(a)}</Body></Sec>)}
+          {otherActs.length>0 && <Sec label="Other actions in this rule">{otherActs.map((a,i)=><Body key={i}>{actLine(a)}</Body>)}</Sec>}
+        </>}
       </div>
     );
   };
 
-  // one rule row — name + audience, a role/behavior summary + block count, and its expansion
+  // one rule row — the rule NAME leads (primary), a muted meta line beneath, then its expansion.
+  // single-block → the detail directly (no redundant "Block 1"); multi-block → collapsible blocks.
   const RuleCard = ({vm}) => {
     const ro = !!openRules[vm.r.id];
     return (
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-        <button onClick={()=>setOpenRules(t=>({...t,[vm.r.id]:!ro}))} className="flex w-full items-start gap-3 px-4 py-3 text-left transition hover:bg-slate-50/60">
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <button onClick={()=>setOpenRules(t=>({...t,[vm.r.id]:!ro}))} className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-slate-50/60">
           <div className="min-w-0 flex-1">
-            <div className="flex items-center justify-between gap-3">
-              <span className="truncate text-[13.5px] font-semibold text-slate-800">{vm.r.name}</span>
-              {vm.r.audience && <span className="shrink-0 text-[11.5px] text-slate-400">{vm.r.audience}</span>}
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="truncate text-[14px] font-semibold text-slate-900">{vm.r.name}</span>
+              {vm.r.audience && <span className="shrink-0 text-[11px] font-medium text-slate-400">{vm.r.audience}</span>}
             </div>
-            <div className="mt-1 flex items-center justify-between gap-3">
-              <span className="min-w-0 truncate text-[12.5px] text-slate-600">{rowSummary(vm)}</span>
-              {rowCount(vm) && <span className="shrink-0 text-[11px] text-slate-400">{rowCount(vm)}</span>}
-            </div>
+            <div className="mt-0.5 truncate text-[12px] text-slate-500">{rowSummary(vm)}{rowCount(vm) ? " · " + rowCount(vm) : ""}</div>
           </div>
-          <Ico name="chevdown" size={15} cls={"mt-0.5 shrink-0 text-slate-400 transition-transform " + (ro?"":"-rotate-90")}/>
+          <Ico name="chevdown" size={15} cls={"shrink-0 text-slate-400 transition-transform " + (ro?"":"-rotate-90")}/>
         </button>
-        {/* rule expansion — always Rule → Block → field logic; a single-block rule auto-expands its one block */}
         {ro &&
-          <div className="border-t border-slate-100 bg-slate-50/40 px-3 py-2.5 space-y-1.5">
-            {vm.multi && <div className="px-1 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">Blocks with {L} · {vm.appearing.length} of {vm.total}</div>}
-            {vm.appearing.map(x=>{
-              const bk = vm.r.id+":"+x.i;
-              // multi-block: collapsed by default. single-block: expanded by default until the user toggles it.
-              const bo = vm.multi ? !!openBlocks[bk] : (openBlocks[bk]===undefined ? true : openBlocks[bk]);
-              return (
-                <div key={bk} className="overflow-hidden rounded-md border border-slate-200 bg-white">
-                  <button onClick={()=>setOpenBlocks(t=>({...t,[bk]:!bo}))} className="flex w-full items-center gap-2 px-3 py-2 text-left transition hover:bg-slate-50">
-                    <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10.5px] font-semibold text-slate-500">Block {x.i+1}</span>
-                    <span className="min-w-0 flex-1 truncate text-[12.5px] text-slate-700">{rowVerb(x.b)}</span>
-                    <Ico name="chevdown" size={13} cls={"shrink-0 text-slate-400 transition-transform " + (bo?"":"-rotate-90")}/>
-                  </button>
-                  {bo && <div className="border-t border-slate-100"><BlockDetail b={x.b}/></div>}
-                </div>
-              );
-            })}
+          <div className="border-t border-slate-100 bg-slate-50/50 px-3 py-3">
+            {vm.multi
+              ? <>
+                  <div className="mb-2 px-1"><Lbl>Blocks with {L} · {vm.appearing.length} of {vm.total}</Lbl></div>
+                  <div className="space-y-2">
+                    {vm.appearing.map(x=>{
+                      const bk = vm.r.id+":"+x.i, bo = !!openBlocks[bk];
+                      return (
+                        <div key={bk} className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+                          <button onClick={()=>setOpenBlocks(t=>({...t,[bk]:!bo}))} className="flex w-full items-center gap-2.5 px-3 py-2 text-left transition hover:bg-slate-50">
+                            <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Block {x.i+1}</span>
+                            <span className="min-w-0 flex-1 truncate text-[12.5px] text-slate-700">{rowVerb(x.b)}</span>
+                            <Ico name="chevdown" size={13} cls={"shrink-0 text-slate-400 transition-transform " + (bo?"":"-rotate-90")}/>
+                          </button>
+                          {bo && <div className="border-t border-slate-100"><BlockDetail b={x.b}/></div>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              : <div className="rounded-lg border border-slate-200 bg-white"><BlockDetail b={vm.appearing[0].b}/></div>}
           </div>}
       </div>
     );
@@ -6324,28 +6496,22 @@ function FieldRulesDrawer({fieldId, onClose}){
   return (
     <>
       <div className="fixed inset-0 z-[58] bg-slate-900/25" onClick={onClose}/>
-      <aside className="fixed top-0 right-0 z-[59] h-full w-[600px] max-w-[97vw] bg-white shadow-2xl border-l border-slate-200 flex flex-col v10-drawer">
-        {/* 1 — header */}
-        <div className="flex items-center justify-between gap-3 px-5 h-14 shrink-0 border-b border-slate-200">
-          <div className="min-w-0 flex items-baseline gap-1.5 text-[14px]">
-            <span className="text-slate-400">Rules applying to field</span>
-            <span className="text-slate-300">–</span>
-            <span className="truncate font-semibold text-slate-800">{L}</span>
+      <aside className="fixed top-0 right-0 z-[59] flex h-full w-[600px] max-w-[97vw] flex-col border-l border-slate-200 bg-white shadow-2xl v10-drawer">
+        {/* header — the field is the subject, named once and prominently */}
+        <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 pb-4 pt-5 shrink-0">
+          <div className="min-w-0">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Field rules</div>
+            <div className="mt-1 truncate text-[18px] font-bold leading-tight text-slate-900">{L}</div>
+            <div className="mt-1 text-[12.5px] text-slate-500">{vms.length===1 ? "1 rule applies" : (vms.length + " rules apply")}{mixed ? " — as a condition, action, or both" : ""}</div>
           </div>
-          <button onClick={onClose} className="shrink-0 text-slate-400 hover:text-slate-700 transition" title="Close"><Ico name="x" size={18}/></button>
+          <button onClick={onClose} className="grid h-8 w-8 shrink-0 place-items-center rounded-md text-slate-400 transition hover:bg-slate-100 hover:text-slate-700" title="Close"><Ico name="x" size={18}/></button>
         </div>
-        {/* 2 — field summary */}
-        <div className="px-5 py-4 shrink-0 border-b border-slate-100">
-          <div className="text-[16px] font-semibold text-slate-800">{L}</div>
-          <div className="mt-1 text-[12.5px] text-slate-500">{vms.length===1 ? "1 rule applies" : (vms.length + " rules apply")} to this field</div>
-          {mixed && <div className="mt-1 text-[12px] leading-snug text-slate-400">Used as a condition, an action, or both across different rules.</div>}
-        </div>
-        {/* 3 — search + filters */}
-        <div className="px-5 py-3 shrink-0 border-b border-slate-100 space-y-2.5">
+        {/* search + role filter */}
+        <div className="space-y-2.5 border-b border-slate-100 px-5 py-3 shrink-0">
           <div className="relative">
             <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"><Ico name="search" size={15}/></span>
             <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search rules..."
-              className="w-full h-8 pl-8 pr-2 rounded-md border border-slate-200 text-[13px] outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100 transition"/>
+              className="h-8 w-full rounded-md border border-slate-200 pl-8 pr-2 text-[13px] outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100"/>
           </div>
           <div className="inline-flex items-center gap-0.5 rounded-lg bg-slate-100 p-0.5">
             {TABS.map(t=>(
@@ -6354,15 +6520,16 @@ function FieldRulesDrawer({fieldId, onClose}){
             ))}
           </div>
         </div>
-        {/* 4 — field usage sections (grouped by role) → 5/6/7 rule rows + expansion */}
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+        {/* grouped rules — a captioned hairline heads each role group */}
+        <div className="flex-1 space-y-6 overflow-y-auto px-5 py-4">
           {visGroups.map(g=>(
             <div key={g.k}>
-              <div className="mb-2 flex items-center gap-2 px-1">
-                <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{g.title}</span>
-                <span className="text-[11px] text-slate-300">{g.rules.length}</span>
+              <div className="mb-2.5 flex items-center gap-2.5 px-0.5">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{g.title}</span>
+                <span className="h-px flex-1 bg-slate-100"/>
+                <span className="text-[11px] font-medium text-slate-300">{g.rules.length}</span>
               </div>
-              <div className="space-y-2">
+              <div className="space-y-2.5">
                 {g.rules.map(vm=> <RuleCard key={vm.r.id} vm={vm}/>)}
               </div>
             </div>

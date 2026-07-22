@@ -18,3 +18,7 @@ V8-REFERENCE.md
 WORK-CONTEXT.md
 OPTION-A-DESIGN.md
 V7-SPEC.md
+
+# stray editor temp files
+*.tmp
+*.tmp.*
