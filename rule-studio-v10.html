@@ -40,6 +40,13 @@
   .v10-simscan { transform-box: view-box; animation: v10simscan 2.8s cubic-bezier(.45,0,.55,1) infinite; }
   @keyframes v10simrise { from { opacity:0; transform: translateY(4px); } to { opacity:1; transform:none; } }
   .v10-simrise { animation: v10simrise .45s cubic-bezier(.22,.61,.36,1) both; }
+  /* Coaching-callout micro-motion — quiet, looping, minimal. */
+  @keyframes v10twinkle { 0%,100% { opacity:.55; transform: scale(.9) rotate(0deg); } 50% { opacity:1; transform: scale(1.12) rotate(8deg); } }
+  .v10-twinkle { animation: v10twinkle 2.6s ease-in-out infinite; transform-origin: center; }
+  @keyframes v10float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
+  .v10-float { animation: v10float 2.8s ease-in-out infinite; }
+  @keyframes v10nudge { 0%,100% { transform: translateY(0) rotate(45deg); } 50% { transform: translateY(2px) rotate(45deg); } }
+  .v10-nudge { animation: v10nudge 1.8s ease-in-out infinite; }
   .v10 input::placeholder { color:#94a3b8; }
 </style>
 </head>
@@ -1373,6 +1380,11 @@ function RulesListing({customSel, onEditRule, onCustom, onToast}){
                 {rows.map((row, idx)=>{
                   const k = keyOf(row);
                   const conflicts = conflictsFor(row.rule);
+                  // Conflict tag is a demo cue only: hide it on the first 10 rules and on any user-created rule
+                  // (new rules get ids r101+ via makeRuleId). Later seeded demo rules keep their tag.
+                  const _idm = row.rule && /^r(\d+)$/.exec(row.rule.id||"");
+                  const isNewRule = !!(_idm && parseInt(_idm[1],10) > 100);
+                  const showConflictTag = idx >= 10 && !isNewRule && conflicts.length>0;
                   return (
                     <React.Fragment key={k}>
                     <div
@@ -1387,7 +1399,7 @@ function RulesListing({customSel, onEditRule, onCustom, onToast}){
                           <span className="text-[13.5px] font-semibold text-slate-800 truncate"><span className="text-slate-400 font-medium mr-1">{idx+1}.</span>{row.name}</span>
                           {row.kind==="custom" && <TypeBadge kind="custom"/>}
                           {/* clicking the pill opens THIS rule's Review Conflict drawer directly */}
-                          {conflicts.length>0 && <ConflictTag count={conflicts.length} open={false} onClick={e=>{ e.stopPropagation(); setConflictRule(row.rule); }}/>}
+                          {showConflictTag && <ConflictTag count={conflicts.length} open={false} onClick={e=>{ e.stopPropagation(); setConflictRule(row.rule); }}/>}
                         </div>
                       </div>
                       <div className="text-[12.5px] text-slate-600 truncate">{row.exec}</div>
@@ -2092,12 +2104,14 @@ function GBlock({label, text}){
   if(!text) return null;
   return <div><div className="text-[9.5px] font-bold tracking-wide text-slate-400 mb-0.5">{label}</div><p className="text-[11.5px] text-slate-600 leading-snug">{text}</p></div>;
 }
-function GuidedDropdown({value, onChange, options, guide, placeholder, hint, variant, highlight, multi}){
+function GuidedDropdown({value, onChange, options, guide, placeholder, hint, variant, highlight, multi, autoOpen}){
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [active, setActive] = useState("");
   const [pos, setPos] = useState(null);
   const btnRef = useRef(null);
+  // Progressive disclosure: when the parent flags this control as the "current step", open it automatically.
+  useEffect(()=>{ if(autoOpen && !open){ const t=setTimeout(()=>{ if(btnRef.current) openMenu(); }, 30); return ()=>clearTimeout(t); } }, [autoOpen]);
   const norm = options.map(o=> (o && typeof o==="object") ? o : {value:o, label:o});
   const isMulti = !!multi;
   const arr = Array.isArray(value) ? value : (value ? [value] : []);
@@ -2122,7 +2136,7 @@ function GuidedDropdown({value, onChange, options, guide, placeholder, hint, var
   };
   const pick = v => { if (isMulti){ const next = arr.indexOf(v)>=0 ? arr.filter(x=>x!==v) : arr.concat([v]); onChange(next); } else { onChange(v); setOpen(false); } };
   const triggerCls = variant==="pill"
-    ? "appearance-none h-11 w-full rounded-lg border bg-white pl-4 pr-9 text-[14px] font-medium inline-flex items-center justify-between gap-2 relative " + (sel?"text-slate-700":"text-slate-400") + " " + (open?"border-sky-300 ring-2 ring-sky-100":"border-slate-200 hover:border-slate-300")
+    ? "appearance-none h-9 w-full rounded-lg border bg-white pl-3 pr-8 text-[13px] font-medium inline-flex items-center justify-between gap-2 relative " + (sel?"text-slate-700":"text-slate-400") + " " + (open?"border-sky-300 ring-2 ring-sky-100":"border-slate-200 hover:border-slate-300")
     : "h-9 rounded-md border bg-white px-2.5 text-[13px] inline-flex items-center justify-between gap-1.5 w-full relative " + ((sel||arr.length)?"text-slate-700":"text-slate-400") + " " + (open?"border-sky-300 ring-1 ring-sky-200":(highlight?"border-sky-300 ring-1 ring-sky-200":"border-slate-200 hover:border-slate-300"));
   const triggerText = isMulti ? (arr.length ? (arr.length>1 ? labelFor(arr[0]) + "  +" + (arr.length-1) : labelFor(arr[0])) : (placeholder||"Select")) : (sel ? sel.label : (placeholder||"Select"));
   const g = guide && active && guide[active];
@@ -2181,20 +2195,23 @@ function GuidedDropdown({value, onChange, options, guide, placeholder, hint, var
     </>
   );
 }
-function ValueControl({fieldId, op, value, onChange}){
+function ValueControl({fieldId, op, value, onChange, autoOpen}){
   const opts = FIELD_OPTIONS[fieldId];
   const isMulti = OPS_MULTI.indexOf(op) >= 0;
+  const inRef = useRef(null);
+  // Progressive disclosure — focus the free-text value when the parent advances to this step.
+  useEffect(()=>{ if(autoOpen && inRef.current){ const t=setTimeout(()=>{ try{ inRef.current.focus(); }catch(_){} }, 30); return ()=>clearTimeout(t); } }, [autoOpen]);
   if (opts && opts.length)
-    return <GuidedDropdown value={value} onChange={onChange} options={opts} placeholder={isMulti ? "Choose values" : "Choose value"} hint={"Pick a value for " + labelOf(fieldId) + "."} multi={isMulti}/>;
-  return <input value={(Array.isArray(value)?value.join(", "):value)||""} onChange={e=>onChange(e.target.value)} placeholder="value" className="h-9 w-full min-w-0 rounded-md border border-slate-200 px-2 text-[13px] outline-none focus:border-sky-300"/>;
+    return <GuidedDropdown value={value} onChange={onChange} options={opts} placeholder={isMulti ? "Choose values" : "Choose value"} hint={"Pick a value for " + labelOf(fieldId) + "."} multi={isMulti} autoOpen={autoOpen}/>;
+  return <input ref={inRef} value={(Array.isArray(value)?value.join(", "):value)||""} onChange={e=>onChange(e.target.value)} placeholder="value" className="h-9 w-full min-w-0 rounded-md border border-slate-200 px-2 text-[13px] outline-none focus:border-sky-300"/>;
 }
 // Filter Data configuration (V9 parity): Person → user field → value cascade. Each step resets the ones
 // after it. Shared by both action rows; writes a.entity / a.srcField / a.value on the action.
-function FilterDataConfig({a, onChange}){
+function FilterDataConfig({a, onChange, autoOpen}){
   const sfLabel = (FD_USER_FIELDS.find(x=>x.value===a.srcField)||{}).label;
   return (
     <>
-      <div className="w-36"><GuidedDropdown value={a.entity||""} onChange={v=>onChange({entity:v, srcField:"", value:""})} options={FD_PERSONS} placeholder="Select person"/></div>
+      <div className="w-36"><GuidedDropdown value={a.entity||""} onChange={v=>onChange({entity:v, srcField:"", value:""})} autoOpen={autoOpen} options={FD_PERSONS} placeholder="Select person"/></div>
       {a.entity && <span className="text-[13px] text-slate-400">›</span>}
       {a.entity && <div className="w-40"><GuidedDropdown value={a.srcField||""} onChange={v=>onChange({srcField:v, value:""})} options={FD_USER_FIELDS} placeholder="Select user field"/></div>}
       {a.srcField && <span className="text-[13px] text-slate-400">›</span>}
@@ -2807,11 +2824,13 @@ function ConflictPip({count, fields, onClick}){
   );
 }
 // Grouped + searchable field picker (V7 field organisation over V10's form fields).
-function V7FieldPicker({value, onChange, placeholder, conflict, onConflict, conflictLabel}){
+function V7FieldPicker({value, onChange, placeholder, conflict, onConflict, conflictLabel, autoOpen}){
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [pos, setPos] = useState(null);
   const btn = useRef(null);
+  // Progressive disclosure — open automatically when the parent marks this as the active step.
+  useEffect(()=>{ if(autoOpen && !open){ const t=setTimeout(()=>{ if(btn.current) openMenu(); }, 30); return ()=>clearTimeout(t); } }, [autoOpen]);
   const openMenu = () => {
     const r = btn.current.getBoundingClientRect();
     const W = 280, H = 360;
@@ -2865,9 +2884,10 @@ function V7FieldPicker({value, onChange, placeholder, conflict, onConflict, conf
 }
 // Action target selector — collapsed control. Empty → "Choose fields"; 1 → the field; many → "Status + N more".
 // Click opens a compact popover (search + live multi-select); its expand button opens the full dual-pane "Select fields" modal.
-function V7TargetSelect({ ids, onChange, conflictIds, onConflict }){
+function V7TargetSelect({ ids, onChange, conflictIds, onConflict, autoOpen }){
   const [view, setView] = useState(null);   // null | "pop" | "modal"
   const [pq, setPq] = useState("");          // popover search query
+  const [popExpand, setPopExpand] = useState(false);   // popover: show ALL selected chips vs first 3 + "+N"
   const [pos, setPos] = useState(null);      // popover anchor position
   const [tip, setTip] = useState(null);      // {left, top} for the portaled hover preview of all selected fields
   const [cfTip, setCfTip] = useState(null);  // hover tooltip for the conflict indicator
@@ -2884,14 +2904,17 @@ function V7TargetSelect({ ids, onChange, conflictIds, onConflict }){
     let left = r.left; if(left+W>window.innerWidth-8) left=window.innerWidth-W-8; if(left<8) left=8;
     const fitsBelow = r.bottom+4+H <= window.innerHeight-8;
     setPos((fitsBelow || r.top<H) ? {left, top:r.bottom+4} : {left, bottom:(window.innerHeight-r.top)+4});
-    setPq(""); setTip(null); setView("pop");
+    setPq(""); setPopExpand(false); setTip(null); setView("pop");
   };
   const toggle = id => onChange(ids.indexOf(id)>=0 ? ids.filter(x=>x!==id) : [...ids, id]);
   const pql = pq.trim().toLowerCase();
-  const popList = V7_FIELD_FLAT.filter(f=> !pql || f.label.toLowerCase().indexOf(pql)>=0);
+  // Popover list = fields NOT yet chosen (the chosen ones are pinned as chips at the top); filtered by the search.
+  const popAvail = V7_FIELD_FLAT.filter(f=> ids.indexOf(f.id)<0 && (!pql || f.label.toLowerCase().indexOf(pql)>=0));
   const showTip = () => { if(!n || !btn.current || view) return; const r=btn.current.getBoundingClientRect(); const W=240; let left=r.left; if(left+W>window.innerWidth-8) left=window.innerWidth-W-8; if(left<8) left=8; setTip({left, top:r.bottom+6}); };
   const hideTip = () => setTip(null);
   const showCfTip = () => { if(!cf.current) return; const r=cf.current.getBoundingClientRect(); const W=220; let left=r.right-W; if(left<8) left=8; setCfTip({left, top:r.bottom+8}); };
+  // Progressive disclosure — open the compact popover automatically when the parent marks this the active step.
+  useEffect(()=>{ if(autoOpen && !view){ const t=setTimeout(()=>{ if(btn.current) openPop(); }, 30); return ()=>clearTimeout(t); } }, [autoOpen]);
   return (
     <>
       <button ref={btn} type="button" onClick={()=> view?setView(null):openPop()} onMouseEnter={showTip} onMouseLeave={hideTip}
@@ -2941,13 +2964,24 @@ function V7TargetSelect({ ids, onChange, conflictIds, onConflict }){
               <button type="button" onClick={()=>setView("modal")} title="Expand"
                 className="h-9 w-9 grid place-items-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700"><Ico name="expand" size={15}/></button>
             </div>
+            {/* selected fields pinned at the top — first 3, then "+N" to reveal the rest; each removable */}
+            {n>0 &&
+              <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-100 px-2.5 py-2">
+                {(popExpand ? ids : ids.slice(0,3)).map(id=>(
+                  <span key={id} className="inline-flex items-center gap-1 rounded-full bg-sky-50 py-0.5 pl-2.5 pr-1 text-[12px] font-medium text-[#1180c1] ring-1 ring-sky-200">
+                    <span className="max-w-[130px] truncate">{labelOf(id)}</span>
+                    <button type="button" onClick={()=>toggle(id)} title="Remove" className="grid h-4 w-4 place-items-center rounded-full text-sky-400 hover:bg-sky-100 hover:text-sky-600"><Ico name="x" size={11}/></button>
+                  </span>
+                ))}
+                {n>3 && <button type="button" onClick={()=>setPopExpand(v=>!v)} className="rounded-full bg-slate-100 px-2 py-0.5 text-[12px] font-semibold text-slate-500 hover:bg-slate-200">{popExpand ? "Show less" : "+"+(n-3)}</button>}
+              </div>}
             <div className="overflow-y-auto py-1">
-              {popList.map(f=>{ const on=ids.indexOf(f.id)>=0; return (
+              {popAvail.map(f=>(
                 <button key={f.id} type="button" onClick={()=>toggle(f.id)}
-                  className={"w-full text-left px-4 py-2 text-[14px] flex items-center justify-between " + (on ? "bg-sky-50 text-[#1180c1] font-semibold" : "text-slate-700 hover:bg-slate-50")}>
-                  {f.label}{on && <Ico name="check" size={15}/>}
-                </button>); })}
-              {popList.length===0 && <p className="px-4 py-6 text-center text-[12px] text-slate-400">No matches</p>}
+                  className="group w-full text-left px-4 py-2 text-[14px] text-slate-700 hover:bg-sky-50 flex items-center justify-between">
+                  {f.label}<span className="text-sky-500 opacity-0 group-hover:opacity-100 text-[16px] leading-none">+</span>
+                </button>))}
+              {popAvail.length===0 && <p className="px-4 py-6 text-center text-[12px] text-slate-400">{pql ? "No matches" : "All fields selected"}</p>}
             </div>
           </div>
         </div>, document.body)}
@@ -3105,8 +3139,8 @@ const STEP_BADGE = { when:"bg-sky-100 text-[#1180c1]", if:"bg-amber-100 text-amb
 function V7StepHead({tone, tag, title}){
   return (
     <div className="mb-3 flex items-center gap-2.5">
-      <span className={"rounded-md px-2.5 py-1 text-[12.5px] font-semibold " + (STEP_BADGE[tone]||"bg-slate-100 text-slate-600")}>{tag}</span>
-      <span className="text-[14.5px] font-semibold text-slate-700">{title}</span>
+      <span className={"rounded-md px-2 py-0.5 text-[11.5px] font-semibold " + (STEP_BADGE[tone]||"bg-slate-100 text-slate-600")}>{tag}</span>
+      <span className="text-[13.5px] font-semibold text-slate-700">{title}</span>
     </div>
   );
 }
@@ -3154,18 +3188,20 @@ function V7LogicSelect({value, onChange, level}){
   );
 }
 // Condition row opens ready-to-fill: field · operator · value placeholders all visible immediately.
-function V7CondRow({c, onChange, onRemove, onDuplicate, prefix, conflictFields, onFieldConflict, ruleName}){
+function V7CondRow({c, onChange, onRemove, onDuplicate, prefix, conflictFields, onFieldConflict, ruleName, autoStart}){
   // condition-field conflict — surfaced INSIDE the field input box, same as the action's fields dropdown
   const cfHit = !!(isDemoConflictRule(ruleName) && conflictFields && c.fieldId && conflictFields.has(c.fieldId));
+  // Progressive disclosure — a freshly-added row opens the field picker, then advances field → operator → value.
+  const [adv, setAdv] = useState(autoStart ? "field" : null);
   return (
     <div className="flex items-center gap-2">
       {prefix && <div className="w-[62px] shrink-0">{prefix}</div>}
-      <div className="w-44 shrink-0"><V7FieldPicker value={c.fieldId} onChange={v=>onChange({fieldId:v, op:"", value:""})} placeholder="Choose field" conflict={cfHit} onConflict={onFieldConflict} conflictLabel={c.fieldId?labelOf(c.fieldId):""}/></div>
-      <div className="w-36 shrink-0"><GuidedDropdown value={c.op} onChange={v=>onChange({op:v, value: OPS_MULTI.indexOf(v)>=0 ? [] : ""})} options={condOps(c)} guide={OP_GUIDE} placeholder="Choose"/></div>
+      <div className="w-44 shrink-0"><V7FieldPicker value={c.fieldId} onChange={v=>{ onChange({fieldId:v, op:"", value:""}); setAdv("op"); }} autoOpen={adv==="field"} placeholder="Choose field" conflict={cfHit} onConflict={onFieldConflict} conflictLabel={c.fieldId?labelOf(c.fieldId):""}/></div>
+      <div className="w-36 shrink-0"><GuidedDropdown value={c.op} onChange={v=>{ onChange({op:v, value: OPS_MULTI.indexOf(v)>=0 ? [] : ""}); setAdv(OPS_NOVALUE.indexOf(v)>=0 ? null : "value"); }} autoOpen={adv==="op"} options={condOps(c)} guide={OP_GUIDE} placeholder="Choose"/></div>
       <div className="min-w-0 flex-1">
         {OPS_NOVALUE.indexOf(c.op)>=0
           ? <span className="px-1 text-[12px] italic text-slate-400">no value needed</span>
-          : <ValueControl fieldId={c.fieldId} op={c.op} value={c.value} onChange={v=>onChange({value:v})}/>}
+          : <ValueControl fieldId={c.fieldId} op={c.op} value={c.value} onChange={v=>{ onChange({value:v}); setAdv(null); }} autoOpen={adv==="value"}/>}
       </div>
       {onDuplicate && <button onClick={onDuplicate} title="Duplicate condition" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-slate-200 text-slate-400 transition hover:bg-slate-50 hover:text-slate-600"><Ico name="copy" size={14}/></button>}
       <button onClick={onRemove} title="Remove condition" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-slate-200 text-rose-500 transition hover:bg-rose-50"><Ico name="trash" size={14}/></button>
@@ -3201,31 +3237,33 @@ function V7Group({g, n, onChange, onRemove, onDuplicate, conflictFields, onField
 // Action row: ONE behavior applied to ONE OR MANY target fields. Targets are chosen in a dual-pane modal
 // and shown collapsed ("Status + N more") — never as chips. fieldIds[] is the source of truth; fieldId
 // mirrors the first for back-compat with the shared summary/conflict helpers.
-function V7ActRow({a, onChange, onRemove, onDuplicate, ruleName, conflictFields, onFieldConflict}){
+function V7ActRow({a, onChange, onRemove, onDuplicate, ruleName, conflictFields, onFieldConflict, autoStart}){
   const ids = (a.fieldIds && a.fieldIds.length) ? a.fieldIds : (a.fieldId ? [a.fieldId] : []);
   const setIds = next => onChange({fieldIds:next, fieldId:next[0]||""});
   // field-level conflict discovery — scoped to the demo rule: the ids of this action's conflicting fields,
   // surfaced as a compact indicator INSIDE the fields dropdown (not as a banner below the action).
   const cfIds = (isDemoConflictRule(ruleName) && conflictFields) ? ids.filter(id=>conflictFields.has(id)) : [];
+  // Progressive disclosure — a freshly-added action opens the behavior dropdown, then advances to the target field.
+  const [adv, setAdv] = useState(autoStart ? "behavior" : null);
   return (
     <div className="flex items-center gap-2">
-      <div className="w-40 shrink-0"><GuidedDropdown value={a.behavior} onChange={v=>onChange({behavior:v, value:(v==="Show Options"||v==="Hide Options")?[]:"", entity:"", srcField:""})} options={BEHAVIORS} guide={ACTION_GUIDE} placeholder="Choose action"/></div>
+      <div className="w-40 shrink-0"><GuidedDropdown value={a.behavior} onChange={v=>{ onChange({behavior:v, value:(v==="Show Options"||v==="Hide Options")?[]:"", entity:"", srcField:""}); setAdv("field"); }} autoOpen={adv==="behavior"} options={BEHAVIORS} guide={ACTION_GUIDE} placeholder="Choose action"/></div>
       <div className="flex min-w-0 flex-1 items-center gap-2">
         {a.behavior==="Filter Data"
-          ? <FilterDataConfig a={a} onChange={onChange}/>
+          ? <FilterDataConfig a={a} onChange={onChange} autoOpen={adv==="field"}/>
           : (a.behavior==="Set Value" || a.behavior==="Show Options" || a.behavior==="Hide Options")
             ? <>
                 {/* dependent flow: pick ONE target field first, then the value/options control appears */}
                 {/* single-target behaviours carry the same conflict pip as the multi-target dropdown — without
                     this, a conflicting Set Value field stays silent while Hide/Mandate next to it warns. */}
-                <div className="w-44 shrink-0"><V7FieldPicker value={a.fieldId||""} onChange={v=>onChange({fieldId:v, fieldIds:[v], value:(a.behavior==="Show Options"||a.behavior==="Hide Options")?[]:""})} placeholder="Choose field"
+                <div className="w-44 shrink-0"><V7FieldPicker value={a.fieldId||""} onChange={v=>{ onChange({fieldId:v, fieldIds:[v], value:(a.behavior==="Show Options"||a.behavior==="Hide Options")?[]:""}); setAdv("value"); }} autoOpen={adv==="field"} placeholder="Choose field"
                   conflict={!!a.fieldId && cfIds.indexOf(a.fieldId)>=0} onConflict={onFieldConflict} conflictLabel={a.fieldId?labelOf(a.fieldId):""}/></div>
                 {a.fieldId && a.behavior==="Set Value" && <span className="text-[12px] text-slate-400 shrink-0">To</span>}
-                {a.fieldId && a.behavior==="Set Value" && <div className="min-w-0 flex-1"><ValueControl fieldId={a.fieldId} op="Equals" value={a.value} onChange={v=>onChange({value:v})}/></div>}
+                {a.fieldId && a.behavior==="Set Value" && <div className="min-w-0 flex-1"><ValueControl fieldId={a.fieldId} op="Equals" value={a.value} onChange={v=>{ onChange({value:v}); setAdv(null); }} autoOpen={adv==="value"}/></div>}
                 {a.fieldId && (a.behavior==="Show Options"||a.behavior==="Hide Options") && <span className="text-[12px] text-slate-400 shrink-0">{a.behavior==="Show Options"?"show":"hide"}</span>}
-                {a.fieldId && (a.behavior==="Show Options"||a.behavior==="Hide Options") && <div className="min-w-0 flex-1"><GuidedDropdown value={Array.isArray(a.value)?a.value:[]} onChange={v=>onChange({value:v})} options={FIELD_OPTIONS[a.fieldId]||[]} placeholder="Choose options" multi/></div>}
+                {a.fieldId && (a.behavior==="Show Options"||a.behavior==="Hide Options") && <div className="min-w-0 flex-1"><GuidedDropdown value={Array.isArray(a.value)?a.value:[]} onChange={v=>onChange({value:v})} autoOpen={adv==="value"} options={FIELD_OPTIONS[a.fieldId]||[]} placeholder="Choose options" multi/></div>}
               </>
-            : <div className="min-w-0 flex-1"><V7TargetSelect ids={ids} onChange={setIds} conflictIds={cfIds} onConflict={onFieldConflict}/></div>}
+            : <div className="min-w-0 flex-1"><V7TargetSelect ids={ids} onChange={setIds} conflictIds={cfIds} onConflict={onFieldConflict} autoOpen={adv==="field"}/></div>}
       </div>
       <button onClick={onDuplicate} title="Duplicate action" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-slate-200 text-slate-400 transition hover:bg-slate-50 hover:text-slate-600"><Ico name="copy" size={14}/></button>
       <button onClick={onRemove} title="Remove action" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-slate-200 text-rose-500 transition hover:bg-rose-50"><Ico name="trash" size={14}/></button>
@@ -3448,8 +3486,14 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
   const _cItems   = block.conditions || [];
   const condCount = _cItems.reduce((n,it)=> n + (it && it.group ? (it.conditions||[]).length : 1), 0);
   const groupCount= _cItems.filter(it=> it && it.group).length;
+  // Track the just-added condition/action row so it can auto-open its first field (progressive disclosure).
+  // Cleared shortly after the add so re-expanding a block later never re-fires the auto-open (that stacked menus).
+  const [newCondIdx, setNewCondIdx] = useState(-1);
+  const [newActIdx, setNewActIdx] = useState(-1);
+  useEffect(()=>{ if(newCondIdx<0) return; const t=setTimeout(()=>setNewCondIdx(-1), 400); return ()=>clearTimeout(t); }, [newCondIdx]);
+  useEffect(()=>{ if(newActIdx<0) return; const t=setTimeout(()=>setNewActIdx(-1), 400); return ()=>clearTimeout(t); }, [newActIdx]);
   const setCond = (i,p)=> onChange({conditions: block.conditions.map((c,j)=> j===i?{...c,...p}:c)});
-  const addCond = ()=> onChange({conditions:[...block.conditions, {fieldId:"", op:"", value:""}]});
+  const addCond = ()=>{ setNewCondIdx(block.conditions.length); onChange({conditions:[...block.conditions, {fieldId:"", op:"", value:""}]}); };
   // V9 model: adding a group wraps any existing flat conditions into their OWN group first, so
   // condition-level logic and group-level logic (block.match) get separate, unambiguous state.
   const addGroup= ()=> {
@@ -3467,7 +3511,7 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
   const dupCond = i => onChange({conditions: block.conditions.flatMap((c,j)=> j===i ? [c, {...c}] : [c])});
   const dupGroup= i => onChange({conditions: block.conditions.flatMap((it,j)=> j===i ? [it, {...it, conditions:(it.conditions||[]).map(c=>({...c}))}] : [it])});
   const setAct  = (i,p)=> onChange({actions: block.actions.map((a,j)=> j===i?{...a,...p}:a)});
-  const addAct  = ()=> onChange({actions:[...block.actions, {behavior:"", fieldIds:[], value:""}]});
+  const addAct  = ()=>{ setNewActIdx(block.actions.length); onChange({actions:[...block.actions, {behavior:"", fieldIds:[], value:""}]}); };
   const rmAct   = i => onChange({actions: block.actions.filter((_,j)=>j!==i)});
   // Duplicate an action directly below the original — copy targets/value, reset only the action type.
   const dupAct  = i => onChange({actions: block.actions.flatMap((a,j)=> j===i ? [a, {...a, behavior:"", fieldIds:(a.fieldIds||[]).slice()}] : [a])});
@@ -3540,14 +3584,14 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
     <div className="shadow-sm rounded-xl">
     <div className={"border border-slate-200 bg-white " + (blockCfCount>0 ? "rounded-t-xl" : "rounded-xl shadow-sm")}>
       {/* collapsible-group row: circular expand/collapse chevron + title (tooltip on hover) */}
-      <div className="flex items-center gap-3 px-4 py-3.5">
-        <button onClick={onToggle} className="group flex min-w-0 flex-1 items-center gap-3 text-left">
-          <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500 transition group-hover:bg-slate-200" title={expanded ? "Collapse block" : "Expand block"}>
-            <Ico name="chevdown" size={16} cls={expanded ? "rotate-180" : ""}/>
+      <div className="flex items-center gap-2.5 px-4 py-3">
+        <button onClick={onToggle} className="group flex min-w-0 flex-1 items-center gap-2.5 text-left">
+          <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500 transition group-hover:bg-slate-200" title={expanded ? "Collapse block" : "Expand block"}>
+            <Ico name="chevdown" size={14} cls={expanded ? "rotate-180" : ""}/>
           </span>
           <span className="min-w-0">
             <BlockTip title={ruleName} summary={sum} started={tipHasContent} triggers={tipTriggers} condItems={tipCondItems} actItems={tipActItems} example={tipExample}>
-              <span className="block truncate text-[17px] font-bold text-slate-800">Rule {index+1}</span>
+              <span className="block truncate text-[15px] font-bold text-slate-800">Rule {index+1}</span>
             </BlockTip>
             <span className="block truncate text-[12px] text-slate-400">{block.time || "When…"} · {block.people || "Everyone"} <span className="text-slate-300">|</span> {condCount} Condition{condCount===1?"":"s"}{groupCount>0 ? " (" + groupCount + " Group" + (groupCount===1?"":"s") + ")" : ""} · {block.actions.length} Action{block.actions.length===1?"":"s"}</span>
           </span>
@@ -3560,17 +3604,17 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
           </div>}
       </div>
       {expanded &&
-        <div className="border-t border-slate-100 bg-slate-50/60 px-4 py-5 space-y-6">
+        <div className="border-t border-slate-100 bg-slate-50/60 px-4 py-4 space-y-5">
           {/* WHEN — event + execution scope (audience is common, set once on the rule) */}
           <div>
             <V7StepHead tone="when" tag="When" title="Pick the event and who it applies to"/>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <label className="mb-1.5 block text-[13px] font-medium text-slate-500">Select Rule Event <span className="text-rose-400">*</span></label>
+                <label className="mb-1.5 block text-[12.5px] font-medium text-slate-500">Select Rule Event <span className="text-rose-400">*</span></label>
                 <GuidedDropdown value={block.time} onChange={v=>onChange({time:v})} options={WHENS} guide={WHEN_GUIDE} placeholder="Choose an event" variant="pill"/>
               </div>
               <div>
-                <label className="mb-1.5 block text-[13px] font-medium text-slate-500">Execute on <span className="text-rose-400">*</span></label>
+                <label className="mb-1.5 block text-[12.5px] font-medium text-slate-500">Execute on <span className="text-rose-400">*</span></label>
                 <GuidedDropdown value={block.exec} onChange={v=>onChange({exec:v})} options={EXEC_OPTS} guide={EXEC_GUIDE} placeholder="Apply rule on" variant="pill"/>
               </div>
             </div>
@@ -3588,8 +3632,8 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
               <V7StepHead tone="if" tag="Check If" title="set the conditions that must match"/>
               {items.length===0 &&
                 <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-5">
-                  <div className="text-[14px] font-semibold text-slate-700">No conditions yet</div>
-                  <div className="mt-1 text-[13px] text-slate-500">Add a condition to control when this rule applies. Without one, it runs on every matching event.</div>
+                  <div className="text-[13px] font-semibold text-slate-700">No conditions yet</div>
+                  <div className="mt-1 text-[12px] text-slate-500">Add a condition to control when this rule applies. Without one, it runs on every matching event.</div>
                   <div className="mt-3.5"><button onClick={addCond} className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3.5 py-2 text-[13px] font-medium text-slate-700 transition hover:bg-slate-50"><Ico name="plus" size={14}/> Add Condition</button></div>
                 </div>}
               {(()=>{
@@ -3606,7 +3650,7 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
                           <div className="mb-2.5"><span className="inline-flex items-center rounded-md bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-500">Condition group {ui+1}</span></div>
                           <div className="space-y-2.5">
                             {bares.map((c,bi)=>
-                              <V7CondRow key={bi} c={c} prefix={<LogicPrefix index={bi} match={block.match||"all"} onToggle={toggleBlock}/>} onChange={p=>setCond(items.indexOf(c),p)} onRemove={()=>rmCond(items.indexOf(c))} onDuplicate={()=>dupCond(items.indexOf(c))} conflictFields={conflictFields} onFieldConflict={onFieldConflict} ruleName={ruleName}/>)}
+                              <V7CondRow key={bi} c={c} prefix={<LogicPrefix index={bi} match={block.match||"all"} onToggle={toggleBlock}/>} onChange={p=>setCond(items.indexOf(c),p)} onRemove={()=>rmCond(items.indexOf(c))} onDuplicate={()=>dupCond(items.indexOf(c))} conflictFields={conflictFields} onFieldConflict={onFieldConflict} ruleName={ruleName} autoStart={items.indexOf(c)===newCondIdx}/>)}
                           </div>
                           <div className="mt-3"><button onClick={addCond} className="inline-flex items-center gap-1.5 text-[13px] font-medium text-slate-500 transition hover:text-slate-700"><Ico name="plus" size={13}/> Add Condition</button></div>
                         </div>
@@ -3628,12 +3672,12 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
               <V7StepHead tone="then" tag="Action" title="choose what the rule does"/>
               {block.actions.length===0
                 ? <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-5">
-                    <div className="text-[14px] font-semibold text-slate-700">No actions yet</div>
-                    <div className="mt-1 text-[13px] text-slate-500">Add an action to define what this rule does when it runs.</div>
+                    <div className="text-[13px] font-semibold text-slate-700">No actions yet</div>
+                    <div className="mt-1 text-[12px] text-slate-500">Add an action to define what this rule does when it runs.</div>
                     <div className="mt-3.5"><button onClick={addAct} className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3.5 py-2 text-[13px] font-medium text-slate-700 transition hover:bg-slate-50"><Ico name="plus" size={14}/> Add Action</button></div>
                   </div>
                 : <div className="space-y-2.5 rounded-xl border border-slate-200 bg-white p-3">
-                    {block.actions.map((a,i)=> <V7ActRow key={i} a={a} onChange={p=>setAct(i,p)} onRemove={()=>rmAct(i)} onDuplicate={()=>dupAct(i)} ruleName={ruleName} conflictFields={conflictFields} onFieldConflict={onFieldConflict}/>)}
+                    {block.actions.map((a,i)=> <V7ActRow key={i} a={a} onChange={p=>setAct(i,p)} onRemove={()=>rmAct(i)} onDuplicate={()=>dupAct(i)} ruleName={ruleName} conflictFields={conflictFields} onFieldConflict={onFieldConflict} autoStart={i===newActIdx}/>)}
                     {firstActDone &&
                       <button onClick={addAct} className="inline-flex items-center gap-1.5 text-[13px] font-medium text-slate-500 transition hover:text-slate-700"><Ico name="plus" size={13}/> Add Action</button>}
                   </div>}
@@ -5952,16 +5996,18 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
   const patch = p => setDraft(d=>({...d, ...p}));
   // Optional metadata (V7): description (revealed by a link) + tag chips with inline entry.
   const [showDesc, setShowDesc] = useState(!!(baseRule && baseRule.description));
-  // One-time coaching for the multi-block feature — shown on the FIRST new-rule creation, dismissed forever after.
-  const [blockHint, setBlockHint] = useState(()=>{ try { return !baseRule && !localStorage.getItem("v10_blocks_hint_v1"); } catch(_){ return !baseRule; } });
-  const dismissBlockHint = ()=>{ try{ localStorage.setItem("v10_blocks_hint_v1","1"); }catch(_){} setBlockHint(false); };
+  // Coaching for the multi-block feature — surfaces every time a rule is configured, the moment a first action
+  // exists (so it lands when it's actually relevant). Dismissible per rule (resets for the next rule).
+  const [blockHint, setBlockHint] = useState(true);
+  const dismissBlockHint = ()=> setBlockHint(false);
   const [tagEditing, setTagEditing] = useState(false);
   const [tagDraft, setTagDraft] = useState("");
   const rmTag = i => setDraft(d=>({...d, tags: (d.tags||[]).filter((_,j)=>j!==i)}));
   const commitTag = () => { const t=tagDraft.trim(); if(t) setDraft(d=>({...d, tags:[...(d.tags||[]), t]})); setTagDraft(""); setTagEditing(false); };
   const cancelTag = () => { setTagDraft(""); setTagEditing(false); };
   const setBlock = (i,p)=> setDraft(d=>({...d, blocks: d.blocks.map((b,j)=> j===i?{...b,...p}:b)}));
-  const dupBlock = i => setDraft(d=>{ const src=d.blocks[i]; const copy={...src, conditions:src.conditions.map(c=>({...c})), actions:src.actions.map(a=>({...a}))}; const blocks=d.blocks.slice(); blocks.splice(i+1,0,copy); return {...d, blocks}; });
+  // Duplicating a block opens the new copy and collapses the source (only one block is expanded at a time).
+  const dupBlock = i => setDraft(d=>{ const src=d.blocks[i]; const copy={...src, conditions:src.conditions.map(c=>({...c})), actions:src.actions.map(a=>({...a}))}; const blocks=d.blocks.slice(); blocks.splice(i+1,0,copy); setExpandedIdx(i+1); return {...d, blocks}; });
   const rmBlock = i => setDraft(d=>({...d, blocks: d.blocks.filter((_,j)=>j!==i)}));
   // New blocks inherit the rule's common audience; their Execute-on starts empty (it's per block).
   const addBlock = ()=> setDraft(d=>{ const blocks=[...d.blocks, {match:"all", advanced:false, advOpen:false, time:"", people:d.people||"", exec:"", conditions:[], actions:[]}]; setExpandedIdx(blocks.length-1); return {...d, blocks}; });
@@ -6061,7 +6107,7 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
     setDraft({ name: rule.name, exec: rule.exec||"", description: rule.description||"", tags:(rule.tags||[]).slice(), blocks:[block] });
     setShowDesc(!!rule.description); setSaved(false); setShowErrors(false); setExpandedIdx(0); setInspectOpen(false);
   };
-  const rz = useDrawerResize(940, 560, 1600);
+  const rz = useDrawerResize(Math.round((typeof window!=="undefined" ? window.innerWidth : 2000) * 0.5), 560, 1400);
   // Tag chips + add/edit control — shared so it can sit beside "Add description" (collapsed) or below the box (expanded).
   const tagsControls = <>
     {(draft.tags||[]).map((t,i)=>(
@@ -6084,15 +6130,15 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
       <div className="fixed inset-0 z-40 bg-slate-900/20" onClick={onClose}/>
       <aside style={{width: rz.width}} className="fixed top-0 right-0 z-50 h-full max-w-[97vw] bg-white shadow-2xl border-l border-slate-200 flex flex-col v10-drawer">
         <DrawerResizer onMouseDown={rz.onMouseDown} dragging={rz.dragging}/>
-        <div className="border-b border-slate-200 px-7 py-4 flex items-start justify-between gap-4 shrink-0">
+        <div className="border-b border-slate-200 px-8 py-4 flex items-start justify-between gap-4 shrink-0">
           <div>
-            <h1 className="text-[22px] font-bold text-slate-800">{baseRule ? "Edit Rule" : "Add Rule"}</h1>
-            <p className="mt-1 text-[13px] text-slate-500">Some dummy text that describes the form rule <a className="ml-0.5 inline-flex items-center gap-0.5 font-medium text-[#1180c1] hover:underline cursor-pointer">Doc<Ico name="external" size={12}/></a></p>
+            <h1 className="text-[19px] font-bold text-slate-800">{baseRule ? "Edit Rule" : "Add Rule"}</h1>
+            <p className="mt-0.5 text-[12px] text-slate-500">Automate this form — show, hide, require or set fields based on conditions you choose. <a className="ml-0.5 inline-flex items-center gap-0.5 font-medium text-[#1180c1] hover:underline cursor-pointer">Learn more<Ico name="external" size={11}/></a></p>
           </div>
           <button onClick={onClose} className="w-8 h-8 grid place-items-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-600 shrink-0" title="Close"><Ico name="x" size={18}/></button>
         </div>
         <div className="flex-1 overflow-y-auto bg-white">
-          <div className="mx-auto max-w-3xl px-6 py-6 space-y-5">
+          <div className="px-8 py-6 space-y-5">
             {/* Save-blocked prompt — appears only after a failed save attempt, listing exactly what's missing */}
             {showErrors && !canSave &&
               <div className="flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 v10-fade">
@@ -6107,14 +6153,14 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
             <div className="pb-1">
               <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
                 <div>
-                  <label className="block text-[13px] font-semibold text-slate-700">Rule name <span className="text-rose-500">*</span></label>
+                  <label className="block text-[12.5px] font-semibold text-slate-700">Rule name <span className="text-rose-500">*</span></label>
                   <input value={draft.name} onChange={e=>patch({name:e.target.value})} onBlur={()=>setShowErrors(s=> s || !nameOk)} placeholder="e.g. Hardware request automation"
-                    className={"mt-1.5 w-full h-10 rounded-md border px-3 text-[14px] outline-none focus:ring-1 " + (showErrors && !nameOk ? "border-rose-400 focus:border-rose-400 focus:ring-rose-200 bg-rose-50/40" : "border-slate-300 focus:border-sky-400 focus:ring-sky-200")}/>
+                    className={"mt-1.5 w-full h-9 rounded-md border px-3 text-[13px] outline-none focus:ring-1 " + (showErrors && !nameOk ? "border-rose-400 focus:border-rose-400 focus:ring-rose-200 bg-rose-50/40" : "border-slate-300 focus:border-sky-400 focus:ring-sky-200")}/>
                   {showErrors && !nameOk && <p className="mt-1 text-[12px] font-medium text-rose-500">Give this rule a name to save it.</p>}
                 </div>
                 <div>
                   {/* Applies to is COMMON to the whole rule; Execute on now lives on each block's When step. */}
-                  <label className="block text-[13px] font-semibold text-slate-700">Select Rule Applicable for <span className="text-rose-500">*</span></label>
+                  <label className="block text-[12.5px] font-semibold text-slate-700">Select Rule Applicable for <span className="text-rose-500">*</span></label>
                   <div className={"mt-1.5 rounded-md " + (showErrors && !appliesOk ? "ring-1 ring-rose-400" : "")}><GuidedDropdown value={draft.people} onChange={setAudience} options={AUDS} guide={AUD_GUIDE} placeholder="Choose people"/></div>
                   {showErrors && !appliesOk && <p className="mt-1 text-[12px] font-medium text-rose-500">Choose who this rule applies to.</p>}
                 </div>
@@ -6146,38 +6192,44 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
                   onToggle={()=>setExpandedIdx(expandedIdx===i?null:i)} onChange={p=>setBlock(i,p)}
                   onDuplicate={()=>dupBlock(i)} onRemove={()=>rmBlock(i)}/>)}
             </div>
-            {/* Add block — a one-time coaching callout points to it on the very first new rule, then the plain button */}
-            <div className="space-y-2.5">
-              {blockHint && draft.blocks.length===1 &&
-                <div className="relative rounded-xl border border-sky-200 bg-sky-50/70 px-4 py-3.5 v10-fade">
-                  <div className="flex items-start gap-3">
-                    <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white text-[#1180c1] ring-1 ring-sky-100"><Ico name="sparkles" size={16}/></span>
+            {/* Add block — always visible; once a first action exists it gets HIGHLIGHTED (coaching callout,
+                tint, New pill, animated icons) so the multi-block feature lands when it's actually useful. */}
+            {(()=>{ const blockHi = actionOk && blockHint; return (
+            <div className="space-y-2">
+              {blockHi && draft.blocks.length===1 &&
+                <div className="relative rounded-xl border border-sky-100 bg-sky-50/60 px-4 py-3.5 v10-fade">
+                  <div className="flex items-start gap-2.5">
+                    <span className="mt-0.5 shrink-0 text-sky-500 v10-twinkle"><Ico name="sparkles" size={17}/></span>
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[13.5px] font-semibold text-slate-800">One rule can now hold several blocks</span>
-                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">New</span>
-                      </div>
-                      <p className="mt-1 text-[12.5px] leading-relaxed text-slate-500">Each block is checked on its own, and every block that matches runs — so one rule can cover several cases without creating separate rules.</p>
+                      <div className="text-[13.5px] font-semibold text-slate-800"><span className="text-sky-600">New</span> — one rule can now hold several blocks</div>
+                      <p className="mt-1 text-[12.5px] leading-relaxed text-slate-500">Each block is checked on its own, and every block that matches runs — so you can cover several cases without creating separate rules.</p>
                       <div className="mt-3 flex items-center gap-1.5">
-                        <button onClick={()=>{ addBlock(); dismissBlockHint(); }} className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12.5px] font-semibold text-white shadow-sm transition hover:brightness-105" style={{background:BRAND}}><Ico name="plus" size={13}/> Add a block</button>
+                        <button onClick={()=>{ addBlock(); dismissBlockHint(); }} className="group inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12.5px] font-semibold text-white shadow-sm transition hover:brightness-105" style={{background:BRAND}}><Ico name="plus" size={13} cls="transition-transform duration-300 group-hover:rotate-90"/> Add a second block</button>
                         <button onClick={dismissBlockHint} className="rounded-full px-3 py-1.5 text-[12.5px] font-medium text-slate-500 transition hover:bg-white/70 hover:text-slate-700">Got it</button>
                       </div>
                     </div>
                     <button onClick={dismissBlockHint} title="Dismiss" className="-mr-1 -mt-1 grid h-6 w-6 shrink-0 place-items-center rounded-md text-slate-400 transition hover:bg-white/70 hover:text-slate-600"><Ico name="x" size={14}/></button>
                   </div>
-                  {/* pointer connecting the callout to the Add Rule Block button below */}
-                  <span className="absolute -bottom-[7px] left-9 h-3 w-3 rotate-45 border-b border-r border-sky-200 bg-sky-50/70"/>
+                  {/* pointer connecting the callout to the Add rule block box below — gentle idle nudge */}
+                  <span className="absolute -bottom-[7px] left-8 h-3 w-3 border-b border-r border-sky-100 bg-sky-50/60 v10-nudge"/>
                 </div>}
+              {/* the add-block target — icon + title + subtitle, left-aligned; highlighted state matches the callout */}
               <button onClick={addBlock}
-                className={"relative flex w-full items-center justify-center gap-2 rounded-xl border border-dashed px-5 py-4 text-[14px] font-semibold transition " + (blockHint ? "border-sky-300 bg-sky-50/40 text-[#1180c1] hover:bg-sky-50" : "border-slate-300 bg-white text-slate-700 hover:border-slate-400 hover:bg-slate-50")}>
-                <Ico name="plus" size={17}/> Add Rule Block
-                {blockHint && <span className="absolute right-4 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">New</span>}
+                className={"group flex w-full items-center gap-3 rounded-xl border border-dashed px-4 py-3.5 text-left transition " + (blockHi ? "border-sky-300 bg-sky-50/40 hover:bg-sky-50" : "border-slate-300 bg-white hover:border-slate-400 hover:bg-slate-50")}>
+                <span className={"grid h-8 w-8 shrink-0 place-items-center rounded-lg transition " + (blockHi ? "bg-white text-[#1180c1] ring-1 ring-sky-100 v10-float" : "bg-slate-100 text-slate-500 group-hover:bg-slate-200")}>
+                  <Ico name="plus" size={18} cls="transition-transform duration-300 group-hover:rotate-90"/>
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[13.5px] font-semibold text-slate-800">Add rule block</span>
+                  <span className="block text-[12px] text-slate-500">Handle another case inside this same rule</span>
+                </span>
+                {blockHi && <span className="shrink-0 rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">New</span>}
               </button>
-            </div>
+            </div>); })()}
           </div>
         </div>
         {/* bottom bar — conflict status is the primary info (replaces the old block count) */}
-        <div className="flex items-center justify-between border-t border-slate-200 bg-white px-6 py-3 shrink-0">
+        <div className="flex items-center justify-between border-t border-slate-200 bg-white px-8 py-3 shrink-0">
           {/* R26 — same "View similar rules" bottom-bar entry as R25, shown once the condition matches existing rules */}
           <div className="flex items-center gap-5">
             {isSameCondDemo(draft.name) && sameCondMatch &&
@@ -6212,18 +6264,10 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
             </>}
           </div>
           <div className="flex items-center gap-3">
-            {/* always-visible reason the save is blocked — no click needed to discover what's missing */}
-            {!canSave && !saved && <span className="hidden lg:inline text-[12px] text-slate-400">Needed to save: <span className="font-medium text-slate-500">{missing.join(" · ")}</span></span>}
-            {/* Run Test — secondary to Save; enabled once an action is configured. Read-only dry run. */}
-            <button type="button" onClick={runTest} aria-disabled={!actionOk}
-              title={actionOk ? "Test this rule against existing rules — nothing is saved or changed" : "Configure an action to enable the test"}
-              className={"inline-flex h-10 items-center gap-1.5 rounded-lg border px-4 text-[13px] font-medium transition " + (actionOk ? "border-slate-300 bg-white text-slate-700 hover:bg-slate-50" : "border-slate-200 bg-white text-slate-300 cursor-not-allowed")}>
-              <Ico name="zap" size={14}/> Run Test
-            </button>
             {/* Save Rule (dark) then Cancel — matching the screenshot's bottom bar */}
             <button onClick={save} aria-disabled={!canSave} title={canSave ? "" : ("Needed to save: " + missing.join(", "))}
-              className={"h-10 rounded-lg px-6 text-[13px] font-semibold text-white shadow-sm transition " + (saved ? "bg-emerald-600" : canSave ? "bg-slate-900 hover:bg-slate-800" : "bg-slate-900 opacity-50 cursor-not-allowed")}>{saved ? "Saved ✓" : (baseRule ? "Update Rule" : "Save Rule")}</button>
-            <button onClick={onClose} className="h-10 rounded-lg border border-slate-300 bg-white px-5 text-[13px] font-medium text-slate-600 hover:bg-slate-50">Cancel</button>
+              className={"h-9 rounded-lg px-5 text-[12.5px] font-semibold text-white shadow-sm transition " + (saved ? "bg-emerald-600" : canSave ? "bg-slate-900 hover:bg-slate-800" : "bg-slate-900 opacity-50 cursor-not-allowed")}>{saved ? "Saved ✓" : (baseRule ? "Update Rule" : "Save Rule")}</button>
+            <button onClick={onClose} className="h-9 rounded-lg border border-slate-300 bg-white px-4 text-[12.5px] font-medium text-slate-600 hover:bg-slate-50">Cancel</button>
           </div>
         </div>
         {/* RUN TEST — transitional, read-only. Same width/position as the conflict drawer so it hands off seamlessly. */}
