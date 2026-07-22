@@ -335,6 +335,10 @@ const sameConditionMatch = block => {
   for(const c of conds){ const sig = condSig(c); if(sig && SAME_CONDITION_RULES[sig]) return { rules: SAME_CONDITION_RULES[sig], cond: c }; }
   return null;
 };
+// A block's complete conditions (flattened past groups) and its actions as phrases — for the R26 similar drawer's
+// summary box (which reuses R25's SharedRuleBox). `actShort` is defined later but only runs at call time.
+const blockCondsList   = block => (block && block.conditions || []).flatMap(it=> it && it.group ? (it.conditions||[]) : [it]).filter(c=> c && c.fieldId && c.op && (Array.isArray(c.value) ? c.value.length : c.value));
+const blockActionsText = block => (block && block.actions || []).map(a=> actShort(a.behavior, a.value, labelOf(a.fieldId || (a.fieldIds && a.fieldIds[0])))).filter(Boolean);
 const EXEC_OPTS = ["On Create and Edit","On Create","On Edit"];   // rule-level execution scope (ss2 vocabulary)
 // Run Test — the reassurance sequence shown while the rule engine "evaluates" the draft. Read-only: the test
 // never saves, never touches the draft, and never modifies an existing rule.
@@ -3290,35 +3294,30 @@ function BlockTip({title, summary, started, triggers, condItems, actItems, examp
 }
 // R26 side drawer — the existing rules that already run on the condition the user just picked, each with the
 // actions it already performs, plus the one-line nudge to reuse a rule rather than create a near-duplicate.
-function SameCondDrawer({ rules, condLabel, onClose }){
+// R26 similar-rules drawer — reuses R25's layout: a collapsed summary of YOUR rule (trigger/conditions/actions)
+// then the existing rules on the same condition, each collapsed (matching actions highlighted when you have any).
+function SameCondDrawer({ when, exec, conds, curActions, rules, onClose }){
+  const curSet = new Set(curActions||[]);
   return ReactDOM.createPortal(
     <>
       <div className="fixed inset-0 z-[55] bg-slate-900/25" onClick={onClose}/>
       <aside className="fixed top-0 right-0 z-[56] flex h-full w-[672px] max-w-[97vw] flex-col border-l border-slate-200 bg-white shadow-2xl v10-drawer">
-        {/* header — title + the nudge as a plain subtitle (matches the conflict/similar drawer) */}
         <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-6 py-4 shrink-0">
           <div className="min-w-0">
             <h2 className="text-[16px] font-bold text-slate-800">Rules with the same condition</h2>
-            <p className="mt-1 text-[12.5px] leading-snug text-slate-500">{rules.length} existing rule{rules.length===1?"":"s"} already run when <span className="font-medium text-slate-700">{condLabel}</span>. Add your actions to one of them instead of creating a new rule.</p>
+            <p className="mt-1 text-[12.5px] leading-snug text-slate-500">{rules.length} existing rule{rules.length===1?"":"s"} already run on the same trigger and conditions. Add your actions to one of them instead of creating a new rule.</p>
           </div>
           <button onClick={onClose} title="Close" className="grid h-8 w-8 shrink-0 place-items-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-600"><Ico name="x" size={18}/></button>
         </div>
-        {/* rule + its current actions — flat cards, no CTA */}
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
-          <div className="space-y-3">
-            {rules.map((r,i)=>(
-              <div key={i} className="rounded-lg border border-slate-200 bg-slate-50/80 px-4 py-3">
-                <div className="truncate text-[13px] font-semibold text-slate-900" title={r.name}>{r.name}</div>
-                <div className="mt-1.5 text-[10px] font-medium uppercase tracking-wide text-slate-400">Current actions</div>
-                <div className="mt-1 space-y-1">
-                  {r.actions.map((a,ai)=>(
-                    <div key={ai} className="flex items-start gap-2 text-[12.5px] leading-snug text-slate-600">
-                      <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-slate-300"/><span>{a}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
+          <SharedRuleBox when={when} exec={exec} conds={conds} actions={curActions||[]}/>
+          <div className="mb-3 mt-5 flex items-center gap-2.5">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Similar rules</span>
+            <span className="h-px flex-1 bg-slate-100"/>
+            <span className="text-[11px] font-medium text-slate-400">{rules.length}</span>
+          </div>
+          <div className="space-y-2.5">
+            {rules.map((r,i)=> <SimilarRuleCard key={i} name={r.name} actions={r.actions} curSet={curSet}/>)}
           </div>
         </div>
       </aside>
@@ -3330,9 +3329,6 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
   const whenReady     = !!(block.time && block.exec);
   const firstCondDone = (block.conditions||[]).some(leafComplete);
   const firstActDone  = (block.actions||[]).some(actComplete);
-  const [sameCondOpen, setSameCondOpen] = useState(false);   // R26 — open the "same condition" side drawer
-  const sameMatch = isSameCondDemo(ruleName) ? sameConditionMatch(block) : null;   // {rules, cond} sharing the condition
-  const sameCond  = sameMatch ? sameMatch.rules : [];
   // block-level conflict summary — union of every conflicting field across BOTH conditions and actions (deduped)
   const blockCfCount = (isDemoConflictRule(ruleName) && conflictFields)
     ? new Set([
@@ -3519,15 +3515,7 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
                 </div>}
             </div>);
           })()}
-          {/* R26 — appears the moment the picked condition matches existing rules; click opens the side drawer */}
-          {whenReady && sameCond.length>0 &&
-            <button type="button" onClick={()=>setSameCondOpen(true)}
-              className="mt-3 flex w-full items-center gap-2.5 rounded-xl border border-sky-200 bg-sky-50/70 px-3.5 py-3 text-left transition hover:bg-sky-50 v10-fade">
-              <Ico name="bulb" size={16} cls="shrink-0 text-sky-600"/>
-              <span className="min-w-0 flex-1 text-[13px] leading-snug text-slate-700"><span className="font-semibold text-slate-900">{sameCond.length} existing rule{sameCond.length===1?"":"s"}</span> already run on this same condition — see what they do and add your actions there instead.</span>
-              <Ico name="chevdown" size={14} cls="shrink-0 -rotate-90 text-sky-600"/>
-            </button>}
-          {sameCondOpen && sameMatch && <SameCondDrawer rules={sameCond} condLabel={condPhrase(sameMatch.cond)} onClose={()=>setSameCondOpen(false)}/>}
+          {/* R26 — the "same condition" nudge lives in the bottom bar (View similar rules), not inline here */}
           {/* ACTION — one behavior per row, applied to one or more fields */}
           {whenReady && firstCondDone &&
             <div className="v10-fade">
@@ -3967,7 +3955,15 @@ DEMO_S9.preview = [
 ];
 // R25 — reuses R24's conflict/duplicate data; `dualEntry` gives it the two-button (View conflicts / View
 // duplicates) entry instead of the single "View conflicts".
-const DEMO_S10 = { dualEntry:true, fields: DEMO_S9.fields, rows: [], ruleMatrix: DEMO_S9.ruleMatrix, preview: DEMO_S9.preview };
+// R25 preview = R24's, but "Escalation Workflow" is added as a conflict on THREE fields (priority/status/impact),
+// so the conflict view shows a rule clashing on multiple fields. Derived so R24 (DEMO_S9) stays unchanged.
+const DEMO_S10 = { dualEntry:true, fields: DEMO_S9.fields, rows: [], ruleMatrix: DEMO_S9.ruleMatrix,
+  preview: DEMO_S9.preview.map(p=>{
+    if(p.id==="priority") return {...p, pairs:[...p.pairs, {act:"Set Value", val:"Low", rule:"Escalation Workflow", scope:"On Create and Edit"}]};
+    if(p.id==="status")   return {...p, pairs:[...p.pairs, {act:"Hide",                rule:"Escalation Workflow", scope:"On Create and Edit"}]};
+    if(p.id==="impact")   return {...p, pairs:[...p.pairs, {act:"Mandate",             rule:"Escalation Workflow", scope:"On Create and Edit"}]};
+    return p;
+  }) };
 // Resolve a field's preview entry from the ACTIVE scenario's preview array (threaded down from the editor).
 const previewFor = (preview, id) => (preview||[]).find(p => p.id === id) || null;
 // Pick the scenario from the draft — by name, or by its distinctive fields/conditions.
@@ -4538,16 +4534,29 @@ function SharedRuleBox({ when, exec, conds, actions }){
       </button>
       {open &&
         <div className="border-t border-slate-200/60 px-4 py-3.5 v10-fade">
+          {/* trigger chips (event + scope) — conditions moved into their own column below */}
           <div className="flex flex-wrap items-center gap-1.5">
             {when && <span className={chip}><Ico name="bell" size={11} cls="text-slate-400"/>{when}</span>}
             {exec && <span className={chip}><Ico name="history" size={11} cls="text-slate-400"/>{exec}</span>}
-            {conds.map((c,ci)=> <span key={ci} className={chip}><Ico name="funnel" size={11} cls="text-slate-400"/>{condPhrase(c)}</span>)}
-            {!when && !exec && !conds.length && <span className="text-[12px] italic text-slate-400">No trigger or conditions set.</span>}
+            {!when && !exec && <span className="text-[12px] italic text-slate-400">No trigger set.</span>}
           </div>
-          <div className="mt-3.5 border-t border-slate-200/60 pt-3.5">
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Your actions</div>
-            <div className="mt-2 space-y-1.5">
-              {actions.map((a,ai)=> <div key={ai} className="flex items-start gap-2.5 text-[12.5px] leading-snug text-slate-600"><span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-slate-300"/><span>{a}</span></div>)}
+          {/* two columns — conditions on the left, your actions on the right */}
+          <div className="mt-3.5 grid grid-cols-2 gap-x-6 border-t border-slate-200/60 pt-3.5">
+            <div className="min-w-0">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Conditions</div>
+              <div className="mt-2 space-y-1.5">
+                {conds.length
+                  ? conds.map((c,ci)=> <div key={ci} className="flex items-start gap-2.5 text-[12.5px] leading-snug text-slate-600"><Ico name="funnel" size={12} cls="mt-0.5 shrink-0 text-slate-300"/><span>{condPhrase(c)}</span></div>)
+                  : <div className="text-[12px] italic text-slate-400">Always runs (no conditions).</div>}
+              </div>
+            </div>
+            <div className="min-w-0">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Your actions</div>
+              <div className="mt-2 space-y-1.5">
+                {actions.length
+                  ? actions.map((a,ai)=> <div key={ai} className="flex items-start gap-2.5 text-[12.5px] leading-snug text-slate-600"><span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-slate-300"/><span>{a}</span></div>)
+                  : <div className="text-[12px] italic text-slate-400">No actions yet.</div>}
+              </div>
             </div>
           </div>
         </div>}
@@ -5916,6 +5925,10 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
   const [inspectFields, setInspectFields] = useState(null);   // field ids to focus the drawer on (null = whole block)
   const openFieldConflict = fids => { setInspectFields(fids && fids.length ? fids : null); setInspectOpen(true); };
   const [inspectVerdict, setInspectVerdict] = useState(null);   // R25 two-button entry: "conflict" | "duplicate" | null
+  const [sameCondEditor, setSameCondEditor] = useState(false);   // R26 — bottom-bar "View similar rules" drawer
+  // R26 — the block whose (filled) condition matches existing rules, and that match (for the bottom-bar entry).
+  const sameCondBlock = isSameCondDemo(draft.name) ? draft.blocks.find(b=> sameConditionMatch(b)) : null;
+  const sameCondMatch = sameCondBlock ? sameConditionMatch(sameCondBlock) : null;
   const openInspect = verdict => { setInspectFields(null); setInspectVerdict(verdict||null); setInspectOpen(true); };
   // Disable a conflicting rule from the inspector → it stops running (excluded from conflicts) and persists.
   const disableRule = rule => { rule.disabled = true; persistRule(rule); bumpRules(); };
@@ -6018,8 +6031,15 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
         </div>
         {/* bottom bar — conflict status is the primary info (replaces the old block count) */}
         <div className="flex items-center justify-between border-t border-slate-200 bg-white px-6 py-3 shrink-0">
-          {/* R26 nudges inline while the condition is chosen, so it skips the bottom-bar conflict summary entirely */}
+          {/* R26 — same "View similar rules" bottom-bar entry as R25, shown once the condition matches existing rules */}
           <div className="flex items-center gap-5">
+            {isSameCondDemo(draft.name) && sameCondMatch &&
+              <button type="button" onClick={()=>setSameCondEditor(true)}
+                className="group inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 py-1.5 pl-3 pr-2.5 text-[12.5px] font-semibold text-amber-800 transition hover:bg-amber-100">
+                <Ico name="bulb" size={14} cls="shrink-0 text-amber-500"/>
+                <span className="whitespace-nowrap">{sameCondMatch.rules.length} rule{sameCondMatch.rules.length===1?"":"s"} with the same condition</span>
+                <span className="ml-0.5 inline-flex items-center gap-0.5 rounded-full bg-white/70 px-2 py-0.5 text-[11.5px] text-amber-700 transition group-hover:bg-white">View<Ico name="chevdown" size={12} cls="-rotate-90"/></span>
+              </button>}
             {!isSameCondDemo(draft.name) && <>
             {/* PROTOTYPE: hardcoded to the fixed demo — always surfaces the scenario's conflicts */}
             <span className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-amber-700"><span className="w-2 h-2 rounded-full bg-amber-500"/>{demoFor(draft).fields.length} conflicts with existing rules</span>
@@ -6114,6 +6134,8 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
         {/* R23's Run Test result. Deliberately NOT closed when the conflict drawer opens over it — the drawer's
             Back button then returns the user to the exact form they left, at the sentence they clicked. */}
         {preview23 && <RuleTestPreview width={Math.round(rz.width * 0.9)} preview={demoFor(draft).preview} legacy={!!demoFor(draft).legacy} onClose={()=>setPreview23(false)} onFieldConflict={openFieldConflict}/>}
+        {/* R26 — bottom-bar "View similar rules" opens the same drawer as the inline nudge */}
+        {sameCondEditor && sameCondMatch && sameCondBlock && <SameCondDrawer when={sameCondBlock.time} exec={sameCondBlock.exec} conds={blockCondsList(sameCondBlock)} curActions={blockActionsText(sameCondBlock)} rules={sameCondMatch.rules} onClose={()=>setSameCondEditor(false)}/>}
         {inspectOpen && <ConflictInspector draft={draft} conflicts={conflicts} parentWidth={Math.round(rz.width * 0.9) + 56} focusFields={inspectFields} focusVerdict={inspectVerdict} autoPreview={testAutoPreview} onClose={()=>{ setInspectOpen(false); setInspectFields(null); setInspectVerdict(null); setTestAutoPreview(false); }} onEdit={loadRule} onDisable={disableRule} onToggle={toggleRule}/>}
       </aside>
     </>
