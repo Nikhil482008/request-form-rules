@@ -207,7 +207,7 @@ const OP_SETS = {
   MEMBERSHIP: ["In","Not In"],   // legacy — retained for back-compat; no field maps to it anymore
 };
 const OPS = [...OP_SETS.TEXT, ...OP_SETS.SELECT, ...OP_SETS.CHOICE];   // full set (fallback / lookups)
-const opsetOf = id => { const f=ALL_FIELDS.find(x=>x.id===id)||{}; if(f.kind==="adder") return "CHOICE"; if(f.kind==="select") return "SELECT"; return "TEXT"; };
+const opsetOf = id => { if(id==="tags") return "SELECT"; const f=ALL_FIELDS.find(x=>x.id===id)||{}; if(f.kind==="adder") return "CHOICE"; if(f.kind==="select") return "SELECT"; return "TEXT"; };
 const fieldOps = id => OP_SETS[opsetOf(id)] || OP_SETS.TEXT;              // operators valid for this field
 // Strictly the field's own operator group — never mix operators from another group into the dropdown.
 // (A stored operator that isn't valid for the field simply shows unselected, prompting a re-pick.)
@@ -679,7 +679,7 @@ const RULE_DB = [
       // Block 2 — Security-sensitive signals (any of two groups)
       { match:"any", time:"While the form is being filled", exec:"On Create and Edit", people:"Everyone",
         conditions:[
-          { group:true, match:"all", conditions:[{fieldId:"tags", op:"Match Any", value:["Security"]},{fieldId:"impact", op:"Is", value:"High"}] },
+          { group:true, match:"all", conditions:[{fieldId:"tags", op:"Is", value:"Security"},{fieldId:"impact", op:"Is", value:"High"}] },
           { group:true, match:"all", conditions:[{fieldId:"category", op:"Is", value:"Access"},{fieldId:"priority", op:"Is", value:"High"}] },
         ],
         actions:[
@@ -692,9 +692,9 @@ const RULE_DB = [
       // Block 3 — VIP / business-critical signals (any of three groups)
       { match:"any", time:"While the form is being filled", exec:"On Create and Edit", people:"Everyone",
         conditions:[
-          { group:true, match:"all", conditions:[{fieldId:"tags", op:"Match Any", value:["VIP"]},{fieldId:"priority", op:"Is", value:"High"}] },
+          { group:true, match:"all", conditions:[{fieldId:"tags", op:"Is", value:"VIP"},{fieldId:"priority", op:"Is", value:"High"}] },
           { group:true, match:"all", conditions:[{fieldId:"department", op:"Is", value:"Finance"},{fieldId:"impact", op:"Is", value:"High"}] },
-          { group:true, match:"all", conditions:[{fieldId:"tags", op:"Match Any", value:["VIP"]},{fieldId:"urgency", op:"Is", value:"High"}] },
+          { group:true, match:"all", conditions:[{fieldId:"tags", op:"Is", value:"VIP"},{fieldId:"urgency", op:"Is", value:"High"}] },
         ],
         actions:[
           {behavior:"Show",   fieldId:"assignee", fieldIds:["assignee"]},
@@ -854,8 +854,8 @@ function TabsRow({tab, onBuilder, onRules, total, onCreateForm, onCreateCustom})
   return (
     <div className="px-4 flex items-center justify-between bg-slate-50 border-b border-slate-200">
       <div className="flex items-end">
-        <Tab active={tab==="builder"} icon="layout"  label="Form Builder" onClick={onBuilder}/>
         <Tab active={tab==="rules"}   icon="sliders" label="Form Rules"   badge={total} onClick={onRules}/>
+        <Tab active={tab==="builder"} icon="layout"  label="Form Builder" onClick={onBuilder}/>
       </div>
       {tab==="builder" &&
         <div className="flex items-center gap-2 pr-2">
@@ -6691,7 +6691,7 @@ function FieldRulesDrawer({fieldId, onClose}){
 
 /* ============================================================ APP */
 function AppV10(){
-  const [tab, setTab]           = useState("builder");
+  const [tab, setTab]           = useState("rules");
   const [selField, setSelField] = useState(null);
   const [intent, setIntent]     = useState(null);
   const [flash, setFlash]       = useState(null);
