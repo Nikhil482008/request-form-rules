@@ -3700,12 +3700,12 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
             <span className="block truncate text-[12px] text-slate-400">{block.time || "When…"} · {block.people || "Everyone"} <span className="text-slate-300">|</span> {condCount} Condition{condCount===1?"":"s"}{groupCount>0 ? " (" + groupCount + " Group" + (groupCount===1?"":"s") + ")" : ""} · {block.actions.length} Action{block.actions.length===1?"":"s"}</span>
           </span>
         </button>
-        {/* collapsed → quick Duplicate + Delete on the right; expanded → these live in the Advanced footer */}
-        {!expanded &&
-          <div className="flex items-center gap-0.5 shrink-0">
-            <button onClick={onDuplicate} title="Duplicate block" className="text-slate-400 hover:text-slate-600 p-1"><Ico name="copy" size={16}/></button>
-            <button onClick={onRemove} title="Delete block" className="text-slate-400 hover:text-rose-500 p-1"><Ico name="trash" size={16}/></button>
-          </div>}
+        {/* top-right block tools — Delete is ALWAYS available; Duplicate joins it only when collapsed
+            (when expanded, Duplicate lives in the footer) */}
+        <div className="flex items-center gap-0.5 shrink-0">
+          {!expanded && <button onClick={onDuplicate} title="Duplicate block" className="text-slate-400 hover:text-slate-600 p-1"><Ico name="copy" size={16}/></button>}
+          <button onClick={onRemove} title="Delete block" className="grid place-items-center h-7 w-7 rounded-md text-slate-400 transition hover:bg-rose-50 hover:text-rose-500"><Ico name="trash" size={16}/></button>
+        </div>
       </div>
       {expanded &&
         <div className="border-t border-slate-100 bg-slate-50/60 px-4 py-4 space-y-5">
@@ -3803,13 +3803,10 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
                 </button>
               </div>
             </div>}
-          {/* FOOTER — block-level tools, available while expanded: duplicate · clear · delete (delete only when >1 block) */}
+          {/* FOOTER — block-level tools while expanded (Delete lives at the top of the block, not here) */}
           <div className="flex items-center justify-between pt-1">
             <button onClick={onDuplicate} className="inline-flex items-center gap-1.5 rounded-md bg-sky-50 px-3 py-1.5 text-[13px] font-medium text-[#1180c1] transition hover:bg-sky-100"><Ico name="copy" size={14}/> Duplicate Block</button>
-            <div className="flex items-center gap-1.5">
-              <button onClick={clearBlock} className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"><Ico name="x" size={14}/> Clear</button>
-              {total>1 && <button onClick={onRemove} className="inline-flex items-center gap-1.5 rounded-md bg-rose-50 px-3 py-1.5 text-[13px] font-medium text-rose-500 transition hover:bg-rose-100"><Ico name="trash" size={14}/> Delete Block</button>}
-            </div>
+            <button onClick={clearBlock} className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"><Ico name="x" size={14}/> Clear</button>
           </div>
         </div>}
     </div>
