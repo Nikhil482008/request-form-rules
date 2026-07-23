@@ -198,23 +198,27 @@ const labelOf = id => (ALL_FIELDS.find(f=>f.id===id) || {}).label || DEMO_FIELD_
 // V9 operator / action vocabulary (reused verbatim so V9 and V10 read identically).
 // Operator sets are FIELD-TYPE-AWARE: a field's kind decides which operators it offers —
 //   adder fields  (Tags, Cc Emails)                         → Match Any / Match All / Is Empty / Is Not Empty
-//   select fields (Status, Priority, Category, Department …) → In / Not In
+//   select fields (Status, Priority, Category, Department …) → Is / Is Not / Is Empty / Is Not Empty  (single-choice + lookups)
 //   text fields   (Requester, Subject, Description, text …)  → Equals / Not Equals / Start With / End With / Contains / Is (Not) Blank
 const OP_SETS = {
   TEXT:       ["Equals","Not Equals","Start With","End With","Contains","Is Not Blank","Is Blank"],
+  SELECT:     ["Is","Is Not","Is Empty","Is Not Empty"],
   CHOICE:     ["Match Any","Match All","Is Empty","Is Not Empty"],
-  MEMBERSHIP: ["In","Not In"],
+  MEMBERSHIP: ["In","Not In"],   // legacy — retained for back-compat; no field maps to it anymore
 };
-const OPS = [...OP_SETS.TEXT, ...OP_SETS.CHOICE, ...OP_SETS.MEMBERSHIP];   // full set (fallback / lookups)
-const opsetOf = id => { const f=ALL_FIELDS.find(x=>x.id===id)||{}; if(f.kind==="adder") return "CHOICE"; if(f.kind==="select") return "MEMBERSHIP"; return "TEXT"; };
+const OPS = [...OP_SETS.TEXT, ...OP_SETS.SELECT, ...OP_SETS.CHOICE];   // full set (fallback / lookups)
+const opsetOf = id => { const f=ALL_FIELDS.find(x=>x.id===id)||{}; if(f.kind==="adder") return "CHOICE"; if(f.kind==="select") return "SELECT"; return "TEXT"; };
 const fieldOps = id => OP_SETS[opsetOf(id)] || OP_SETS.TEXT;              // operators valid for this field
 // Strictly the field's own operator group — never mix operators from another group into the dropdown.
 // (A stored operator that isn't valid for the field simply shows unselected, prompting a re-pick.)
 const condOps = c => fieldOps(c && c.fieldId);
 const OPS_NOVALUE = ["Is Empty","Is Not Empty","Is Blank","Is Not Blank"];
 const OPS_MULTI = ["Match Any","Match All","In","Not In"];
-const OP_PHRASE = { "Equals":"is", "Not Equals":"is not", "Start With":"starts with", "End With":"ends with", "Contains":"contains", "Match Any":"is any of", "Match All":"is all of", "Is Empty":"is empty", "Is Not Empty":"is not empty", "Is Blank":"is blank", "Is Not Blank":"is not blank", "In":"is in", "Not In":"is not in" };
+const OP_PHRASE = { "Equals":"is", "Not Equals":"is not", "Start With":"starts with", "End With":"ends with", "Contains":"contains", "Match Any":"is any of", "Match All":"is all of", "Is":"is", "Is Not":"is not", "Is Empty":"is empty", "Is Not Empty":"is not empty", "Is Blank":"is blank", "Is Not Blank":"is not blank", "In":"is in", "Not In":"is not in" };
 const BEHAVIORS = ["Show","Hide","Mandate","Non-Mandate","Enable","Disable","Set Value","Clear Value","Show Options","Hide Options","Run Custom Script","Filter Data"];
+// These state-toggle behaviors make sense only once per block — once used, they're disabled in later action rows
+// of the same block. The value/option behaviors (Set Value, Clear Value, Show/Hide Options, …) can repeat.
+const SINGLE_USE_ACTIONS = ["Show","Hide","Mandate","Non-Mandate","Enable","Disable"];
 // ---- Action-pair conflict matrix -------------------------------------------------------------
 // The OPPOSING action pairs from the Step-6 reference table — the single source of truth for what "opposes" on
 // a shared field. Symmetric, so keyed order-independently. Anything not listed here (and not a same-action case,
@@ -425,6 +429,8 @@ const OP_GUIDE = {
   "Match All": { when:"Require every selected choice.", how:"Checks the field equals every value you select.", output:"True only if all of them match." },
   "Is Empty": { when:"Check that nothing is selected.", how:"Checks the choice field has no selection.", output:"True when nothing is chosen." },
   "Is Not Empty": { when:"Check that something is selected.", how:"Checks the choice field has at least one selection.", output:"True when one or more are chosen." },
+  "Is": { when:"Match one exact choice.", how:"Checks the field is set to the value you pick.", output:"True only for that single value." },
+  "Is Not": { when:"Match anything except one choice.", how:"Checks the field is set to anything other than the value you pick.", output:"True for every value but that one." },
   "In": { when:"Match one of a list of items.", how:"Checks the value is among the items you pick.", output:"True when it's one of them." },
   "Not In": { when:"Exclude a list of items.", how:"Checks the value is none of the items you pick.", output:"True when it's none of them." },
 };
@@ -445,11 +451,11 @@ const ACTION_GUIDE = {
 
 const RULE_DB = [
   { id:"r1",  name:"Require Assignee before In Progress", status:"Active", when:"While the form is being filled", audience:"Technicians only", usedInForms:4, recommended:true,
-    conditions:[{fieldId:"status", op:"In", value:"In Progress"}], actions:[{behavior:"Mandate", fieldId:"assignee"}] },
+    conditions:[{fieldId:"status", op:"Is", value:"In Progress"}], actions:[{behavior:"Mandate", fieldId:"assignee"}] },
   { id:"r2",  name:"Auto-set Priority from Impact & Urgency", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:7, recommended:true,
     conditions:[{fieldId:"impact", op:"Is Not Empty"},{fieldId:"urgency", op:"Is Not Empty"}], actions:[{behavior:"Set Value", fieldId:"priority", value:"the matrix result"}] },
   { id:"r3",  name:"Capture resolution when Resolved", status:"Active", when:"While the form is being filled", audience:"Technicians only", usedInForms:3, recommended:false,
-    conditions:[{fieldId:"status", op:"In", value:"Resolved"}], actions:[{behavior:"Mandate", fieldId:"description"}] },
+    conditions:[{fieldId:"status", op:"Is", value:"Resolved"}], actions:[{behavior:"Mandate", fieldId:"description"}] },
   { id:"r4",  name:"Hide Status on the portal", status:"Active", when:"When the form opens", audience:"Requesters only", usedInForms:2, recommended:false,
     conditions:[], actions:[{behavior:"Hide", fieldId:"status"}] },
   { id:"r5",  name:"Mandatory Category", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:5, recommended:false,
@@ -459,9 +465,9 @@ const RULE_DB = [
   { id:"r7",  name:"Lock Priority after assignment", status:"Active", when:"While the form is being filled", audience:"Technicians only", usedInForms:3, recommended:false, advanced:true,
     conditions:[{fieldId:"assignee", op:"Is Not Empty"}], actions:[{behavior:"Disable", fieldId:"priority"}] },
   { id:"r8",  name:"Require Urgency for High Impact", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:2, recommended:false,
-    conditions:[{fieldId:"impact", op:"In", value:"High"}], actions:[{behavior:"Mandate", fieldId:"urgency"}] },
+    conditions:[{fieldId:"impact", op:"Is", value:"High"}], actions:[{behavior:"Mandate", fieldId:"urgency"}] },
   { id:"r9",  name:"Show Vendor for Hardware", status:"Active", when:"While the form is being filled", audience:"Technicians only", usedInForms:1, recommended:false,
-    conditions:[{fieldId:"category", op:"In", value:"Hardware"}], actions:[{behavior:"Show", fieldId:"vendor"},{behavior:"Mandate", fieldId:"vendor"}] },
+    conditions:[{fieldId:"category", op:"Is", value:"Hardware"}], actions:[{behavior:"Show", fieldId:"vendor"},{behavior:"Mandate", fieldId:"vendor"}] },
   { id:"r10", name:"Auto-fill Requester from logged-in user", status:"Active", when:"When the form opens", audience:"Requesters only", usedInForms:8, recommended:false,
     conditions:[], actions:[{behavior:"Set Value", fieldId:"requester", value:"the logged-in user"}] },
   { id:"r11", name:"Assign Technician Group by Location", status:"Active", when:"While the form is being filled", audience:"Technicians only", usedInForms:3, recommended:false,
@@ -469,64 +475,64 @@ const RULE_DB = [
   { id:"r12", name:"Mandatory Subject & Description", status:"Active", when:"When the form is submitted", audience:"Everyone", usedInForms:9, recommended:false,
     conditions:[], actions:[{behavior:"Mandate", fieldId:"subject"},{behavior:"Mandate", fieldId:"description"}] },
   { id:"r13", name:"Reveal Cc Emails when On Hold", status:"Draft", when:"While the form is being filled", audience:"Everyone", usedInForms:1, recommended:false,
-    conditions:[{fieldId:"status", op:"In", value:"On Hold"}], actions:[{behavior:"Show", fieldId:"cc_emails"}] },
+    conditions:[{fieldId:"status", op:"Is", value:"On Hold"}], actions:[{behavior:"Show", fieldId:"cc_emails"}] },
   { id:"r14", name:"Clear Assignee when reopened", status:"Draft", when:"While the form is being filled", audience:"Technicians only", usedInForms:1, recommended:false,
-    conditions:[{fieldId:"status", op:"In", value:"Reopened"}], actions:[{behavior:"Clear Value", fieldId:"assignee"}] },
+    conditions:[{fieldId:"status", op:"Is", value:"Reopened"}], actions:[{behavior:"Clear Value", fieldId:"assignee"}] },
   // Multi-block rule (3 blocks) — only the middle block touches Priority, so it's the one that conflicts with
   // other Priority rules. Demonstrates the block inspector: all 3 blocks shown, block 2 flagged + auto-expanded.
   { id:"r15", name:"Priority & assignment workflow", status:"Active", when:"While the form is being filled", audience:"Technicians only", usedInForms:2, recommended:false,
-    conditions:[{fieldId:"status", op:"In", value:"In Progress"}], actions:[{behavior:"Mandate", fieldId:"assignee"}],
+    conditions:[{fieldId:"status", op:"Is", value:"In Progress"}], actions:[{behavior:"Mandate", fieldId:"assignee"}],
     blocks:[
       { match:"all", time:"While the form is being filled", people:"Technicians only",
-        conditions:[{fieldId:"status", op:"In", value:"In Progress"}], actions:[{behavior:"Mandate", fieldId:"assignee"}] },
+        conditions:[{fieldId:"status", op:"Is", value:"In Progress"}], actions:[{behavior:"Mandate", fieldId:"assignee"}] },
       { match:"all", time:"While the form is being filled", people:"Technicians only",
-        conditions:[{fieldId:"impact", op:"In", value:"High"}], actions:[{behavior:"Set Value", fieldId:"priority", value:"High"}] },
+        conditions:[{fieldId:"impact", op:"Is", value:"High"}], actions:[{behavior:"Set Value", fieldId:"priority", value:"High"}] },
       { match:"all", time:"While the form is being filled", people:"Technicians only",
         conditions:[], actions:[{behavior:"Show", fieldId:"cc_emails"}] },
     ] },
   // Demo scenario S1 — draft: Status = Open · Priority = High → make Attachment/Category/Description/Subject
   // mandatory. Its conflict inspector maps to the "Simplified Mobile Ticket Form" scenario (Attachment, Category).
   { id:"r16", name:"Require supporting information for high priority tickets", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:0, recommended:false,
-    conditions:[{fieldId:"status", op:"In", value:"Open"},{fieldId:"priority", op:"In", value:"High"}],
+    conditions:[{fieldId:"status", op:"Is", value:"Open"},{fieldId:"priority", op:"Is", value:"High"}],
     actions:[{behavior:"Mandate", fieldId:"attachment"},{behavior:"Mandate", fieldId:"category"},{behavior:"Mandate", fieldId:"description"},{behavior:"Mandate", fieldId:"subject"}],
     blocks:[
       { match:"all", time:"While the form is being filled", people:"Everyone",
-        conditions:[{fieldId:"status", op:"In", value:"Open"},{fieldId:"priority", op:"In", value:"High"}],
+        conditions:[{fieldId:"status", op:"Is", value:"Open"},{fieldId:"priority", op:"Is", value:"High"}],
         actions:[{behavior:"Mandate", fieldId:"attachment"},{behavior:"Mandate", fieldId:"category"},{behavior:"Mandate", fieldId:"description"},{behavior:"Mandate", fieldId:"subject"}] },
     ] },
   // Demo scenario S2 — draft: Assignee = Priya · Department = HR → make Description/Status/Subject/Category
   // mandatory. Its conflict inspector maps to the "Hide internal fields for Surat requests" scenario (Subject, Category).
   { id:"r17", name:"Mandatory information for HR requests", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:0, recommended:false,
-    conditions:[{fieldId:"assignee", op:"In", value:"Priya"},{fieldId:"department", op:"In", value:"HR"}],
+    conditions:[{fieldId:"assignee", op:"Is", value:"Priya"},{fieldId:"department", op:"Is", value:"HR"}],
     actions:[{behavior:"Mandate", fieldId:"description"},{behavior:"Mandate", fieldId:"status"},{behavior:"Mandate", fieldId:"subject"},{behavior:"Mandate", fieldId:"category"}],
     blocks:[
       { match:"all", time:"While the form is being filled", people:"Everyone",
-        conditions:[{fieldId:"assignee", op:"In", value:"Priya"},{fieldId:"department", op:"In", value:"HR"}],
+        conditions:[{fieldId:"assignee", op:"Is", value:"Priya"},{fieldId:"department", op:"Is", value:"HR"}],
         actions:[{behavior:"Mandate", fieldId:"description"},{behavior:"Mandate", fieldId:"status"},{behavior:"Mandate", fieldId:"subject"},{behavior:"Mandate", fieldId:"category"}] },
     ] },
   // Demo scenario S3 — the field-level conflict discovery demo. One block, one Mandate action targeting four
   // fields; only Department + Designation conflict (flagged inline; click → opens the drawer focused on that field).
   { id:"r18", name:"HR Rule UI Exp", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:0, recommended:false,
-    conditions:[{fieldId:"department", op:"In", value:"HR"}],
+    conditions:[{fieldId:"department", op:"Is", value:"HR"}],
     actions:[{behavior:"Mandate", fieldIds:["employee_id","department","designation","joining_date"], fieldId:"employee_id"}],
     blocks:[
       { match:"all", time:"While the form is being filled", people:"Everyone",
-        conditions:[{fieldId:"department", op:"In", value:"HR"}],
+        conditions:[{fieldId:"department", op:"Is", value:"HR"}],
         actions:[{behavior:"Mandate", fieldIds:["employee_id","department","designation","joining_date"], fieldId:"employee_id"}] },
     ] },
   // Demo scenario S4 — "Critical Incident Handling": 2 standalone conditions + 2 condition groups + 4 actions.
   // Real conflicts (DEMO_S4): Group 1 (Impact) & Group 2 (Category) condition-vs-action; Action Mandate Assignee
   // (opposite behavior) & Action Mandate Description (same behavior). Two carry reverse behavior (Impact, Assignee).
   { id:"r19", name:"Critical Incident Handling", status:"Active", when:"While the form is being filled", audience:"Technicians only", usedInForms:0, recommended:false,
-    conditions:[{fieldId:"priority", op:"In", value:"Urgent"},{fieldId:"status", op:"In", value:"Open"},{fieldId:"impact", op:"In", value:"High"},{fieldId:"urgency", op:"In", value:"High"},{fieldId:"category", op:"In", value:"Network"},{fieldId:"location", op:"In", value:"Mumbai"}],
+    conditions:[{fieldId:"priority", op:"Is", value:"Urgent"},{fieldId:"status", op:"Is", value:"Open"},{fieldId:"impact", op:"Is", value:"High"},{fieldId:"urgency", op:"Is", value:"High"},{fieldId:"category", op:"Is", value:"Network"},{fieldId:"location", op:"Is", value:"Mumbai"}],
     actions:[{behavior:"Set Value", fieldId:"status", value:"In Progress"},{behavior:"Mandate", fieldId:"assignee"},{behavior:"Set Value", fieldId:"priority", value:"Urgent"},{behavior:"Mandate", fieldId:"description"}],
     blocks:[
       { match:"all", time:"While the form is being filled", people:"Technicians only",
         conditions:[
-          {fieldId:"priority", op:"In", value:"Urgent"},
-          {fieldId:"status", op:"In", value:"Open"},
-          {group:true, match:"all", conditions:[{fieldId:"impact", op:"In", value:"High"},{fieldId:"urgency", op:"In", value:"High"}]},
-          {group:true, match:"all", conditions:[{fieldId:"category", op:"In", value:"Network"},{fieldId:"location", op:"In", value:"Mumbai"}]},
+          {fieldId:"priority", op:"Is", value:"Urgent"},
+          {fieldId:"status", op:"Is", value:"Open"},
+          {group:true, match:"all", conditions:[{fieldId:"impact", op:"Is", value:"High"},{fieldId:"urgency", op:"Is", value:"High"}]},
+          {group:true, match:"all", conditions:[{fieldId:"category", op:"Is", value:"Network"},{fieldId:"location", op:"Is", value:"Mumbai"}]},
         ],
         actions:[
           {behavior:"Set Value", fieldId:"status", value:"In Progress"},
@@ -539,13 +545,13 @@ const RULE_DB = [
   // behavior ON. Real conflicts: Show CC Email + Description (reverse vs IT Communication Policy), Hide Category
   // (vs HR Category Policy mandatory), Mandate Attachment (vs IT Attachment Policy hide). Action 4 (Set Priority) clean.
   { id:"r20", name:"R20 - Request Routing Demo", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:0, recommended:false,
-    conditions:[{fieldId:"department", op:"In", value:"HR"},{fieldId:"location", op:"In", value:"India"},{fieldId:"department", op:"In", value:"IT"},{fieldId:"impact", op:"In", value:"High"}],
+    conditions:[{fieldId:"department", op:"Is", value:"HR"},{fieldId:"location", op:"Is", value:"India"},{fieldId:"department", op:"Is", value:"IT"},{fieldId:"impact", op:"Is", value:"High"}],
     actions:[{behavior:"Show", fieldId:"cc_emails"},{behavior:"Hide", fieldId:"category"},{behavior:"Mandate", fieldId:"attachment"},{behavior:"Set Value", fieldId:"priority", value:"High"}],
     blocks:[
       { match:"any", advanced:true, time:"While the form is being filled", people:"Everyone",
         conditions:[
-          {group:true, match:"all", conditions:[{fieldId:"department", op:"In", value:"HR"},{fieldId:"location", op:"In", value:"India"}]},
-          {group:true, match:"all", conditions:[{fieldId:"department", op:"In", value:"IT"},{fieldId:"impact", op:"In", value:"High"}]},
+          {group:true, match:"all", conditions:[{fieldId:"department", op:"Is", value:"HR"},{fieldId:"location", op:"Is", value:"India"}]},
+          {group:true, match:"all", conditions:[{fieldId:"department", op:"Is", value:"IT"},{fieldId:"impact", op:"Is", value:"High"}]},
         ],
         actions:[
           {behavior:"Show", fieldIds:["cc_emails","description"], fieldId:"cc_emails"},
@@ -557,13 +563,13 @@ const RULE_DB = [
   // Same conflict logic as R20 (maps to DEMO_S5), but its Review Conflict drawer opens in the SIMPLIFIED
   // field-focused mode (no Current Rule / summary / compare; adds an Edit button per conflicting rule).
   { id:"r21", name:"R21 - Request Routing Demo 2", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:0, recommended:false,
-    conditions:[{fieldId:"department", op:"In", value:"HR"},{fieldId:"location", op:"In", value:"India"},{fieldId:"department", op:"In", value:"IT"},{fieldId:"impact", op:"In", value:"High"}],
+    conditions:[{fieldId:"department", op:"Is", value:"HR"},{fieldId:"location", op:"Is", value:"India"},{fieldId:"department", op:"Is", value:"IT"},{fieldId:"impact", op:"Is", value:"High"}],
     actions:[{behavior:"Show", fieldId:"cc_emails"},{behavior:"Hide", fieldId:"category"},{behavior:"Mandate", fieldId:"attachment"},{behavior:"Set Value", fieldId:"priority", value:"High"}],
     blocks:[
       { match:"any", advanced:true, time:"While the form is being filled", people:"Everyone",
         conditions:[
-          {group:true, match:"all", conditions:[{fieldId:"department", op:"In", value:"HR"},{fieldId:"location", op:"In", value:"India"}]},
-          {group:true, match:"all", conditions:[{fieldId:"department", op:"In", value:"IT"},{fieldId:"impact", op:"In", value:"High"}]},
+          {group:true, match:"all", conditions:[{fieldId:"department", op:"Is", value:"HR"},{fieldId:"location", op:"Is", value:"India"}]},
+          {group:true, match:"all", conditions:[{fieldId:"department", op:"Is", value:"IT"},{fieldId:"impact", op:"Is", value:"High"}]},
         ],
         actions:[
           {behavior:"Show", fieldIds:["cc_emails","description"], fieldId:"cc_emails"},
@@ -575,11 +581,11 @@ const RULE_DB = [
   // R22 — a DIFFERENT drawer design: field list (left) → conflicting rules (right) → expand a rule to its
   // blocks → expand a block to see what the current rule vs that block does to the field. Maps to DEMO_S7.
   { id:"r22", name:"R22 - Conflict Matrix Demo", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:0, recommended:false,
-    conditions:[{fieldId:"priority", op:"In", value:"High"}],
+    conditions:[{fieldId:"priority", op:"Is", value:"High"}],
     actions:[{behavior:"Set Value", fieldId:"status", value:"In Progress"},{behavior:"Hide", fieldId:"category"},{behavior:"Mandate", fieldId:"assignee"}],
     blocks:[
       { match:"all", time:"While the form is being filled", people:"Everyone",
-        conditions:[{fieldId:"priority", op:"In", value:"High"}],
+        conditions:[{fieldId:"priority", op:"Is", value:"High"}],
         actions:[
           {behavior:"Set Value", fieldId:"status", value:"In Progress"},
           {behavior:"Hide", fieldIds:["category"], fieldId:"category"},
@@ -589,11 +595,11 @@ const RULE_DB = [
   // R23 — INVERSE of R22: conflicting rules on the LEFT; selecting one shows its affected fields (as titles)
   // and the blocks touching each on the RIGHT. A search + field-filter toolbar narrows both sides. Maps to DEMO_S8.
   { id:"r23", name:"R23 - Rule Conflict Matrix", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:0, recommended:false,
-    conditions:[{fieldId:"priority", op:"In", value:"High"}],
+    conditions:[{fieldId:"priority", op:"Is", value:"High"}],
     actions:[{behavior:"Set Value", fieldId:"status", value:"In Progress"},{behavior:"Hide", fieldId:"category"},{behavior:"Mandate", fieldId:"assignee"},{behavior:"Set Value", fieldId:"impact", value:"High"},{behavior:"Mandate", fieldId:"tags"},{behavior:"Hide", fieldId:"fill_template"},{behavior:"Disable", fieldId:"transition_model"}],
     blocks:[
       { match:"all", time:"While the form is being filled", people:"Everyone",
-        conditions:[{fieldId:"priority", op:"In", value:"High"}],
+        conditions:[{fieldId:"priority", op:"Is", value:"High"}],
         actions:[
           {behavior:"Set Value", fieldId:"status", value:"In Progress"},
           {behavior:"Hide", fieldIds:["category"], fieldId:"category"},
@@ -611,11 +617,11 @@ const RULE_DB = [
   // drops to nothing, and the execution-scope case (this rule Hides Category on Create+Edit while another Shows
   // it on Create — different actions, overlapping windows → conflict). exec = On Create and Edit.
   { id:"r24", name:"R24 - Complex Combinations", status:"Active", when:"When the form is submitted", audience:"Everyone", usedInForms:0, recommended:false, exec:"On Create and Edit",
-    conditions:[{fieldId:"priority", op:"In", value:"High"}],
+    conditions:[{fieldId:"priority", op:"Is", value:"High"}],
     actions:[{behavior:"Hide", fieldId:"category"},{behavior:"Mandate", fieldId:"status"},{behavior:"Mandate", fieldId:"assignee"},{behavior:"Hide", fieldId:"impact"},{behavior:"Set Value", fieldId:"department", value:"IT"}],
     blocks:[
       { match:"all", time:"When the form is submitted", people:"Everyone", exec:"On Create and Edit",
-        conditions:[{fieldId:"priority", op:"In", value:"High"}],
+        conditions:[{fieldId:"priority", op:"Is", value:"High"}],
         actions:[
           {behavior:"Hide", fieldIds:["category"], fieldId:"category"},
           {behavior:"Mandate", fieldIds:["status"], fieldId:"status"},
@@ -627,11 +633,11 @@ const RULE_DB = [
   // R25 — same clashing data as R24, but the drawer is entered via TWO buttons: View conflicts (both views,
   // conflicts only) and View duplicates (Rule view only, duplicates only). See DEMO_S10 (dualEntry).
   { id:"r25", name:"R25 - Conflict & Similar Split", status:"Active", when:"When the form is submitted", audience:"Everyone", usedInForms:0, recommended:false, exec:"On Create and Edit",
-    conditions:[{fieldId:"priority", op:"In", value:"High"}],
+    conditions:[{fieldId:"priority", op:"Is", value:"High"}],
     actions:[{behavior:"Hide", fieldId:"category"},{behavior:"Mandate", fieldId:"status"},{behavior:"Mandate", fieldId:"assignee"},{behavior:"Hide", fieldId:"impact"},{behavior:"Set Value", fieldId:"department", value:"IT"}],
     blocks:[
       { match:"all", time:"When the form is submitted", people:"Everyone", exec:"On Create and Edit",
-        conditions:[{fieldId:"priority", op:"In", value:"High"}],
+        conditions:[{fieldId:"priority", op:"Is", value:"High"}],
         actions:[
           {behavior:"Hide", fieldIds:["category"], fieldId:"category"},
           {behavior:"Mandate", fieldIds:["status"], fieldId:"status"},
@@ -645,12 +651,58 @@ const RULE_DB = [
   // nudges that existing rules already run on it → click opens a side drawer of those rules + their actions, so
   // they can add to one instead of making a near-duplicate. Not a conflict/similar-rule demo (no drawer fixture).
   { id:"r26", name:"R26 - Add to Existing Rule", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:0, recommended:false, exec:"On Create and Edit",
-    conditions:[{fieldId:"priority", op:"In", value:""}],
+    conditions:[{fieldId:"priority", op:"Is", value:""}],
     actions:[],
     blocks:[
       { match:"all", time:"While the form is being filled", people:"Everyone", exec:"On Create and Edit",
-        conditions:[{fieldId:"priority", op:"In", value:""}],
+        conditions:[{fieldId:"priority", op:"Is", value:""}],
         actions:[] },
+    ] },
+  // Use case 7 — one rule, three blocks, each firing on ANY of its 2-3 condition groups (each group = two ANDed
+  // conditions). All fields/values/operators are real. Audience is common (Everyone); blocks carry their own trigger.
+  { id:"r27", name:"Risk-based escalation (Use case 7)", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:0, recommended:false, exec:"On Create and Edit",
+    conditions:[], actions:[],
+    blocks:[
+      // Block 1 — Major-incident signals (any of three groups)
+      { match:"any", time:"While the form is being filled", exec:"On Create and Edit", people:"Everyone",
+        conditions:[
+          { group:true, match:"all", conditions:[{fieldId:"impact", op:"Is", value:"High"},{fieldId:"priority", op:"Is", value:"High"}] },
+          { group:true, match:"all", conditions:[{fieldId:"priority", op:"Is", value:"Urgent"},{fieldId:"subject", op:"Contains", value:"outage"}] },
+          { group:true, match:"all", conditions:[{fieldId:"impact", op:"Is", value:"High"},{fieldId:"status", op:"Is", value:"Reopened"}] },
+        ],
+        actions:[
+          {behavior:"Set Value", fieldId:"priority", fieldIds:["priority"], value:"Urgent"},
+          {behavior:"Show",   fieldId:"assignee", fieldIds:["assignee"]},
+          {behavior:"Mandate", fieldId:"assignee", fieldIds:["assignee"]},
+          {behavior:"Set Value", fieldId:"tags", fieldIds:["tags"], value:"Escalated"},
+        ] },
+      // Block 2 — Security-sensitive signals (any of two groups)
+      { match:"any", time:"While the form is being filled", exec:"On Create and Edit", people:"Everyone",
+        conditions:[
+          { group:true, match:"all", conditions:[{fieldId:"tags", op:"Match Any", value:["Security"]},{fieldId:"impact", op:"Is", value:"High"}] },
+          { group:true, match:"all", conditions:[{fieldId:"category", op:"Is", value:"Access"},{fieldId:"priority", op:"Is", value:"High"}] },
+        ],
+        actions:[
+          {behavior:"Show",   fieldId:"cc_emails", fieldIds:["cc_emails"]},
+          {behavior:"Mandate", fieldId:"cc_emails", fieldIds:["cc_emails"]},
+          {behavior:"Mandate", fieldId:"description", fieldIds:["description"]},
+          {behavior:"Show",   fieldId:"attachment", fieldIds:["attachment"]},
+          {behavior:"Mandate", fieldId:"attachment", fieldIds:["attachment"]},
+        ] },
+      // Block 3 — VIP / business-critical signals (any of three groups)
+      { match:"any", time:"While the form is being filled", exec:"On Create and Edit", people:"Everyone",
+        conditions:[
+          { group:true, match:"all", conditions:[{fieldId:"tags", op:"Match Any", value:["VIP"]},{fieldId:"priority", op:"Is", value:"High"}] },
+          { group:true, match:"all", conditions:[{fieldId:"department", op:"Is", value:"Finance"},{fieldId:"impact", op:"Is", value:"High"}] },
+          { group:true, match:"all", conditions:[{fieldId:"tags", op:"Match Any", value:["VIP"]},{fieldId:"urgency", op:"Is", value:"High"}] },
+        ],
+        actions:[
+          {behavior:"Show",   fieldId:"assignee", fieldIds:["assignee"]},
+          {behavior:"Mandate", fieldId:"assignee", fieldIds:["assignee"]},
+          {behavior:"Show",   fieldId:"cc_emails", fieldIds:["cc_emails"]},
+          {behavior:"Mandate", fieldId:"cc_emails", fieldIds:["cc_emails"]},
+          {behavior:"Set Value", fieldId:"assignee", fieldIds:["assignee"], value:"Priya"},
+        ] },
     ] },
 ];
 
@@ -922,20 +974,20 @@ const STATUS_FIELD_RULES = [
     conditions:[], actions:[{behavior:"Hide", fieldId:"status"}] },
   // 2 — condition only → triggers an action on another field
   { id:"sf2", name:"Reveal Cc Emails when On Hold", audience:"Everyone", exec:"On Edit", when:"While the form is being filled",
-    conditions:[{fieldId:"status", op:"In", value:"On Hold"}], actions:[{behavior:"Show", fieldId:"cc_emails"}] },
+    conditions:[{fieldId:"status", op:"Is", value:"On Hold"}], actions:[{behavior:"Show", fieldId:"cc_emails"}] },
   // 3 — condition only → clears another field
   { id:"sf3", name:"Clear Assignee when reopened", audience:"Technicians only", exec:"On Edit", when:"When the form is submitted",
-    conditions:[{fieldId:"status", op:"In", value:"Reopened"}], actions:[{behavior:"Clear Value", fieldId:"assignee"}] },
+    conditions:[{fieldId:"status", op:"Is", value:"Reopened"}], actions:[{behavior:"Clear Value", fieldId:"assignee"}] },
   // 4 — KEY example: Status in all 3 blocks, a different role in each (condition / action / both)
   { id:"sf4", name:"Priority & assignment workflow", audience:"Technicians only", exec:"On Create and Edit", when:"While the form is being filled",
     blocks:[
-      { conditions:[{fieldId:"status", op:"In", value:"In Progress"}], actions:[{behavior:"Mandate", fieldId:"assignee"}] },
-      { conditions:[{fieldId:"impact",  op:"In", value:"High"}],        actions:[{behavior:"Set Value", fieldId:"status", value:"On Hold"}] },
-      { conditions:[{fieldId:"status", op:"In", value:"Resolved"}],    actions:[{behavior:"Set Value", fieldId:"status", value:"Closed"},{behavior:"Clear Value", fieldId:"cc_emails"}] },
+      { conditions:[{fieldId:"status", op:"Is", value:"In Progress"}], actions:[{behavior:"Mandate", fieldId:"assignee"}] },
+      { conditions:[{fieldId:"impact",  op:"Is", value:"High"}],        actions:[{behavior:"Set Value", fieldId:"status", value:"On Hold"}] },
+      { conditions:[{fieldId:"status", op:"Is", value:"Resolved"}],    actions:[{behavior:"Set Value", fieldId:"status", value:"Closed"},{behavior:"Clear Value", fieldId:"cc_emails"}] },
     ] },
   // 5 — condition only → locks another field
   { id:"sf5", name:"Lock Priority after assignment", audience:"Technicians only", exec:"On Edit", when:"While the form is being filled",
-    conditions:[{fieldId:"status", op:"In", value:"Assigned"}], actions:[{behavior:"Disable", fieldId:"priority"}] },
+    conditions:[{fieldId:"status", op:"Is", value:"Assigned"}], actions:[{behavior:"Disable", fieldId:"priority"}] },
   // 6 — action only, opposite behavior to rule 1
   { id:"sf6", name:"Show Status on the portal", audience:"Everyone", exec:"On Create and Edit", when:"When the form opens",
     conditions:[], actions:[{behavior:"Show", fieldId:"status"}] },
@@ -946,13 +998,13 @@ const DESCRIPTION_FIELD_RULES = [
   { id:"df1", name:"Require Description for major incidents", audience:"Everyone", exec:"On Create and Edit", when:"When the form is submitted",
     conditions:[
       { group:true, conditions:[
-        {fieldId:"priority", op:"In", value:"High"},
-        {fieldId:"impact",   op:"In", value:"High"},
-        {fieldId:"urgency",  op:"In", value:"High"},
+        {fieldId:"priority", op:"Is", value:"High"},
+        {fieldId:"impact",   op:"Is", value:"High"},
+        {fieldId:"urgency",  op:"Is", value:"High"},
       ] },
       { group:true, conditions:[
-        {fieldId:"category",       op:"In", value:"Incident"},
-        {fieldId:"location",       op:"In", value:"Surat"},
+        {fieldId:"category",       op:"Is", value:"Incident"},
+        {fieldId:"location",       op:"Is", value:"Surat"},
         {fieldId:"requester_type", op:"Equals", value:"Employee"},
       ] },
     ],
@@ -962,9 +1014,9 @@ const DESCRIPTION_FIELD_RULES = [
 const IMPACT_FIELD_RULES = [
   { id:"imf1", name:"Impact handling workflow", audience:"Everyone",
     blocks:[
-      { time:"When the form is submitted",      exec:"On Create and Edit", conditions:[{fieldId:"priority", op:"In", value:"High"}],     actions:[{behavior:"Set Value", fieldId:"impact", value:"High"}] },
-      { time:"While the form is being filled",  exec:"On Edit",            conditions:[{fieldId:"status",   op:"In", value:"On Hold"}],  actions:[{behavior:"Mandate",   fieldId:"impact"}] },
-      { time:"When the form opens",             exec:"On Create",          conditions:[{fieldId:"category", op:"In", value:"Hardware"}], actions:[{behavior:"Hide",      fieldId:"impact"}] },
+      { time:"When the form is submitted",      exec:"On Create and Edit", conditions:[{fieldId:"priority", op:"Is", value:"High"}],     actions:[{behavior:"Set Value", fieldId:"impact", value:"High"}] },
+      { time:"While the form is being filled",  exec:"On Edit",            conditions:[{fieldId:"status",   op:"Is", value:"On Hold"}],  actions:[{behavior:"Mandate",   fieldId:"impact"}] },
+      { time:"When the form opens",             exec:"On Create",          conditions:[{fieldId:"category", op:"Is", value:"Hardware"}], actions:[{behavior:"Hide",      fieldId:"impact"}] },
     ] },
 ];
 const FIELD_RULE_FIXTURES = { status: STATUS_FIELD_RULES, description: DESCRIPTION_FIELD_RULES, impact: IMPACT_FIELD_RULES };
@@ -2134,7 +2186,23 @@ function GuidedDropdown({value, onChange, options, guide, placeholder, hint, var
       : { left, bottom: (window.innerHeight - r.top) + 4, W };
     setPos(next); setActive(value || (norm[0] && norm[0].value) || ""); setQ(""); setOpen(true);
   };
-  const pick = v => { if (isMulti){ const next = arr.indexOf(v)>=0 ? arr.filter(x=>x!==v) : arr.concat([v]); onChange(next); } else { onChange(v); setOpen(false); } };
+  const isDis = v => { const o=norm.find(x=>x.value===v); return !!(o && o.disabled); };
+  const pick = v => { if(isDis(v)) return; if (isMulti){ const next = arr.indexOf(v)>=0 ? arr.filter(x=>x!==v) : arr.concat([v]); onChange(next); } else { onChange(v); setOpen(false); } };
+  // ---- keyboard nav: ↑/↓ move the highlight (skipping disabled), Enter/Space select, Esc closes (Space types inside the search box) ----
+  const cardRef = useRef(null), listRef = useRef(null);
+  const moveActive = dir => { const list=filtered; if(!list.length) return; let i=list.findIndex(o=>o.value===active); for(let s=0;s<list.length;s++){ i = i<0 ? (dir>0?0:list.length-1) : i+dir; if(i<0) i=list.length-1; if(i>=list.length) i=0; if(!list[i].disabled){ setActive(list[i].value); return; } } };
+  const onMenuKey = e => {
+    if(e.key==="ArrowDown"){ e.preventDefault(); moveActive(1); }
+    else if(e.key==="ArrowUp"){ e.preventDefault(); moveActive(-1); }
+    else if(e.key==="Home"){ e.preventDefault(); if(filtered[0]) setActive(filtered[0].value); }
+    else if(e.key==="End"){ e.preventDefault(); if(filtered.length) setActive(filtered[filtered.length-1].value); }
+    else if(e.key==="Enter"){ e.preventDefault(); if(active) pick(active); }
+    else if(e.key===" " && !showSearch){ e.preventDefault(); if(active) pick(active); }
+    else if(e.key==="Escape" || e.key==="Tab"){ if(e.key==="Escape"){ e.preventDefault(); } setOpen(false); if(e.key==="Escape" && btnRef.current) btnRef.current.focus(); }
+  };
+  // focus the menu (so it hears keys) when there's no search box to autofocus; keep the highlight scrolled into view
+  useEffect(()=>{ if(open && !showSearch && cardRef.current){ const t=setTimeout(()=>{ if(cardRef.current) cardRef.current.focus(); }, 0); return ()=>clearTimeout(t); } }, [open]);
+  useEffect(()=>{ if(!open || !listRef.current) return; const els=listRef.current.querySelectorAll('[data-val]'); for(let i=0;i<els.length;i++){ if(els[i].getAttribute('data-val')===String(active)){ if(els[i].scrollIntoView) els[i].scrollIntoView({block:"nearest"}); break; } } }, [active, open]);
   const triggerCls = variant==="pill"
     ? "appearance-none h-9 w-full rounded-lg border bg-white pl-3 pr-8 text-[13px] font-medium inline-flex items-center justify-between gap-2 relative " + (sel?"text-slate-700":"text-slate-400") + " " + (open?"border-sky-300 ring-2 ring-sky-100":"border-slate-200 hover:border-slate-300")
     : "h-9 rounded-md border bg-white px-2.5 text-[13px] inline-flex items-center justify-between gap-1.5 w-full relative " + ((sel||arr.length)?"text-slate-700":"text-slate-400") + " " + (open?"border-sky-300 ring-1 ring-sky-200":(highlight?"border-sky-300 ring-1 ring-sky-200":"border-slate-200 hover:border-slate-300"));
@@ -2142,27 +2210,28 @@ function GuidedDropdown({value, onChange, options, guide, placeholder, hint, var
   const g = guide && active && guide[active];
   return (
     <>
-      <button ref={btnRef} type="button" onClick={()=> open?setOpen(false):openMenu()} className={triggerCls}>
+      <button ref={btnRef} type="button" onClick={()=> open?setOpen(false):openMenu()}
+        onKeyDown={e=>{ if(!open && (e.key==="ArrowDown"||e.key==="ArrowUp")){ e.preventDefault(); openMenu(); } }} className={triggerCls}>
         <span className="truncate">{triggerText}</span>
         <Ico name="chevdown" size={14} cls="text-slate-400 shrink-0"/>
       </button>
       {open && pos && ReactDOM.createPortal(
         <div className="fixed inset-0 z-[60]" onMouseDown={()=>setOpen(false)}>
-          <div onMouseDown={e=>e.stopPropagation()} className="absolute v10-pop bg-white rounded-xl shadow-2xl ring-1 ring-slate-200 overflow-hidden flex" style={{left:pos.left, width:pos.W, ...(pos.top!=null ? {top:pos.top} : {bottom:pos.bottom})}}>
+          <div ref={cardRef} tabIndex={-1} onKeyDown={onMenuKey} onMouseDown={e=>e.stopPropagation()} className="absolute v10-pop bg-white rounded-xl shadow-2xl ring-1 ring-slate-200 overflow-hidden flex outline-none" style={{left:pos.left, width:pos.W, ...(pos.top!=null ? {top:pos.top} : {bottom:pos.bottom})}}>
             <div className={(hasPanel ? "w-[210px] border-r border-slate-100" : "w-full") + " shrink-0 flex flex-col max-h-[340px]"}>
               {showSearch &&
                 <div className="p-2 border-b border-slate-100">
                   <input autoFocus value={q} onChange={e=>setQ(e.target.value)} placeholder="Search"
                     className="w-full h-8 px-2 rounded-md border border-slate-200 text-[12.5px] outline-none focus:border-sky-300"/>
                 </div>}
-              <div className="overflow-y-auto py-1">
+              <div ref={listRef} className="overflow-y-auto py-1">
                 {filtered.map(o=>{
                   const on = isMulti ? arr.indexOf(o.value)>=0 : o.value===value;
                   const sub = subOf(o);
                   return (
-                    <button key={o.value} type="button" onMouseEnter={()=>setActive(o.value)} onClick={()=>pick(o.value)}
-                      className={"w-full text-left px-2.5 py-1.5 text-[13px] flex items-start justify-between gap-2 " + (on?"bg-sky-50 text-[#1180c1] font-semibold":(o.value===active?"bg-slate-50 text-slate-700":"text-slate-700 hover:bg-slate-50"))}>
-                      <span className="min-w-0"><span className="block truncate">{o.label}</span>{sub && <span className="block text-[11px] text-slate-400 truncate font-normal">{sub}</span>}</span>
+                    <button key={o.value} type="button" data-val={o.value} disabled={o.disabled} onMouseEnter={()=>{ if(!o.disabled) setActive(o.value); }} onClick={()=>pick(o.value)}
+                      className={"w-full text-left px-2.5 py-1.5 text-[13px] flex items-start justify-between gap-2 " + (o.disabled ? "cursor-not-allowed text-slate-300" : (on?"bg-sky-50 text-[#1180c1] font-semibold":(o.value===active?"bg-slate-100 text-slate-800":"text-slate-700 hover:bg-slate-100")))}>
+                      <span className="min-w-0"><span className="block truncate">{o.label}</span>{sub && <span className={"block text-[11px] truncate font-normal " + (o.disabled ? "text-slate-300" : "text-slate-400")}>{sub}</span>}</span>
                       {on && <Ico name="check" size={14} cls="shrink-0 mt-0.5"/>}
                     </button>
                   );
@@ -2846,9 +2915,24 @@ function V7FieldPicker({value, onChange, placeholder, conflict, onConflict, conf
   const groups = V7_FIELD_GROUPS
     .map(g=>({ label:g.label, items: g.ids.map(id=>ALL_FIELDS.find(f=>f.id===id)).filter(Boolean).filter(f=> !ql || f.label.toLowerCase().indexOf(ql)>=0) }))
     .filter(g=> g.items.length);
+  // ---- keyboard nav: ↑/↓ move the highlight, Enter selects, Esc closes (Space types in the search box) ----
+  const [active, setActive] = useState("");
+  const listRef = useRef(null);
+  const flat = groups.flatMap(g=>g.items);
+  const moveActive = dir => { if(!flat.length) return; const i=flat.findIndex(f=>f.id===active); let ni = i<0 ? (dir>0?0:flat.length-1) : i+dir; if(ni<0) ni=flat.length-1; if(ni>=flat.length) ni=0; setActive(flat[ni].id); };
+  const onMenuKey = e => {
+    if(e.key==="ArrowDown"){ e.preventDefault(); moveActive(1); }
+    else if(e.key==="ArrowUp"){ e.preventDefault(); moveActive(-1); }
+    else if(e.key==="Enter"){ e.preventDefault(); const id = active || (flat[0] && flat[0].id); if(id){ onChange(id); setOpen(false); } }
+    else if(e.key==="Escape"){ e.preventDefault(); setOpen(false); if(btn.current) btn.current.focus(); }
+  };
+  // keep a valid highlight as the filter narrows; scroll the highlight into view
+  useEffect(()=>{ if(open && flat.length && !flat.some(f=>f.id===active)) setActive(value && flat.some(f=>f.id===value) ? value : flat[0].id); }, [q, open]);
+  useEffect(()=>{ if(!open || !listRef.current) return; const els=listRef.current.querySelectorAll('[data-val]'); for(let i=0;i<els.length;i++){ if(els[i].getAttribute('data-val')===String(active)){ if(els[i].scrollIntoView) els[i].scrollIntoView({block:"nearest"}); break; } } }, [active, open]);
   return (
     <>
       <button ref={btn} type="button" onClick={()=> open?setOpen(false):openMenu()}
+        onKeyDown={e=>{ if(!open && (e.key==="ArrowDown"||e.key==="ArrowUp")){ e.preventDefault(); openMenu(); } }}
         className={"cursor-pointer h-9 w-full rounded-md border bg-white px-2.5 text-[13px] transition inline-flex items-center justify-between gap-1.5 " + (value ? "border-slate-200 text-slate-700 hover:border-slate-300" : "border-slate-200 italic text-slate-400 hover:border-slate-300")}>
         <span className="truncate">{value ? labelOf(value) : (placeholder || "choose field")}</span>
         <span className="flex shrink-0 items-center gap-2.5">
@@ -2860,16 +2944,16 @@ function V7FieldPicker({value, onChange, placeholder, conflict, onConflict, conf
         <div className="fixed inset-0 z-[60]" onMouseDown={()=>setOpen(false)}>
           <div onMouseDown={e=>e.stopPropagation()} className="absolute v10-pop bg-white rounded-xl shadow-2xl ring-1 ring-slate-200 overflow-hidden w-[280px]" style={{left:pos.left, ...(pos.top!=null ? {top:pos.top} : {bottom:pos.bottom})}}>
             <div className="p-2 border-b border-slate-100">
-              <input autoFocus value={q} onChange={e=>setQ(e.target.value)} placeholder="Search fields"
+              <input autoFocus value={q} onChange={e=>setQ(e.target.value)} onKeyDown={onMenuKey} placeholder="Search fields"
                 className="w-full h-8 px-2 rounded-md border border-slate-200 text-[12.5px] outline-none focus:border-sky-300"/>
             </div>
-            <div className="max-h-72 overflow-y-auto py-1">
+            <div ref={listRef} className="max-h-72 overflow-y-auto py-1">
               {groups.map(g=>(
                 <div key={g.label}>
                   <div className="px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">{g.label}</div>
                   {g.items.map(f=>(
-                    <button key={f.id} type="button" onClick={()=>{ onChange(f.id); setOpen(false); }}
-                      className={"w-full text-left px-3 py-1.5 text-[13px] flex items-center justify-between " + (f.id===value ? "bg-sky-50 text-[#1180c1] font-semibold" : "text-slate-700 hover:bg-slate-50")}>
+                    <button key={f.id} type="button" data-val={f.id} onMouseEnter={()=>setActive(f.id)} onClick={()=>{ onChange(f.id); setOpen(false); }}
+                      className={"w-full text-left px-3 py-1.5 text-[13px] flex items-center justify-between " + (f.id===value ? "bg-sky-50 text-[#1180c1] font-semibold" : (f.id===active ? "bg-slate-100 text-slate-800" : "text-slate-700 hover:bg-slate-100"))}>
                       {f.label}{f.id===value && <Ico name="check" size={14}/>}
                     </button>
                   ))}
@@ -2910,6 +2994,18 @@ function V7TargetSelect({ ids, onChange, conflictIds, onConflict, autoOpen }){
   const pql = pq.trim().toLowerCase();
   // Popover list = fields NOT yet chosen (the chosen ones are pinned as chips at the top); filtered by the search.
   const popAvail = V7_FIELD_FLAT.filter(f=> ids.indexOf(f.id)<0 && (!pql || f.label.toLowerCase().indexOf(pql)>=0));
+  // ---- keyboard nav in the popover: ↑/↓ move, Enter/Space add the highlighted field, Esc closes ----
+  const [popActive, setPopActive] = useState("");
+  const popListRef = useRef(null);
+  const movePop = dir => { if(!popAvail.length) return; const i=popAvail.findIndex(f=>f.id===popActive); let ni = i<0 ? (dir>0?0:popAvail.length-1) : i+dir; if(ni<0) ni=popAvail.length-1; if(ni>=popAvail.length) ni=0; setPopActive(popAvail[ni].id); };
+  const onPopKey = e => {
+    if(e.key==="ArrowDown"){ e.preventDefault(); movePop(1); }
+    else if(e.key==="ArrowUp"){ e.preventDefault(); movePop(-1); }
+    else if(e.key==="Enter"){ e.preventDefault(); const id=popActive||(popAvail[0]&&popAvail[0].id); if(id) toggle(id); }
+    else if(e.key==="Escape"){ e.preventDefault(); setView(null); if(btn.current) btn.current.focus(); }
+  };
+  useEffect(()=>{ if(view==="pop" && popAvail.length && !popAvail.some(f=>f.id===popActive)) setPopActive(popAvail[0].id); }, [pq, view]);
+  useEffect(()=>{ if(view!=="pop" || !popListRef.current) return; const els=popListRef.current.querySelectorAll('[data-val]'); for(let i=0;i<els.length;i++){ if(els[i].getAttribute('data-val')===String(popActive)){ if(els[i].scrollIntoView) els[i].scrollIntoView({block:"nearest"}); break; } } }, [popActive, view]);
   const showTip = () => { if(!n || !btn.current || view) return; const r=btn.current.getBoundingClientRect(); const W=240; let left=r.left; if(left+W>window.innerWidth-8) left=window.innerWidth-W-8; if(left<8) left=8; setTip({left, top:r.bottom+6}); };
   const hideTip = () => setTip(null);
   const showCfTip = () => { if(!cf.current) return; const r=cf.current.getBoundingClientRect(); const W=220; let left=r.right-W; if(left<8) left=8; setCfTip({left, top:r.bottom+8}); };
@@ -2958,7 +3054,7 @@ function V7TargetSelect({ ids, onChange, conflictIds, onConflict, autoOpen }){
             <div className="flex items-center gap-2 p-2.5 border-b border-slate-100">
               <div className="relative flex-1">
                 <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"><Ico name="search" size={14}/></span>
-                <input autoFocus value={pq} onChange={e=>setPq(e.target.value)} placeholder="Search"
+                <input autoFocus value={pq} onChange={e=>setPq(e.target.value)} onKeyDown={onPopKey} placeholder="Search"
                   className="w-full h-9 pl-8 pr-2.5 rounded-lg border border-slate-200 text-[13px] outline-none focus:border-sky-300"/>
               </div>
               <button type="button" onClick={()=>setView("modal")} title="Expand"
@@ -2975,13 +3071,18 @@ function V7TargetSelect({ ids, onChange, conflictIds, onConflict, autoOpen }){
                 ))}
                 {n>3 && <button type="button" onClick={()=>setPopExpand(v=>!v)} className="rounded-full bg-slate-100 px-2 py-0.5 text-[12px] font-semibold text-slate-500 hover:bg-slate-200">{popExpand ? "Show less" : "+"+(n-3)}</button>}
               </div>}
-            <div className="overflow-y-auto py-1">
+            <div ref={popListRef} className="min-h-0 flex-1 overflow-y-auto py-1">
               {popAvail.map(f=>(
-                <button key={f.id} type="button" onClick={()=>toggle(f.id)}
-                  className="group w-full text-left px-4 py-2 text-[14px] text-slate-700 hover:bg-sky-50 flex items-center justify-between">
-                  {f.label}<span className="text-sky-500 opacity-0 group-hover:opacity-100 text-[16px] leading-none">+</span>
+                <button key={f.id} type="button" data-val={f.id} onMouseEnter={()=>setPopActive(f.id)} onClick={()=>toggle(f.id)}
+                  className={"group w-full text-left px-4 py-2 text-[14px] flex items-center justify-between " + (f.id===popActive ? "bg-sky-50 text-slate-800" : "text-slate-700 hover:bg-sky-50")}>
+                  {f.label}<span className={"text-sky-500 text-[16px] leading-none " + (f.id===popActive ? "opacity-100" : "opacity-0 group-hover:opacity-100")}>+</span>
                 </button>))}
               {popAvail.length===0 && <p className="px-4 py-6 text-center text-[12px] text-slate-400">{pql ? "No matches" : "All fields selected"}</p>}
+            </div>
+            {/* confirm the selection — closes the popover (selections apply live) */}
+            <div className="border-t border-slate-100 p-2">
+              <button type="button" onClick={()=>{ setView(null); if(btn.current) btn.current.focus(); }}
+                className="h-9 w-full rounded-lg text-[13px] font-semibold text-white shadow-sm transition hover:brightness-105" style={{background:BRAND}}>Done{n>0 ? " · "+n+" selected" : ""}</button>
             </div>
           </div>
         </div>, document.body)}
@@ -3237,7 +3338,10 @@ function V7Group({g, n, onChange, onRemove, onDuplicate, conflictFields, onField
 // Action row: ONE behavior applied to ONE OR MANY target fields. Targets are chosen in a dual-pane modal
 // and shown collapsed ("Status + N more") — never as chips. fieldIds[] is the source of truth; fieldId
 // mirrors the first for back-compat with the shared summary/conflict helpers.
-function V7ActRow({a, onChange, onRemove, onDuplicate, ruleName, conflictFields, onFieldConflict, autoStart}){
+function V7ActRow({a, onChange, onRemove, onDuplicate, ruleName, conflictFields, onFieldConflict, autoStart, usedBehaviors}){
+  // Single-use behaviors already chosen in another action of this block are disabled here (can't add twice).
+  const behaviorOpts = BEHAVIORS.map(b=> (SINGLE_USE_ACTIONS.indexOf(b)>=0 && (usedBehaviors||[]).indexOf(b)>=0)
+    ? {value:b, label:b, disabled:true, desc:"Already added to this block"} : b);
   const ids = (a.fieldIds && a.fieldIds.length) ? a.fieldIds : (a.fieldId ? [a.fieldId] : []);
   const setIds = next => onChange({fieldIds:next, fieldId:next[0]||""});
   // field-level conflict discovery — scoped to the demo rule: the ids of this action's conflicting fields,
@@ -3247,7 +3351,7 @@ function V7ActRow({a, onChange, onRemove, onDuplicate, ruleName, conflictFields,
   const [adv, setAdv] = useState(autoStart ? "behavior" : null);
   return (
     <div className="flex items-center gap-2">
-      <div className="w-40 shrink-0"><GuidedDropdown value={a.behavior} onChange={v=>{ onChange({behavior:v, value:(v==="Show Options"||v==="Hide Options")?[]:"", entity:"", srcField:""}); setAdv("field"); }} autoOpen={adv==="behavior"} options={BEHAVIORS} guide={ACTION_GUIDE} placeholder="Choose action"/></div>
+      <div className="w-40 shrink-0"><GuidedDropdown value={a.behavior} onChange={v=>{ onChange({behavior:v, value:(v==="Show Options"||v==="Hide Options")?[]:"", entity:"", srcField:""}); setAdv("field"); }} autoOpen={adv==="behavior"} options={behaviorOpts} guide={ACTION_GUIDE} placeholder="Choose action"/></div>
       <div className="flex min-w-0 flex-1 items-center gap-2">
         {a.behavior==="Filter Data"
           ? <FilterDataConfig a={a} onChange={onChange} autoOpen={adv==="field"}/>
@@ -3677,7 +3781,7 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
                     <div className="mt-3.5"><button onClick={addAct} className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3.5 py-2 text-[13px] font-medium text-slate-700 transition hover:bg-slate-50"><Ico name="plus" size={14}/> Add Action</button></div>
                   </div>
                 : <div className="space-y-2.5 rounded-xl border border-slate-200 bg-white p-3">
-                    {block.actions.map((a,i)=> <V7ActRow key={i} a={a} onChange={p=>setAct(i,p)} onRemove={()=>rmAct(i)} onDuplicate={()=>dupAct(i)} ruleName={ruleName} conflictFields={conflictFields} onFieldConflict={onFieldConflict} autoStart={i===newActIdx}/>)}
+                    {block.actions.map((a,i)=> <V7ActRow key={i} a={a} onChange={p=>setAct(i,p)} onRemove={()=>rmAct(i)} onDuplicate={()=>dupAct(i)} ruleName={ruleName} conflictFields={conflictFields} onFieldConflict={onFieldConflict} autoStart={i===newActIdx} usedBehaviors={block.actions.filter((_,j)=>j!==i).map(x=>x.behavior).filter(Boolean)}/>)}
                     {firstActDone &&
                       <button onClick={addAct} className="inline-flex items-center gap-1.5 text-[13px] font-medium text-slate-500 transition hover:text-slate-700"><Ico name="plus" size={13}/> Add Action</button>}
                   </div>}
@@ -3699,10 +3803,13 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
                 </button>
               </div>
             </div>}
-          {/* FOOTER — block-level tools, always available while expanded (matches the screenshot's footer bar) */}
+          {/* FOOTER — block-level tools, available while expanded: duplicate · clear · delete (delete only when >1 block) */}
           <div className="flex items-center justify-between pt-1">
             <button onClick={onDuplicate} className="inline-flex items-center gap-1.5 rounded-md bg-sky-50 px-3 py-1.5 text-[13px] font-medium text-[#1180c1] transition hover:bg-sky-100"><Ico name="copy" size={14}/> Duplicate Block</button>
-            <button onClick={clearBlock} className="inline-flex items-center gap-1.5 rounded-md bg-rose-50 px-3 py-1.5 text-[13px] font-medium text-rose-500 transition hover:bg-rose-100"><Ico name="x" size={14}/> Clear</button>
+            <div className="flex items-center gap-1.5">
+              <button onClick={clearBlock} className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"><Ico name="x" size={14}/> Clear</button>
+              {total>1 && <button onClick={onRemove} className="inline-flex items-center gap-1.5 rounded-md bg-rose-50 px-3 py-1.5 text-[13px] font-medium text-rose-500 transition hover:bg-rose-100"><Ico name="trash" size={14}/> Delete Block</button>}
+            </div>
           </div>
         </div>}
     </div>
