@@ -317,7 +317,7 @@ const ACT_LINE = {
 };
 const actLine = (act, val, fieldLabel) =>
   (ACT_LINE[act] || "Acts on {f}.").replace("{f}", fieldLabel).replace("{v}", val || "a value");
-const WHENS = ["When the form opens","While the form is being filled","When the form is submitted"];
+const WHENS = ["When the form opens","While the form is being filled","When the form opens and while it's being filled","When the form is submitted"];
 const AUDS  = ["Everyone","Requesters only","Technicians only","Signed-in users only"];
 // Rules that drive the hardcoded field-level conflict demo — their conditions/actions surface the ⚠ indicator.
 const DEMO_CONFLICT_RULES = ["HR Rule UI Exp","Critical Incident Handling","R20 - Request Routing Demo","R21 - Request Routing Demo 2","R22 - Conflict Matrix Demo","R23 - Rule Conflict Matrix","R24 - Complex Combinations","R25 - Conflict & Similar Split"];
@@ -395,9 +395,10 @@ const fdTargets = srcField => FIELD_OPTIONS[srcField] || [];
 // Contextual help shown in the right panel of every guided dropdown (When to use / How it works / Output / Example).
 const G = (desc,when,how,output,example)=>({desc,when,how,output,example});
 const WHEN_GUIDE = {
-  "When the form opens": G("Reacts once, as soon as the form loads.","Use this when the rule should prepare the form before the user starts filling it.","The rule checks once when the form first loads.","Fields can be shown, hidden, or preset immediately.","Show the Priority field immediately when a new request form loads."),
-  "While the form is being filled": G("Reacts as the user changes values.","Use this when the rule should react as the user changes fields.","The rule checks again whenever a watched field changes.","The action happens immediately after the condition becomes true.","Recalculate the rule as the user changes the Department field."),
-  "When the form is submitted": G("Runs just before the request is saved.","Use this for final checks before the request is saved.","The rule runs only at the point of submission.","The form can be validated or blocked if conditions are not met.","Validate the rule just before the request is saved."),
+  "When the form opens": { desc:"Runs once, right when the form loads.", example:"Show the Priority field as soon as a new request opens." },
+  "While the form is being filled": { desc:"Runs every time the user changes a value.", example:"Show Vendor the moment Category is set to “Hardware.”" },
+  "When the form opens and while it's being filled": { desc:"Runs on load and again on every change, so the form stays up to date the whole time.", example:"Keep Priority visible from the start and update it as Impact changes." },
+  "When the form is submitted": { desc:"Runs once, just before the request is saved.", example:"Require a Description before the request can be submitted." },
 };
 const REQ_GUIDE = {
   "All requests": G("Every request type","Apply the rule across the whole form.","No request-type filter is applied.","Runs for incidents, service requests, problems and changes.","All requests must have a Subject."),
@@ -407,15 +408,15 @@ const REQ_GUIDE = {
   "Changes": G("Change requests only","Target planned changes.","Runs only for Change requests.","Other request types are unaffected.","For changes, require a rollback plan."),
 };
 const AUD_GUIDE = {
-  "Everyone": G("The safe default — applies to all users.","Use this when the behaviour should apply to anyone who opens the form.","The rule runs no matter who is using the form.","Everyone sees the same behaviour.","Require Priority for everyone who opens the form."),
-  "Requesters only": G("Just the people raising requests.","Use this for behaviour meant for the people raising requests.","The rule runs for requesters and skips agents.","Technicians see the form unchanged.","Hide the Technician Group field from requesters."),
-  "Technicians only": G("Just the agents working on requests.","Use this for behaviour meant for the agents working on requests.","The rule runs for technicians and skips requesters.","Requesters see the form unchanged.","Show the Assignee field only to technicians."),
-  "Signed-in users only": G("Skips anonymous form users.","Use this when the behaviour should skip anonymous form users.","The rule runs only for users who are signed in.","Anyone using the form without logging in is unaffected.","Pre-fill the Requester field for signed-in users."),
+  "Everyone": { desc:"Runs for anyone who opens the form, no matter who they are.", example:"Require Priority for everyone who opens the form." },
+  "Requesters only": { desc:"Runs only for requesters, not agents.", example:"Hide internal-only fields so requesters never see them." },
+  "Technicians only": { desc:"Runs only for technicians/agents, not requesters.", example:"Require Assignee only for technicians." },
+  "Signed-in users only": { desc:"Runs for logged-in users; skips anonymous/portal visitors.", example:"Auto-fill Requester from the signed-in user." },
 };
 const EXEC_GUIDE = {
-  "On Create and Edit": G("Applies when creating and when editing.","Use this when the rule should behave the same whether a request is being created or edited.","The rule is active on both the create form and the edit form.","The behaviour stays consistent across the request's whole life.","Keep Priority required on both new and existing requests."),
-  "On Create": G("Only while creating a new request.","Use this when the rule should only apply while someone is creating a brand-new request.","The rule is active on the create form, not when the request is edited later.","Requests edited afterwards are left untouched.","Require a Category only when a new request is created."),
-  "On Edit": G("Only when editing an existing request.","Use this when the rule should only apply when an already-created request is edited.","The rule is active on the edit form, not while creating.","Brand-new requests are left untouched.","Lock the Requester when an existing request is edited."),
+  "On Create and Edit": { desc:"Runs whenever a request is created or edited.", bestFor:"Fields that must behave the same on both new and existing requests." },
+  "On Create": { desc:"Runs only when a new request is created.", bestFor:"Fields that should only be configured during request creation." },
+  "On Edit": { desc:"Runs only when an existing request is edited.", bestFor:"Fields that should stay controlled after a request has already been created." },
 };
 const OP_GUIDE = {
   "Equals": { when:"Match one exact value.", how:"Checks the field equals exactly what you choose.", output:"True only for that single value." },
@@ -2176,7 +2177,7 @@ function GuidedDropdown({value, onChange, options, guide, placeholder, hint, var
   const labelFor = v => { const o = norm.find(x=>x.value===v); return o ? o.label : v; };
   const openMenu = () => {
     const r = btnRef.current.getBoundingClientRect();
-    const W = hasPanel ? 460 : 300, H = 360;
+    const W = hasPanel ? 340 : 300, H = 360;
     let left = r.left; if (left + W > window.innerWidth - 8) left = window.innerWidth - W - 8; if (left < 8) left = 8;
     // Anchor to the trigger: open below if it fits (or there's no room above); otherwise flip directly
     // ABOVE the trigger (bottom-anchored) — never jump to the top of the screen.
@@ -2187,7 +2188,7 @@ function GuidedDropdown({value, onChange, options, guide, placeholder, hint, var
     setPos(next); setActive(value || (norm[0] && norm[0].value) || ""); setQ(""); setOpen(true);
   };
   const isDis = v => { const o=norm.find(x=>x.value===v); return !!(o && o.disabled); };
-  const pick = v => { if(isDis(v)) return; if (isMulti){ const next = arr.indexOf(v)>=0 ? arr.filter(x=>x!==v) : arr.concat([v]); onChange(next); } else { onChange(v); setOpen(false); } };
+  const pick = v => { if(isDis(v)) return; setQ(""); if (isMulti){ const next = arr.indexOf(v)>=0 ? arr.filter(x=>x!==v) : arr.concat([v]); onChange(next); } else { onChange(v); setOpen(false); } };
   // ---- keyboard nav: ↑/↓ move the highlight (skipping disabled), Enter/Space select, Esc closes (Space types inside the search box) ----
   const cardRef = useRef(null), listRef = useRef(null);
   const moveActive = dir => { const list=filtered; if(!list.length) return; let i=list.findIndex(o=>o.value===active); for(let s=0;s<list.length;s++){ i = i<0 ? (dir>0?0:list.length-1) : i+dir; if(i<0) i=list.length-1; if(i>=list.length) i=0; if(!list[i].disabled){ setActive(list[i].value); return; } } };
@@ -2217,48 +2218,56 @@ function GuidedDropdown({value, onChange, options, guide, placeholder, hint, var
       </button>
       {open && pos && ReactDOM.createPortal(
         <div className="fixed inset-0 z-[60]" onMouseDown={()=>setOpen(false)}>
-          <div ref={cardRef} tabIndex={-1} onKeyDown={onMenuKey} onMouseDown={e=>e.stopPropagation()} className="absolute v10-pop bg-white rounded-xl shadow-2xl ring-1 ring-slate-200 overflow-hidden flex outline-none" style={{left:pos.left, width:pos.W, ...(pos.top!=null ? {top:pos.top} : {bottom:pos.bottom})}}>
-            <div className={(hasPanel ? "w-[210px] border-r border-slate-100" : "w-full") + " shrink-0 flex flex-col max-h-[340px]"}>
-              {showSearch &&
-                <div className="p-2 border-b border-slate-100">
-                  <input autoFocus value={q} onChange={e=>setQ(e.target.value)} placeholder="Search"
-                    className="w-full h-8 px-2 rounded-md border border-slate-200 text-[12.5px] outline-none focus:border-sky-300"/>
-                </div>}
-              <div ref={listRef} className="overflow-y-auto py-1">
-                {filtered.map(o=>{
-                  const on = isMulti ? arr.indexOf(o.value)>=0 : o.value===value;
-                  const sub = subOf(o);
-                  return (
-                    <button key={o.value} type="button" data-val={o.value} disabled={o.disabled} onMouseEnter={()=>{ if(!o.disabled) setActive(o.value); }} onClick={()=>pick(o.value)}
-                      className={"w-full text-left px-2.5 py-1.5 text-[13px] flex items-start justify-between gap-2 " + (o.disabled ? "cursor-not-allowed text-slate-300" : (on?"bg-sky-50 text-[#1180c1] font-semibold":(o.value===active?"bg-slate-100 text-slate-800":"text-slate-700 hover:bg-slate-100")))}>
-                      <span className="min-w-0"><span className="block truncate">{o.label}</span>{sub && <span className={"block text-[11px] truncate font-normal " + (o.disabled ? "text-slate-300" : "text-slate-400")}>{sub}</span>}</span>
-                      {on && <Ico name="check" size={14} cls="shrink-0 mt-0.5"/>}
-                    </button>
-                  );
-                })}
-                {filtered.length===0 && <p className="px-3 py-4 text-[12px] text-slate-400 text-center">No matches</p>}
-              </div>
-              {isMulti &&
-                <div className="border-t border-slate-100 p-2">
-                  <button type="button" onClick={()=>setOpen(false)} className="w-full h-8 rounded-md text-[12.5px] font-medium text-white" style={{background:BRAND}}>Done</button>
-                </div>}
+          {/* the menu itself — clean option list; the guide now floats as a dark tooltip beside it */}
+          <div ref={cardRef} tabIndex={-1} onKeyDown={onMenuKey} onMouseDown={e=>e.stopPropagation()} className="absolute v10-pop flex flex-col max-h-[340px] bg-white rounded-xl shadow-2xl ring-1 ring-slate-200 overflow-hidden outline-none" style={{left:pos.left, width:pos.W, ...(pos.top!=null ? {top:pos.top} : {bottom:pos.bottom})}}>
+            {showSearch &&
+              <div className="p-2 border-b border-slate-100">
+                <input autoFocus value={q} onChange={e=>setQ(e.target.value)} placeholder="Search"
+                  className="w-full h-8 px-2 rounded-md border border-slate-200 text-[12.5px] outline-none focus:border-sky-300"/>
+              </div>}
+            <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto py-1">
+              {filtered.map(o=>{
+                const on = isMulti ? arr.indexOf(o.value)>=0 : o.value===value;
+                return (
+                  <button key={o.value} type="button" data-val={o.value} disabled={o.disabled} onMouseEnter={()=>{ if(!o.disabled) setActive(o.value); }} onClick={()=>pick(o.value)}
+                    className={"w-full text-left px-3 py-2 text-[13px] flex items-center justify-between gap-2 " + (o.disabled ? "cursor-not-allowed text-slate-300" : (on?"bg-sky-50 text-[#1180c1] font-semibold":(o.value===active?"bg-slate-100 text-slate-800":"text-slate-700 hover:bg-slate-100")))}>
+                    <span className="min-w-0 leading-snug">{o.label}</span>
+                    {on && <Ico name="check" size={14} cls="shrink-0"/>}
+                  </button>
+                );
+              })}
+              {filtered.length===0 && <p className="px-3 py-4 text-[12px] text-slate-400 text-center">No matches</p>}
             </div>
-            {hasPanel &&
-              <div className="flex-1 min-w-0 p-3.5 bg-slate-50/50 max-h-[340px] overflow-y-auto">
-                {g
-                  ? <div className="space-y-2.5">
-                      <h5 className="text-[13px] font-semibold text-slate-800">{labelFor(active)}</h5>
-                      <GBlock label="WHEN TO USE" text={g.when}/>
-                      <GBlock label="HOW IT WORKS" text={g.how}/>
-                      <GBlock label="OUTPUT" text={g.output}/>
-                      {g.example && <div className="rounded-md bg-white ring-1 ring-slate-200 px-2.5 py-2"><div className="text-[9.5px] font-bold tracking-wide text-[#1180c1] mb-0.5">EXAMPLE</div><p className="text-[11.5px] text-slate-600 leading-snug">{g.example}</p></div>}
-                    </div>
-                  : <div className="space-y-1.5">
-                      <h5 className="text-[13px] font-semibold text-slate-800">{active ? labelFor(active) : "Choose an option"}</h5>
-                      <p className="text-[12px] text-slate-500 leading-relaxed">{hint || "Pick from the list."}</p>
-                    </div>}
+            {isMulti &&
+              <div className="border-t border-slate-100 p-2">
+                <button type="button" onClick={()=>setOpen(false)} className="w-full h-8 rounded-md text-[12.5px] font-medium text-white" style={{background:BRAND}}>Done</button>
               </div>}
           </div>
+          {/* dark guide tooltip — floats to the LEFT of the menu (flips right if there's no room) */}
+          {hasPanel && active && (()=>{
+            const gd = guide && guide[active];
+            const body = gd ? (gd.desc || gd.when) : (hint || "");
+            const exText = gd && (gd.example || gd.bestFor);
+            const exLabel = gd && gd.bestFor ? "Best for" : "Example";
+            if(!body && !exText) return null;
+            const tipW = 320, leftOf = pos.left - tipW - 12, onLeft = leftOf >= 8;
+            const ts = onLeft ? {left:leftOf, width:tipW} : {left: pos.left + pos.W + 12, width:tipW};
+            if(pos.top!=null) ts.top = pos.top; else ts.bottom = pos.bottom;
+            return (
+              <div style={ts} onMouseDown={e=>e.stopPropagation()} className="absolute z-[61] rounded-2xl bg-slate-800 text-white shadow-2xl v10-pop">
+                <div className="p-4">
+                  <div className="text-[14px] font-semibold text-slate-300">{labelFor(active)}</div>
+                  {body && <p className="mt-1.5 text-[13.5px] font-medium leading-relaxed text-white">{body}</p>}
+                  {exText &&
+                    <div className="mt-3 border-l-2 border-slate-600 pl-3">
+                      <div className="text-[11px] font-semibold uppercase tracking-wide text-sky-300">{exLabel}</div>
+                      <p className="mt-0.5 text-[12.5px] leading-relaxed text-slate-300">{exText}</p>
+                    </div>}
+                </div>
+                <span className={"absolute top-6 h-3.5 w-3.5 rotate-45 bg-slate-800 " + (onLeft ? "-right-1.5" : "-left-1.5")}/>
+              </div>
+            );
+          })()}
         </div>,
         document.body)}
     </>
@@ -2401,7 +2410,8 @@ function V9SpineMark({children, faint}){
 function V9Group({g, onChange, onRemove, fieldOpts}){
   const setLeaf = (i,p)=> onChange({conditions: g.conditions.map((c,j)=> j===i?{...c,...p}:c)});
   const addLeaf = ()=> onChange({conditions:[...g.conditions, {fieldId:"", op:"", value:""}]});
-  const rmLeaf  = i => onChange({conditions: g.conditions.filter((_,j)=>j!==i)});
+  // Removing the last remaining condition in a group deletes the whole group.
+  const rmLeaf  = i => { if((g.conditions||[]).length<=1){ onRemove && onRemove(); } else { onChange({conditions: g.conditions.filter((_,j)=>j!==i)}); } };
   const toggle  = ()=> onChange({match: g.match==="any"?"all":"any"});
   const n = g.conditions.length;
   return (
@@ -2923,7 +2933,7 @@ function V7FieldPicker({value, onChange, placeholder, conflict, onConflict, conf
   const onMenuKey = e => {
     if(e.key==="ArrowDown"){ e.preventDefault(); moveActive(1); }
     else if(e.key==="ArrowUp"){ e.preventDefault(); moveActive(-1); }
-    else if(e.key==="Enter"){ e.preventDefault(); const id = active || (flat[0] && flat[0].id); if(id){ onChange(id); setOpen(false); } }
+    else if(e.key==="Enter"){ e.preventDefault(); const id = active || (flat[0] && flat[0].id); if(id){ onChange(id); setQ(""); setOpen(false); } }
     else if(e.key==="Escape"){ e.preventDefault(); setOpen(false); if(btn.current) btn.current.focus(); }
   };
   // keep a valid highlight as the filter narrows; scroll the highlight into view
@@ -2952,7 +2962,7 @@ function V7FieldPicker({value, onChange, placeholder, conflict, onConflict, conf
                 <div key={g.label}>
                   <div className="px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">{g.label}</div>
                   {g.items.map(f=>(
-                    <button key={f.id} type="button" data-val={f.id} onMouseEnter={()=>setActive(f.id)} onClick={()=>{ onChange(f.id); setOpen(false); }}
+                    <button key={f.id} type="button" data-val={f.id} onMouseEnter={()=>setActive(f.id)} onClick={()=>{ onChange(f.id); setQ(""); setOpen(false); }}
                       className={"w-full text-left px-3 py-1.5 text-[13px] flex items-center justify-between " + (f.id===value ? "bg-sky-50 text-[#1180c1] font-semibold" : (f.id===active ? "bg-slate-100 text-slate-800" : "text-slate-700 hover:bg-slate-100"))}>
                       {f.label}{f.id===value && <Ico name="check" size={14}/>}
                     </button>
@@ -3001,7 +3011,7 @@ function V7TargetSelect({ ids, onChange, conflictIds, onConflict, autoOpen }){
   const onPopKey = e => {
     if(e.key==="ArrowDown"){ e.preventDefault(); movePop(1); }
     else if(e.key==="ArrowUp"){ e.preventDefault(); movePop(-1); }
-    else if(e.key==="Enter"){ e.preventDefault(); const id=popActive||(popAvail[0]&&popAvail[0].id); if(id) toggle(id); }
+    else if(e.key==="Enter"){ e.preventDefault(); const id=popActive||(popAvail[0]&&popAvail[0].id); if(id){ toggle(id); setPq(""); } }
     else if(e.key==="Escape"){ e.preventDefault(); setView(null); if(btn.current) btn.current.focus(); }
   };
   useEffect(()=>{ if(view==="pop" && popAvail.length && !popAvail.some(f=>f.id===popActive)) setPopActive(popAvail[0].id); }, [pq, view]);
@@ -3073,7 +3083,7 @@ function V7TargetSelect({ ids, onChange, conflictIds, onConflict, autoOpen }){
               </div>}
             <div ref={popListRef} className="min-h-0 flex-1 overflow-y-auto py-1">
               {popAvail.map(f=>(
-                <button key={f.id} type="button" data-val={f.id} onMouseEnter={()=>setPopActive(f.id)} onClick={()=>toggle(f.id)}
+                <button key={f.id} type="button" data-val={f.id} onMouseEnter={()=>setPopActive(f.id)} onClick={()=>{ toggle(f.id); setPq(""); }}
                   className={"group w-full text-left px-4 py-2 text-[14px] flex items-center justify-between " + (f.id===popActive ? "bg-sky-50 text-slate-800" : "text-slate-700 hover:bg-sky-50")}>
                   {f.label}<span className={"text-sky-500 text-[16px] leading-none " + (f.id===popActive ? "opacity-100" : "opacity-0 group-hover:opacity-100")}>+</span>
                 </button>))}
@@ -3314,7 +3324,8 @@ function V7CondRow({c, onChange, onRemove, onDuplicate, prefix, conflictFields, 
 function V7Group({g, n, onChange, onRemove, onDuplicate, conflictFields, onFieldConflict, ruleName}){
   const setLeaf = (i,p)=> onChange({conditions: g.conditions.map((c,j)=> j===i?{...c,...p}:c)});
   const addLeaf = ()=> onChange({conditions:[...g.conditions, {fieldId:"", op:"", value:""}]});
-  const rmLeaf  = i => onChange({conditions: g.conditions.filter((_,j)=>j!==i)});
+  // Removing the last remaining condition in a group deletes the whole group (no empty groups left behind).
+  const rmLeaf  = i => { if((g.conditions||[]).length<=1){ onRemove && onRemove(); } else { onChange({conditions: g.conditions.filter((_,j)=>j!==i)}); } };
   const dupLeaf = i => onChange({conditions: g.conditions.flatMap((c,j)=> j===i ? [c, {...c}] : [c])});
   const toggle  = ()=> onChange({match: (g.match||"all")==="any" ? "all" : "any"});
   return (
