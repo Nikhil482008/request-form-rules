@@ -2157,6 +2157,29 @@ function GBlock({label, text}){
   if(!text) return null;
   return <div><div className="text-[9.5px] font-bold tracking-wide text-slate-400 mb-0.5">{label}</div><p className="text-[11.5px] text-slate-600 leading-snug">{text}</p></div>;
 }
+// Small "i" info dot — hover/focus reveals a dark explanatory tooltip. Safe to place inside a button (it's a
+// span and stops click propagation), portals the tooltip so it escapes any overflow.
+function InfoTip({title, children, width}){
+  const [tip, setTip] = useState(null);
+  const ref = useRef(null);
+  const W = width || 280;
+  const show = () => { if(!ref.current) return; const r=ref.current.getBoundingClientRect(); let left=r.left + r.width/2 - W/2; if(left<8) left=8; if(left+W>window.innerWidth-8) left=window.innerWidth-W-8;
+    // Prefer opening ABOVE the icon; drop below only when there isn't room above.
+    const above = r.top > 190; setTip(above ? {left, bottom:(window.innerHeight - r.top) + 8} : {left, top:r.bottom+8}); };
+  return (
+    <span ref={ref} role="button" tabIndex={0} aria-label={typeof title==="string"?title:"More info"}
+      onMouseEnter={show} onMouseLeave={()=>setTip(null)} onFocus={show} onBlur={()=>setTip(null)}
+      onClick={e=>{ e.stopPropagation(); e.preventDefault(); }}
+      className="inline-grid h-4 w-4 shrink-0 place-items-center rounded-full text-slate-400 transition hover:text-slate-600 cursor-help align-middle outline-none">
+      <Ico name="info" size={14}/>
+      {tip && ReactDOM.createPortal(
+        <div style={{left:tip.left, width:W, ...(tip.top!=null ? {top:tip.top} : {bottom:tip.bottom})}} className="fixed z-[70] rounded-xl bg-slate-800 text-white shadow-2xl p-3 v10-pop">
+          {title && <div className="mb-1 text-[12.5px] font-semibold text-slate-200">{title}</div>}
+          <p className="text-[12.5px] leading-relaxed text-slate-100">{children}</p>
+        </div>, document.body)}
+    </span>
+  );
+}
 function GuidedDropdown({value, onChange, options, guide, placeholder, hint, variant, highlight, multi, autoOpen}){
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -3246,12 +3269,24 @@ const V7_BADGE = { when:"bg-sky-50 text-sky-600 ring-sky-100", if:"bg-amber-50 t
 const V7_BAR   = { when:"before:bg-sky-300", if:"before:bg-amber-300", then:"before:bg-emerald-300", review:"before:bg-slate-300" };
 const V7_CARD  = "relative overflow-hidden rounded-xl border border-slate-200 bg-slate-50/50 p-4 pl-5 before:absolute before:left-0 before:top-0 before:h-full before:w-1 before:content-['']";
 // Inline section header — coloured pill badge (When / Check If / Action) + a plain descriptor line.
-const STEP_BADGE = { when:"bg-sky-100 text-[#1180c1]", if:"bg-amber-100 text-amber-600", then:"bg-emerald-100 text-emerald-600" };
-function V7StepHead({tone, tag, title}){
+const STEP_TONE = {
+  when: { dot:"bg-sky-100 text-[#1180c1]",       text:"text-[#1180c1]",   icon:"history" },
+  if:   { dot:"bg-amber-100 text-amber-600",     text:"text-amber-600",   icon:"branch"  },
+  then: { dot:"bg-emerald-100 text-emerald-600", text:"text-emerald-600", icon:"zap"     },
+};
+// A rule step: a coloured icon disc sits in a left gutter and marks where the step starts, with the step's
+// content hanging beside it. The icon carries the colour, so the old badge+pill (same colour twice, side by
+// side) is gone.
+function V7Step({tone, tag, title, children}){
+  const t = STEP_TONE[tone] || STEP_TONE.when;
   return (
-    <div className="mb-3 flex items-center gap-2.5">
-      <span className={"rounded-md px-2 py-0.5 text-[11.5px] font-semibold " + (STEP_BADGE[tone]||"bg-slate-100 text-slate-600")}>{tag}</span>
-      <span className="text-[13.5px] font-semibold text-slate-700">{title}</span>
+    <div className="relative pl-8">
+      <span className={"absolute left-0 top-0 grid h-6 w-6 place-items-center rounded-full " + t.dot}><Ico name={t.icon} size={13}/></span>
+      <div className="mb-3 flex min-h-[24px] flex-wrap items-center gap-2">
+        <span className={"text-[12px] font-bold uppercase tracking-wide " + t.text}>{tag}</span>
+        <span className="text-[13px] text-slate-500">{title}</span>
+      </div>
+      {children}
     </div>
   );
 }
@@ -3698,31 +3733,30 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
   return (
     <div className="shadow-sm rounded-xl">
     <div className={"border border-slate-200 bg-white " + (blockCfCount>0 ? "rounded-t-xl" : "rounded-xl shadow-sm")}>
-      {/* collapsible-group row: circular expand/collapse chevron + title (tooltip on hover) */}
-      <div className="flex items-center gap-2.5 px-4 py-3">
-        <button onClick={onToggle} className="group flex min-w-0 flex-1 items-center gap-2.5 text-left">
-          <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500 transition group-hover:bg-slate-200" title={expanded ? "Collapse block" : "Expand block"}>
-            <Ico name="chevdown" size={14} cls={expanded ? "rotate-180" : ""}/>
-          </span>
-          <span className="min-w-0">
-            <BlockTip title={ruleName} summary={sum} started={tipHasContent} triggers={tipTriggers} condItems={tipCondItems} actItems={tipActItems} example={tipExample}>
+      {/* collapsible-group row — the WHOLE header row is the tooltip's hover target, not just the title */}
+      <BlockTip title={ruleName} summary={sum} started={tipHasContent} triggers={tipTriggers} condItems={tipCondItems} actItems={tipActItems} example={tipExample}>
+        <div className="flex items-center gap-2.5 px-4 py-3">
+          <button onClick={onToggle} className="group flex min-w-0 flex-1 items-center gap-2.5 text-left">
+            <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500 transition group-hover:bg-slate-200" title={expanded ? "Collapse block" : "Expand block"}>
+              <Ico name="chevdown" size={14} cls={expanded ? "rotate-180" : ""}/>
+            </span>
+            <span className="min-w-0">
               <span className="block truncate text-[15px] font-bold text-slate-800">Rule {index+1}</span>
-            </BlockTip>
-            <span className="block truncate text-[12px] text-slate-400">{block.time || "When…"} · {block.people || "Everyone"} <span className="text-slate-300">|</span> {condCount} Condition{condCount===1?"":"s"}{groupCount>0 ? " (" + groupCount + " Group" + (groupCount===1?"":"s") + ")" : ""} · {block.actions.length} Action{block.actions.length===1?"":"s"}</span>
-          </span>
-        </button>
-        {/* top-right block tools — Delete is ALWAYS available; Duplicate joins it only when collapsed
-            (when expanded, Duplicate lives in the footer) */}
-        <div className="flex items-center gap-0.5 shrink-0">
-          {!expanded && <button onClick={onDuplicate} title="Duplicate block" className="text-slate-400 hover:text-slate-600 p-1"><Ico name="copy" size={16}/></button>}
-          <button onClick={onRemove} title="Delete block" className="grid place-items-center h-7 w-7 rounded-md text-slate-400 transition hover:bg-rose-50 hover:text-rose-500"><Ico name="trash" size={16}/></button>
+              <span className="block truncate text-[12px] text-slate-400">{block.time || "When…"} · {block.people || "Everyone"} <span className="text-slate-300">|</span> {condCount} Condition{condCount===1?"":"s"}{groupCount>0 ? " (" + groupCount + " Group" + (groupCount===1?"":"s") + ")" : ""} · {block.actions.length} Action{block.actions.length===1?"":"s"}</span>
+            </span>
+          </button>
+          {/* top-right block tools — Delete is ALWAYS available; Duplicate joins it only when collapsed
+              (when expanded, Duplicate lives in the footer) */}
+          <div className="flex items-center gap-0.5 shrink-0">
+            {!expanded && <button onClick={onDuplicate} title="Duplicate block" className="text-slate-400 hover:text-slate-600 p-1"><Ico name="copy" size={16}/></button>}
+            <button onClick={onRemove} title="Delete block" className="grid place-items-center h-7 w-7 rounded-md text-slate-400 transition hover:bg-rose-50 hover:text-rose-500"><Ico name="trash" size={16}/></button>
+          </div>
         </div>
-      </div>
+      </BlockTip>
       {expanded &&
         <div className="border-t border-slate-100 bg-slate-50/60 px-4 py-4 space-y-5">
           {/* WHEN — event + execution scope (audience is common, set once on the rule) */}
-          <div>
-            <V7StepHead tone="when" tag="When" title="Pick the event and who it applies to"/>
+          <V7Step tone="when" tag="When" title="Pick the event and when it runs">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className="mb-1.5 block text-[12.5px] font-medium text-slate-500">Select Rule Event <span className="text-rose-400">*</span></label>
@@ -3734,7 +3768,7 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
               </div>
             </div>
             {!whenReady && <p className="mt-2 text-[12px] text-slate-400">Choose an event and when it runs to continue.</p>}
-          </div>
+          </V7Step>
           {/* CHECK IF — grouped conditions with AND/OR connectors between rows and between groups */}
           {whenReady && (()=>{
             const items  = block.conditions || [];
@@ -3744,7 +3778,7 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
             const toggleBlock = ()=> onChange({match: (block.match||"all")==="any" ? "all" : "any"});
             return (
             <div className="v10-fade">
-              <V7StepHead tone="if" tag="Check If" title="set the conditions that must match"/>
+              <V7Step tone="if" tag="Check If" title="set the conditions that must match">
               {items.length===0 &&
                 <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-5">
                   <div className="text-[13px] font-semibold text-slate-700">No conditions yet</div>
@@ -3778,13 +3812,14 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
                     <button onClick={addCond} className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[13px] font-medium text-[#1180c1] transition hover:bg-sky-50"><Ico name="plus" size={13}/> Add Condition</button>}
                   <button onClick={addGroup} className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3.5 py-2 text-[13px] font-medium text-slate-700 transition hover:bg-slate-50"><Ico name="plus" size={14} cls="text-sky-500"/> Add Condition Group</button>
                 </div>}
+              </V7Step>
             </div>);
           })()}
           {/* R26 — the "same condition" nudge lives in the bottom bar (View similar rules), not inline here */}
           {/* ACTION — shown once the trigger is set; conditions are optional (a rule can run with none) */}
           {whenReady &&
             <div className="v10-fade">
-              <V7StepHead tone="then" tag="Action" title="choose what the rule does"/>
+              <V7Step tone="then" tag="Action" title="choose what the rule does">
               {block.actions.length===0
                 ? <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-5">
                     <div className="text-[13px] font-semibold text-slate-700">No actions yet</div>
@@ -3796,10 +3831,11 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
                     {firstActDone &&
                       <button onClick={addAct} className="inline-flex items-center gap-1.5 text-[13px] font-medium text-slate-500 transition hover:text-slate-700"><Ico name="plus" size={13}/> Add Action</button>}
                   </div>}
+              </V7Step>
             </div>}
           {/* ADVANCED — reverse-on-exit shown as a labelled toggle (matches the product's switch) */}
           {whenReady && firstActDone &&
-            <div className="v10-fade">
+            <div className="pl-8 v10-fade">
               <p className="mb-2 text-[13px] text-slate-500">Advanced behavior for this block</p>
               <div className="flex items-start justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
                 <span className="min-w-0">
@@ -3815,7 +3851,7 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
               </div>
             </div>}
           {/* FOOTER — block-level tools while expanded (Delete lives at the top of the block, not here) */}
-          <div className="flex items-center justify-between pt-1">
+          <div className="flex items-center justify-between pl-8 pt-1">
             <button onClick={onDuplicate} className="inline-flex items-center gap-1.5 rounded-md bg-sky-50 px-3 py-1.5 text-[13px] font-medium text-[#1180c1] transition hover:bg-sky-100"><Ico name="copy" size={14}/> Duplicate Block</button>
             <button onClick={clearBlock} className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"><Ico name="x" size={14}/> Clear</button>
           </div>
@@ -4846,7 +4882,47 @@ function SimilarRuleCard({ name, actions, curSet }){
     </div>
   );
 }
+// Generic "how do I fix this" guidance. Deliberately NOT a third screen-level drawer — the editor and the
+// conflict drawer are already stacked, so this covers only the conflict drawer's own body and returns with Back.
+const RESOLVE_TIPS = [
+  { t:"Decide which rule should win", d:"If two rules do opposite things to the same field, keep the action on the rule that matches your intent and remove it from the other. Left alone, whichever rule runs last wins — and that may not be the one you want." },
+  { t:"Narrow the conditions so both can't fire", d:"A conflict only matters when both rules run on the same request. Add a condition to one of them so their conditions no longer overlap." },
+  { t:"Separate them by when they run", d:"Two rules can't collide if one runs On Create and the other On Edit. Check the Execute on setting before changing anything else." },
+  { t:"Separate them by who they apply to", d:"A rule for Requesters only and a rule for Technicians only can safely do opposite things to the same field, because they never run for the same person." },
+  { t:"Merge them into one rule", d:"If both rules watch the same condition, add your action to the existing rule instead of keeping a second one. Use a block to handle each case inside a single rule." },
+  { t:"Remove the duplicate", d:"If two rules do exactly the same thing, delete one. Similar rules aren't errors, but they're extra to maintain and easy to forget about later." },
+  { t:"Disable instead of deleting", d:"Not sure which rule to keep? Turn the other one off and test the form. Nothing is lost — you can switch it back on at any time." },
+];
+function ConflictHelpSheet({onClose}){
+  return (
+    <div className="absolute inset-0 z-30 flex flex-col bg-white v10-slide">
+      <div className="flex shrink-0 items-center gap-3 border-b border-slate-200 px-6 py-3.5">
+        <button onClick={onClose} title="Back" className="grid h-8 w-8 shrink-0 place-items-center rounded-md text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"><Ico name="back" size={18}/></button>
+        <h2 className="text-[16px] font-bold text-slate-800">Resolving conflicts</h2>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+        <p className="text-[13px] leading-relaxed text-slate-500">A conflict happens when two rules act on the same field in opposite ways and both run at the same time. These are the usual ways to sort one out — you rarely need more than one of them.</p>
+        <div className="mt-4 space-y-3">
+          {RESOLVE_TIPS.map((x,i)=>(
+            <div key={i} className="flex gap-3 rounded-xl border border-slate-200 bg-white p-3.5">
+              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-slate-100 text-[11.5px] font-bold text-slate-500">{i+1}</span>
+              <div className="min-w-0">
+                <div className="text-[13.5px] font-semibold text-slate-800">{x.t}</div>
+                <p className="mt-1 text-[12.5px] leading-relaxed text-slate-500">{x.d}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+        <p className="mt-4 text-[12px] leading-relaxed text-slate-400">Similar rules are only a heads-up, not a problem to fix — they tell you the same work may already be handled somewhere else.</p>
+      </div>
+      <div className="shrink-0 border-t border-slate-200 px-6 py-3">
+        <button onClick={onClose} className="h-9 rounded-lg bg-slate-900 px-5 text-[13px] font-semibold text-white transition hover:bg-slate-800">Back to conflicts</button>
+      </div>
+    </div>
+  );
+}
 function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onToggle, parentWidth, focusFields, autoPreview, focusVerdict}){
+  const [helpOpen, setHelpOpen] = useState(false);   // the contained "Resolving conflicts" sheet
   // Rule-first hierarchy — Conflicting rule → OUR blocks that clash → per-block field comparison. Levels independent.
   const [openRule, setOpenRule] = useState(null);   // one conflicting rule expanded at a time
   const [openBlk, setOpenBlk] = useState({});       // "<ruleId>:<blockIdx>" → expanded
@@ -5287,7 +5363,7 @@ function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onTogg
   return ReactDOM.createPortal(
     <>
       <div className="fixed inset-0 z-[55] bg-slate-900/25" onClick={onClose}/>
-      <aside style={{width}} className="fixed top-0 right-0 z-[56] h-full max-w-[97vw] bg-white shadow-2xl border-l border-slate-200 flex flex-col v10-drawer">
+      <aside style={{width}} className="fixed top-0 right-0 z-[56] h-full max-w-[97vw] overflow-hidden bg-white shadow-2xl border-l border-slate-200 flex flex-col v10-drawer">
         {/* header — back returns to wherever the drawer was opened from; X closes it */}
         <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-6 py-3.5 shrink-0">
           <div className="min-w-0">
@@ -5882,6 +5958,11 @@ function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onTogg
                       <span className="h-px flex-1 bg-slate-100"/>
                       <span className="text-[11px] font-medium text-slate-400">{dupRules.length}</span>
                     </div>
+                    {/* nudge: similar rules aren't an error — the useful move is usually to merge rather than add another rule */}
+                    <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-100 bg-amber-50/60 px-3 py-2">
+                      <Ico name="bulb" size={14} cls="mt-0.5 shrink-0 text-amber-500"/>
+                      <p className="text-[12px] leading-relaxed text-amber-800">Instead of creating another rule, you can add your actions to one of these — one rule doing the whole job is easier to find and maintain than two that overlap.</p>
+                    </div>
                     <div className="space-y-2.5">
                       {dupRules.map((r,ri)=> <SimilarRuleCard key={ri} name={r.name} actions={r.actions} curSet={curSet}/>)}
                     </div>
@@ -6082,6 +6163,17 @@ function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onTogg
             {!demo && rulesView.length===0 && <div className="py-10 text-center text-[12.5px] text-slate-400">No conflicts match.</div>}
           </div>}
         </div>
+        {/* footer — entry point to the generic resolution guidance */}
+        <div className="shrink-0 border-t border-slate-200 bg-white px-6 py-3">
+          <button onClick={()=>setHelpOpen(true)} className="group inline-flex items-center gap-2 text-[13px] font-medium text-slate-600 transition hover:text-slate-800">
+            <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500 transition group-hover:bg-slate-200"><Ico name="bulb" size={13}/></span>
+            How do I resolve these conflicts?
+            <Ico name="chevdown" size={13} cls="-rotate-90 text-slate-400"/>
+          </button>
+        </div>
+        {/* contained help sheet — covers only THIS drawer's body, so the editor and the conflict list stay
+            intact behind it (a third stacked screen-level drawer would be one layer too many) */}
+        {helpOpen && <ConflictHelpSheet onClose={()=>setHelpOpen(false)}/>}
       </aside>
     </>,
     document.body);
@@ -6317,7 +6409,7 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
                     <span className="mt-0.5 shrink-0 text-sky-500 v10-twinkle"><Ico name="sparkles" size={17}/></span>
                     <div className="min-w-0 flex-1">
                       <div className="text-[13.5px] font-semibold text-slate-800"><span className="text-sky-600">New</span> — one rule can now hold several blocks</div>
-                      <p className="mt-1 text-[12.5px] leading-relaxed text-slate-500">Each block is checked on its own, and every block that matches runs — so you can cover several cases without creating separate rules.</p>
+                      <p className="mt-1 text-[12.5px] leading-relaxed text-slate-500">Each block has its own conditions and actions — so you can keep different kinds of rules under one heading, instead of creating them separately.</p>
                       <div className="mt-3 flex items-center gap-1.5">
                         <button onClick={()=>{ addBlock(); dismissBlockHint(); }} className="group inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12.5px] font-semibold text-white shadow-sm transition hover:brightness-105" style={{background:BRAND}}><Ico name="plus" size={13} cls="transition-transform duration-300 group-hover:rotate-90"/> Add a second block</button>
                         <button onClick={dismissBlockHint} className="rounded-full px-3 py-1.5 text-[12.5px] font-medium text-slate-500 transition hover:bg-white/70 hover:text-slate-700">Got it</button>
@@ -6335,7 +6427,10 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
                   <Ico name="plus" size={18} cls="transition-transform duration-300 group-hover:rotate-90"/>
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block text-[13.5px] font-semibold text-slate-800">Add rule block</span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="text-[13.5px] font-semibold text-slate-800">Add rule block</span>
+                    <InfoTip title="What's a block?">Use blocks when one rule needs to handle different scenarios. Each block has its own conditions and actions. Instead of creating multiple similar rules, add another block for each scenario.</InfoTip>
+                  </span>
                   <span className="block text-[12px] text-slate-500">Handle another case inside this same rule</span>
                 </span>
                 {blockHi && <span className="shrink-0 rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">New</span>}
