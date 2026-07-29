@@ -48,6 +48,11 @@
   @keyframes v10nudge { 0%,100% { transform: translateY(0) rotate(45deg); } 50% { transform: translateY(2px) rotate(45deg); } }
   .v10-nudge { animation: v10nudge 1.8s ease-in-out infinite; }
   .v10 input::placeholder { color:#94a3b8; }
+  /* Block-tab navigation — scrolls horizontally, but the bar itself is hidden so each tab's underline sits
+     flush on the strip's hairline (a visible scrollbar would push the two apart). Trackpad / shift-wheel
+     still scroll it, and the active tab is auto-scrolled into view. */
+  .v10-navtabs { scrollbar-width: none; -ms-overflow-style: none; }
+  .v10-navtabs::-webkit-scrollbar { display: none; }
 </style>
 </head>
 <body class="bg-slate-100 text-slate-800">
@@ -705,6 +710,119 @@ const RULE_DB = [
           {behavior:"Set Value", fieldId:"assignee", fieldIds:["assignee"], value:"Priya"},
         ] },
     ] },
+  // R27 — the block-tab navigator demo. Starts with NO blocks so the editor opens on the empty state; the first
+  // "Add block" loads R27_DEMO_BLOCKS (10 blocks) in one go, so tab navigation is judged at realistic scale.
+  { id:"r28", name:"R27 - Block Tabs Demo", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:0, recommended:false, exec:"On Create and Edit",
+    conditions:[], actions:[], blocks:[] },
+  // R28 — identical rule and identical demo blocks; the ONLY difference is the navigator above the block
+  // (windowed tabs + a "Block X of Y" jump control instead of one long overflow strip).
+  { id:"r29", name:"R28 - Block Navigator Demo", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:0, recommended:false, exec:"On Create and Edit",
+    conditions:[], actions:[], blocks:[] },
+];
+// The 10 demo blocks R27 loads on its first "Add block" — mixed complexity (standard / actions-only / multi-group)
+// so horizontal scrolling, hover previews and the status dots can all be exercised immediately.
+// Every action set uses DISTINCT single-use behaviours per block (Show/Hide/Mandate/… may appear only once).
+const R27_DEMO_BLOCKS = [
+      // 1 — standard: major-incident triage
+      { match:"all", time:"While the form is being filled", exec:"On Create and Edit", people:"Everyone",
+        conditions:[{fieldId:"impact", op:"Is", value:"High"},{fieldId:"priority", op:"Is", value:"High"}],
+        actions:[
+          {behavior:"Set Value", fieldId:"priority", fieldIds:["priority"], value:"Urgent"},
+          {behavior:"Show",    fieldId:"assignee",  fieldIds:["assignee","cc_emails"]},
+          {behavior:"Mandate", fieldId:"assignee",  fieldIds:["assignee","cc_emails"]},
+          {behavior:"Set Value", fieldId:"tags", fieldIds:["tags"], value:"Escalated"},
+        ] },
+      // 2 — actions only: baseline intake defaults
+      { match:"all", time:"When the form opens", exec:"On Create", people:"Everyone",
+        conditions:[],
+        actions:[
+          {behavior:"Show",    fieldId:"subject", fieldIds:["subject","description","category"]},
+          {behavior:"Mandate", fieldId:"subject", fieldIds:["subject","description"]},
+          {behavior:"Set Value", fieldId:"status", fieldIds:["status"], value:"Open"},
+          {behavior:"Set Value", fieldId:"priority", fieldIds:["priority"], value:"Medium"},
+          {behavior:"Hide",    fieldId:"vendor",  fieldIds:["vendor"]},
+        ] },
+      // 3 — standard: hardware requests
+      { match:"all", time:"While the form is being filled", exec:"On Create and Edit", people:"Everyone",
+        conditions:[{fieldId:"category", op:"Is", value:"Hardware"},{fieldId:"location", op:"Is Not Empty"}],
+        actions:[
+          {behavior:"Show",    fieldId:"vendor", fieldIds:["vendor","tech_group","attachment"]},
+          {behavior:"Mandate", fieldId:"vendor", fieldIds:["vendor","location"]},
+          {behavior:"Set Value", fieldId:"tech_group", fieldIds:["tech_group"], value:"Hardware"},
+          {behavior:"Set Value", fieldId:"tags", fieldIds:["tags"], value:"Hardware"},
+        ] },
+      // 4 — actions only: requester portal simplification
+      { match:"all", time:"When the form opens", exec:"On Create and Edit", people:"Everyone",
+        conditions:[],
+        actions:[
+          {behavior:"Hide",    fieldId:"tech_group", fieldIds:["tech_group","assignee","vendor"]},
+          {behavior:"Mandate", fieldId:"subject",    fieldIds:["subject","description"]},
+          {behavior:"Non-Mandate", fieldId:"category", fieldIds:["category"]},
+          {behavior:"Set Value", fieldId:"impact", fieldIds:["impact"], value:"Low"},
+          {behavior:"Set Value", fieldId:"status", fieldIds:["status"], value:"Open"},
+        ] },
+      // 5 — multi-group: any of three major-incident shapes
+      { match:"any", time:"While the form is being filled", exec:"On Create and Edit", people:"Everyone",
+        conditions:[
+          {group:true, match:"all", conditions:[{fieldId:"impact", op:"Is", value:"High"},{fieldId:"priority", op:"Is", value:"High"}]},
+          {group:true, match:"all", conditions:[{fieldId:"priority", op:"Is", value:"Urgent"},{fieldId:"subject", op:"Contains", value:"outage"}]},
+          {group:true, match:"all", conditions:[{fieldId:"status", op:"Is", value:"Reopened"},{fieldId:"impact", op:"Is", value:"High"}]},
+        ],
+        actions:[
+          {behavior:"Set Value", fieldId:"priority", fieldIds:["priority"], value:"Urgent"},
+          {behavior:"Show",    fieldId:"cc_emails", fieldIds:["cc_emails","assignee"]},
+          {behavior:"Mandate", fieldId:"cc_emails", fieldIds:["cc_emails","assignee"]},
+          {behavior:"Set Value", fieldId:"tags", fieldIds:["tags"], value:"Escalated"},
+        ] },
+      // 6 — standard: finance approvals
+      { match:"all", time:"While the form is being filled", exec:"On Create and Edit", people:"Everyone",
+        conditions:[{fieldId:"department", op:"Is", value:"Finance"},{fieldId:"impact", op:"Is", value:"High"}],
+        actions:[
+          {behavior:"Show",    fieldId:"cc_emails", fieldIds:["cc_emails","attachment"]},
+          {behavior:"Mandate", fieldId:"cc_emails", fieldIds:["cc_emails","attachment"]},
+          {behavior:"Set Value", fieldId:"assignee", fieldIds:["assignee"], value:"Priya"},
+          {behavior:"Set Value", fieldId:"tags", fieldIds:["tags"], value:"Escalated"},
+        ] },
+      // 7 — multi-group: security-sensitive requests
+      { match:"any", time:"While the form is being filled", exec:"On Create and Edit", people:"Everyone",
+        conditions:[
+          {group:true, match:"all", conditions:[{fieldId:"category", op:"Is", value:"Access"},{fieldId:"priority", op:"Is", value:"High"}]},
+          {group:true, match:"all", conditions:[{fieldId:"tags", op:"Is", value:"Security"},{fieldId:"impact", op:"Is", value:"High"}]},
+          {group:true, match:"all", conditions:[{fieldId:"department", op:"Is", value:"IT"},{fieldId:"urgency", op:"Is", value:"High"}]},
+        ],
+        actions:[
+          {behavior:"Show",    fieldId:"cc_emails", fieldIds:["cc_emails","attachment"]},
+          {behavior:"Mandate", fieldId:"cc_emails", fieldIds:["cc_emails","description"]},
+          {behavior:"Disable", fieldId:"category",  fieldIds:["category"]},
+          {behavior:"Set Value", fieldId:"tags", fieldIds:["tags"], value:"Security"},
+        ] },
+      // 8 — standard: resolution capture
+      { match:"all", time:"While the form is being filled", exec:"On Edit", people:"Everyone",
+        conditions:[{fieldId:"status", op:"Is", value:"Resolved"},{fieldId:"assignee", op:"Is Not Empty"}],
+        actions:[
+          {behavior:"Show",    fieldId:"attachment",  fieldIds:["attachment","cc_emails"]},
+          {behavior:"Mandate", fieldId:"description", fieldIds:["description","attachment"]},
+          {behavior:"Disable", fieldId:"category",    fieldIds:["category","priority"]},
+          {behavior:"Set Value", fieldId:"tags", fieldIds:["tags"], value:"Escalated"},
+        ] },
+      // 9 — standard: VIP handling
+      { match:"all", time:"While the form is being filled", exec:"On Create and Edit", people:"Everyone",
+        conditions:[{fieldId:"tags", op:"Is", value:"VIP"},{fieldId:"priority", op:"Is", value:"High"}],
+        actions:[
+          {behavior:"Show",    fieldId:"assignee", fieldIds:["assignee","cc_emails"]},
+          {behavior:"Mandate", fieldId:"assignee", fieldIds:["assignee","cc_emails"]},
+          {behavior:"Set Value", fieldId:"assignee", fieldIds:["assignee"], value:"Priya"},
+          {behavior:"Set Value", fieldId:"priority", fieldIds:["priority"], value:"Urgent"},
+        ] },
+      // 10 — standard: network outage routing
+      { match:"all", time:"When the form is submitted", exec:"On Create and Edit", people:"Everyone",
+        conditions:[{fieldId:"category", op:"Is", value:"Network"},{fieldId:"urgency", op:"Is", value:"High"}],
+        actions:[
+          {behavior:"Show",    fieldId:"tech_group",  fieldIds:["tech_group","cc_emails"]},
+          {behavior:"Mandate", fieldId:"tech_group",  fieldIds:["tech_group","description"]},
+          {behavior:"Set Value", fieldId:"tech_group", fieldIds:["tech_group"], value:"Network"},
+          {behavior:"Set Value", fieldId:"tags", fieldIds:["tags"], value:"Escalated"},
+        ] },
 ];
 
 const cap = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
@@ -1242,7 +1360,7 @@ RULE_DB.forEach((r,i)=>{ if(!r.exec) r.exec = RULE_EXEC[i % RULE_EXEC.length]; i
 // Bumped to v3: r23 gained its three clean actions, and merge-by-id below lets a STORED r23 win over the
 // seed — so without this bump any browser that had already saved would keep the old 5-action r23 while the
 // Run Test preview (which resolves by rule name) still claimed effects on tags/fill_template/transition_model.
-const RULE_STORE_KEY = "v10_form_rules_v3";
+const RULE_STORE_KEY = "v10_form_rules_v4";
 function saveStoredRules(){ try { localStorage.setItem(RULE_STORE_KEY, JSON.stringify(RULE_DB)); } catch(_){} }
 (function hydrateRules(){
   try {
@@ -3030,11 +3148,15 @@ function V7TargetSelect({ ids, onChange, conflictIds, onConflict, autoOpen }){
   // ---- keyboard nav in the popover: ↑/↓ move, Enter/Space add the highlighted field, Esc closes ----
   const [popActive, setPopActive] = useState("");
   const popListRef = useRef(null);
+  // After any pick/remove the caret returns to the search box, so the next field can be typed without
+  // reaching for the mouse. Clearing the query too, so the full list is ready for the next search.
+  const pqRef = useRef(null);
+  const refocusSearch = () => { setPq(""); setTimeout(()=>{ if(pqRef.current) pqRef.current.focus(); }, 0); };
   const movePop = dir => { if(!popAvail.length) return; const i=popAvail.findIndex(f=>f.id===popActive); let ni = i<0 ? (dir>0?0:popAvail.length-1) : i+dir; if(ni<0) ni=popAvail.length-1; if(ni>=popAvail.length) ni=0; setPopActive(popAvail[ni].id); };
   const onPopKey = e => {
     if(e.key==="ArrowDown"){ e.preventDefault(); movePop(1); }
     else if(e.key==="ArrowUp"){ e.preventDefault(); movePop(-1); }
-    else if(e.key==="Enter"){ e.preventDefault(); const id=popActive||(popAvail[0]&&popAvail[0].id); if(id){ toggle(id); setPq(""); } }
+    else if(e.key==="Enter"){ e.preventDefault(); const id=popActive||(popAvail[0]&&popAvail[0].id); if(id){ toggle(id); refocusSearch(); } }
     else if(e.key==="Escape"){ e.preventDefault(); setView(null); if(btn.current) btn.current.focus(); }
   };
   useEffect(()=>{ if(view==="pop" && popAvail.length && !popAvail.some(f=>f.id===popActive)) setPopActive(popAvail[0].id); }, [pq, view]);
@@ -3087,7 +3209,7 @@ function V7TargetSelect({ ids, onChange, conflictIds, onConflict, autoOpen }){
             <div className="flex items-center gap-2 p-2.5 border-b border-slate-100">
               <div className="relative flex-1">
                 <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"><Ico name="search" size={14}/></span>
-                <input autoFocus value={pq} onChange={e=>setPq(e.target.value)} onKeyDown={onPopKey} placeholder="Search"
+                <input ref={pqRef} autoFocus value={pq} onChange={e=>setPq(e.target.value)} onKeyDown={onPopKey} placeholder="Search"
                   className="w-full h-9 pl-8 pr-2.5 rounded-lg border border-slate-200 text-[13px] outline-none focus:border-sky-300"/>
               </div>
               <button type="button" onClick={()=>setView("modal")} title="Expand"
@@ -3099,14 +3221,16 @@ function V7TargetSelect({ ids, onChange, conflictIds, onConflict, autoOpen }){
                 {(popExpand ? ids : ids.slice(0,3)).map(id=>(
                   <span key={id} className="inline-flex items-center gap-1 rounded-full bg-sky-50 py-0.5 pl-2.5 pr-1 text-[12px] font-medium text-[#1180c1] ring-1 ring-sky-200">
                     <span className="max-w-[130px] truncate">{labelOf(id)}</span>
-                    <button type="button" onClick={()=>toggle(id)} title="Remove" className="grid h-4 w-4 place-items-center rounded-full text-sky-400 hover:bg-sky-100 hover:text-sky-600"><Ico name="x" size={11}/></button>
+                    <button type="button" onClick={()=>{ toggle(id); refocusSearch(); }} title="Remove" className="grid h-4 w-4 place-items-center rounded-full text-sky-400 hover:bg-sky-100 hover:text-sky-600"><Ico name="x" size={11}/></button>
                   </span>
                 ))}
                 {n>3 && <button type="button" onClick={()=>setPopExpand(v=>!v)} className="rounded-full bg-slate-100 px-2 py-0.5 text-[12px] font-semibold text-slate-500 hover:bg-slate-200">{popExpand ? "Show less" : "+"+(n-3)}</button>}
+                <button type="button" onClick={()=>{ onChange([]); setPopExpand(false); refocusSearch(); }}
+                  className="ml-auto shrink-0 text-[11.5px] font-medium text-rose-500 transition hover:text-rose-600 hover:underline">Clear all</button>
               </div>}
             <div ref={popListRef} className="min-h-0 flex-1 overflow-y-auto py-1">
               {popAvail.map(f=>(
-                <button key={f.id} type="button" data-val={f.id} onMouseEnter={()=>setPopActive(f.id)} onClick={()=>{ toggle(f.id); setPq(""); }}
+                <button key={f.id} type="button" data-val={f.id} onMouseEnter={()=>setPopActive(f.id)} onClick={()=>{ toggle(f.id); refocusSearch(); }}
                   className={"group w-full text-left px-4 py-2 text-[14px] flex items-center justify-between " + (f.id===popActive ? "bg-sky-50 text-slate-800" : "text-slate-700 hover:bg-sky-50")}>
                   {f.label}<span className={"text-sky-500 text-[16px] leading-none " + (f.id===popActive ? "opacity-100" : "opacity-0 group-hover:opacity-100")}>+</span>
                 </button>))}
@@ -3356,17 +3480,43 @@ function V7CondRow({c, onChange, onRemove, onDuplicate, prefix, conflictFields, 
 }
 // A nested condition group inside IF — its own conditions + its own Match-ALL/ANY Conditions logic
 // (V9 model). The group's match is separate from the group-level (block.match) logic in V7Block.
-function V7Group({g, n, onChange, onRemove, onDuplicate, conflictFields, onFieldConflict, ruleName}){
+function V7Group({g, n, onChange, onRemove, onDuplicate, conflictFields, onFieldConflict, ruleName, collapsed, onToggleCollapse}){
   const setLeaf = (i,p)=> onChange({conditions: g.conditions.map((c,j)=> j===i?{...c,...p}:c)});
   const addLeaf = ()=> onChange({conditions:[...g.conditions, {fieldId:"", op:"", value:""}]});
   // Removing the last remaining condition in a group deletes the whole group (no empty groups left behind).
   const rmLeaf  = i => { if((g.conditions||[]).length<=1){ onRemove && onRemove(); } else { onChange({conditions: g.conditions.filter((_,j)=>j!==i)}); } };
   const dupLeaf = i => onChange({conditions: g.conditions.flatMap((c,j)=> j===i ? [c, {...c}] : [c])});
   const toggle  = ()=> onChange({match: (g.match||"all")==="any" ? "all" : "any"});
+  const label = n ? "Condition group " + n : "Condition group";
+  const chev = onToggleCollapse &&
+    <button onClick={onToggleCollapse} title={collapsed ? "Expand group" : "Collapse group"}
+      className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500 transition hover:bg-slate-200">
+      <Ico name="chevdown" size={12} cls={collapsed ? "-rotate-90" : ""}/>
+    </button>;
+  // COLLAPSED — a one-line preview of what the group checks, plus its own duplicate/remove actions, so an
+  // earlier group stays reviewable without taking up the full editor height.
+  if(collapsed){
+    const leaves = (g.conditions||[]).filter(condComplete);
+    const preview = leaves.map(condPhrase).join((g.match||"all")==="any" ? " or " : " and ");
+    return (
+      <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+        <div className="flex items-center gap-2">
+          {chev}
+          <span className="inline-flex shrink-0 items-center rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">{label}</span>
+          <span className="min-w-0 flex-1 truncate text-[12.5px] text-slate-500">{preview || "No conditions yet"}</span>
+          <span className="flex shrink-0 items-center gap-0.5">
+            {onDuplicate && <button onClick={onDuplicate} title="Duplicate group" className="grid h-7 w-7 place-items-center rounded-md text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"><Ico name="copy" size={14}/></button>}
+            <button onClick={onRemove} title="Remove group" className="grid h-7 w-7 place-items-center rounded-md text-slate-400 transition hover:bg-rose-50 hover:text-rose-500"><Ico name="trash" size={14}/></button>
+          </span>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-3">
-      <div className="mb-2.5">
-        <span className="inline-flex items-center rounded-md bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-500">{n ? "Condition group " + n : "Condition group"}</span>
+      <div className="mb-2.5 flex items-center gap-2">
+        {chev}
+        <span className="inline-flex items-center rounded-md bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-500">{label}</span>
       </div>
       <div className="space-y-2.5">
         {g.conditions.map((c,i)=> <V7CondRow key={i} c={c} prefix={<LogicPrefix index={i} match={g.match||"all"} onToggle={toggle}/>} onChange={p=>setLeaf(i,p)} onRemove={()=>rmLeaf(i)} onDuplicate={()=>dupLeaf(i)} conflictFields={conflictFields} onFieldConflict={onFieldConflict} ruleName={ruleName}/>)}
@@ -3515,17 +3665,28 @@ function duplicateRule(id){
 // Hover tooltip for a rule block's title — PORTALED (escapes the drawer's overflow so it never clips) and
 // pointer-transparent. Structured into sections so complex rules stay scannable: Title · Summary · Triggers
 // (compact line) · Conditions (bulleted, group hierarchy) · Actions (bulleted, nested field targets) · Example.
-function BlockTip({title, summary, started, triggers, condItems, actItems, example, children}){
+function BlockTip({title, summary, started, triggers, condItems, actItems, condMatch, disabled, cls, children}){
   const [pos, setPos] = useState(null);
   const ref = useRef(null);
+  // Short close delay so the pointer can travel from the row into the card without it vanishing mid-move.
+  const hideT = useRef(null);
+  const cancelHide = () => { if(hideT.current){ clearTimeout(hideT.current); hideT.current = null; } };
+  const scheduleHide = () => { cancelHide(); hideT.current = setTimeout(()=> setPos(null), 140); };
+  useEffect(()=> cancelHide, []);
+  useEffect(()=>{ if(disabled){ cancelHide(); setPos(null); } }, [disabled]);
   const show = () => {
-    if(!ref.current) return;
+    // Suppressed while the block is expanded — everything the tooltip would say is already on screen.
+    if(disabled || !ref.current) return;
     const r = ref.current.getBoundingClientRect();
-    const W = 340;
+    const W = 340, GAP = 8, EDGE = 12;
     let left = r.left - 4; if(left + W > window.innerWidth - 8) left = window.innerWidth - W - 8; if(left < 8) left = 8;
-    // Prefer below; flip above when there isn't room (and there is above) so it never runs off-screen.
-    const placeBelow = (r.bottom + 300 <= window.innerHeight) || (r.top < 300);
-    setPos({ left, W, top: placeBelow ? r.bottom + 8 : null, bottom: placeBelow ? null : (window.innerHeight - r.top + 8) });
+    // Open on whichever side has MORE room (a fixed height guess used to overflow tall tooltips off-screen),
+    // then cap the height to exactly that space so the content is always reachable by scrolling.
+    const spaceBelow = window.innerHeight - r.bottom - GAP - EDGE;
+    const spaceAbove = r.top - GAP - EDGE;
+    const below = spaceBelow >= spaceAbove;
+    setPos({ left, W, maxH: Math.max(180, Math.floor(below ? spaceBelow : spaceAbove)),
+      top: below ? r.bottom + GAP : null, bottom: below ? null : (window.innerHeight - r.top + GAP) });
   };
   const Section = ({label, children}) => (
     <div className="mt-2 border-t border-slate-100 pt-2">
@@ -3539,27 +3700,50 @@ function BlockTip({title, summary, started, triggers, condItems, actItems, examp
     </li>
   );
   return (
-    <span ref={ref} onMouseEnter={show} onMouseLeave={()=>setPos(null)} className="block min-w-0">
+    <span ref={ref} onMouseEnter={()=>{ cancelHide(); show(); }} onMouseLeave={scheduleHide} className={"block min-w-0 " + (cls||"")}>
       {children}
       {pos && ReactDOM.createPortal(
-        <div style={{left:pos.left, width:pos.W, ...(pos.top!=null?{top:pos.top}:{bottom:pos.bottom})}}
-          className="fixed z-[60] pointer-events-none max-h-[78vh] overflow-hidden rounded-lg border border-slate-200 bg-white p-3 shadow-xl v10-fade">
+        // Interactive + scrollable: a long rule (many groups/actions) would otherwise be clipped with no way to
+        // reach the rest. Hovering the card keeps it open; leaving either the row or the card closes it.
+        <div onMouseEnter={cancelHide} onMouseLeave={scheduleHide}
+          style={{left:pos.left, width:pos.W, maxHeight:pos.maxH, ...(pos.top!=null?{top:pos.top}:{bottom:pos.bottom})}}
+          className="fixed z-[60] overflow-y-auto overscroll-contain rounded-lg border border-slate-200 bg-white p-3 shadow-xl v10-fade">
           {/* 1 Title · 2 Summary */}
           {title && <div className="text-[13px] font-bold leading-snug text-slate-800">{title}</div>}
           <div className={(title?"mt-0.5 ":"") + "text-[12px] leading-snug text-slate-600"}>{summary}</div>
           {started && <>
             {/* 3 Triggers — compact, comma-separated is fine here */}
             {triggers && <Section label="Triggers"><div className="text-[12px] leading-snug text-slate-700">{triggers}</div></Section>}
-            {/* 4 Conditions — bulleted; groups show their label then nested items */}
+            {/* 4 Conditions — bulleted, with the AND/OR operator shown BETWEEN rows and between groups, so the
+                logic reads the same way it does in the editor instead of being implied by a "Match ALL" label */}
             <Section label="Conditions">
               {condItems && condItems.length
-                ? <div className="space-y-1.5">
-                    {condItems.map((c,i)=> c.group
-                      ? <div key={i}>
-                          <div className="text-[11px] font-semibold text-slate-500">Group {c.no} — Match {c.match==="any"?"ANY":"ALL"}</div>
-                          <ul className="mt-0.5 space-y-0.5 pl-1">{c.leaves.map((t,j)=><Bullet key={j}>{t}</Bullet>)}</ul>
-                        </div>
-                      : <ul key={i}><Bullet>{c.text}</Bullet></ul>)}
+                ? <div>
+                    {condItems.map((c,i)=>(
+                      <div key={i}>
+                        {/* group separator — the operator sits centred on a hairline, so it reads as a break
+                            between groups rather than as another row inside one */}
+                        {i>0 &&
+                          <div className="my-2 flex items-center gap-2">
+                            <span className="h-px flex-1 bg-slate-100"/>
+                            <span className="inline-flex items-center rounded-full border border-slate-200 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wider text-slate-400">{condMatch==="any" ? "Or" : "And"}</span>
+                            <span className="h-px flex-1 bg-slate-100"/>
+                          </div>}
+                        {c.group
+                          ? <div>
+                              <div className="text-[11px] font-semibold text-slate-500">Group {c.no}</div>
+                              <ul className="mt-0.5 space-y-0.5 pl-1">
+                                {c.leaves.map((t,j)=>(
+                                  <React.Fragment key={j}>
+                                    {j>0 && <li className="py-0.5"><span className="inline-flex items-center rounded-full border border-slate-200 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wider text-slate-400">{c.match==="any" ? "Or" : "And"}</span></li>}
+                                    <Bullet>{t}</Bullet>
+                                  </React.Fragment>
+                                ))}
+                              </ul>
+                            </div>
+                          : <ul><Bullet>{c.text}</Bullet></ul>}
+                      </div>
+                    ))}
                   </div>
                 : <div className="text-[12px] italic text-slate-400">Always runs (no conditions)</div>}
             </Section>
@@ -3577,8 +3761,6 @@ function BlockTip({title, summary, started, triggers, condItems, actItems, examp
                   </div>
                 : <div className="text-[12px] italic text-slate-400">No actions yet</div>}
             </Section>
-            {/* 6 Example — one short readable line */}
-            {example && <Section label="Example"><div className="text-[12px] italic leading-snug text-slate-500">{example}</div></Section>}
           </>}
         </div>, document.body)}
     </span>
@@ -3615,7 +3797,561 @@ function SameCondDrawer({ when, exec, conds, curActions, rules, onClose }){
       </aside>
     </>, document.body);
 }
-function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate, onRemove, exec, ruleName, conflictFields, onFieldConflict}){
+// Preview data for a block — the live summary sentence plus structured trigger / condition / action lists.
+// Module-level so the block header tooltip AND the R27 tab strip render an identical preview from one source.
+function blockTipData(block){
+  const summary = (()=>{
+    if(!block.time && !block.exec) return "New rule block — start with When";
+    let s = block.time || "When…";
+    if(block.people && block.people!=="Everyone") s += " by " + block.people;
+    const conds = (block.conditions||[]).filter(leafComplete);
+    if(conds.length) s += " if " + conds.map(itemPhrase).join(block.match==="any" ? " or " : " and ");
+    const acts = (block.actions||[]).filter(actComplete);
+    if(acts.length) s += " then " + acts.map(actionPhrase).join(", and ");
+    return cap(s);
+  })();
+  let gNo = 0;
+  const condItems = (block.conditions||[]).map(it=>{
+    if(it && it.group){
+      const leaves = (it.conditions||[]).filter(condComplete).map(condPhrase);
+      if(!leaves.length) return null;
+      gNo += 1;
+      return { group:true, no:gNo, match: it.match||"all", leaves };
+    }
+    return condComplete(it) ? { group:false, text: condPhrase(it) } : null;
+  }).filter(Boolean);
+  const actItems = (block.actions||[]).filter(actComplete).map(a=>{
+    const ids = (a.fieldIds && a.fieldIds.length) ? a.fieldIds : (a.fieldId ? [a.fieldId] : []);
+    let targets;
+    if(a.behavior==="Filter Data"){
+      const ent = (FD_PERSONS.find(p=>p.value===a.entity)||{}).label || a.entity || "";
+      const sf  = (FD_USER_FIELDS.find(p=>p.value===a.srcField)||{}).label || a.srcField || "";
+      targets = [ (ent ? ent + "’s " : "") + sf + (a.value ? " = " + a.value : "") ];
+    } else if(a.behavior==="Set Value"){
+      targets = ids.map(id => labelOf(id) + (a.value ? " → " + a.value : ""));
+    } else if(a.behavior==="Show Options" || a.behavior==="Hide Options"){
+      targets = ids.map(id => labelOf(id) + (Array.isArray(a.value)&&a.value.length ? " (" + a.value.join(", ") + ")" : ""));
+    } else if(a.behavior==="Run Custom Script"){
+      targets = ["Runs a custom script"];
+    } else {
+      targets = ids.map(labelOf);
+    }
+    return { behavior: a.behavior, targets };
+  });
+  const triggers = ([block.exec, block.time].filter(Boolean).join(", ") || "Not set yet") + " · " + (block.people || "Everyone");
+  return { summary, condItems, actItems, triggers, hasContent: !!(block.time || block.people || condItems.length || actItems.length) };
+}
+// R27 — blocks as an editor-style horizontal tab strip instead of a vertical stack, so 8-10 blocks stay
+// navigable without the page growing. One block is open at a time; hovering a tab previews it in place.
+const isTabbedBlocksDemo = n => /^r27\b/i.test((n||"").trim());
+// R28 — same rule, same blocks, same everything BELOW the strip; only the navigator differs. Instead of
+// one long overflow row it shows a small window of nearby blocks plus a "Block X of Y" jump control, so
+// the model stops depending on how many tabs happen to fit.
+const isBlockNavDemo = n => /^r28\b/i.test((n||"").trim());
+// Either navigator — what gates the single-block canvas, the 10-block demo loader and the tab flags.
+const isBlockDemo = n => isTabbedBlocksDemo(n) || isBlockNavDemo(n);
+// Per-block conflict/duplicate state for the tab dots. Uses the SAME gated demo signal as the block card's
+// own conflict strip, so a tab can never claim a conflict the block itself doesn't show.
+function blockFlags(block, ruleName, conflictFields, dupFields){
+  const ids = new Set([
+    ...(block.actions||[]).flatMap(a=>{ const f=(a.fieldIds&&a.fieldIds.length)?a.fieldIds:(a.fieldId?[a.fieldId]:[]); return f.filter(Boolean); }),
+    ...(block.conditions||[]).flatMap(it=> it && it.group ? (it.conditions||[]) : [it]).map(c=> c && c.fieldId).filter(Boolean),
+  ]);
+  const on = isDemoConflictRule(ruleName);
+  const hit = set => on && set ? [...ids].some(id=> set.has(id)) : false;
+  return { conflict: hit(conflictFields), duplicate: hit(dupFields) };
+}
+// R27 demo only — which block tabs carry a conflict / duplicate marker, so the dot states can be exercised
+// without inventing conflict data the block editor itself can't explain. Keyed by block index.
+const R27_TAB_FLAGS = { 0:{conflict:true}, 2:{duplicate:true}, 4:{conflict:true, duplicate:true}, 6:{conflict:true}, 8:{duplicate:true} };
+// One indicator per severity, distinguished by SHAPE as well as colour (round = conflict, diamond =
+// duplicate) so the two never depend on colour alone. Repeated shapes are collapsed into one shape +
+// a count. Same markup on a tab, on the overflow control, and in its dropdown.
+const TAB_MARK = { conflict:"Conflict detected", duplicate:"Duplicate logic detected" };
+function TabMark({kind, count, title}){
+  return (
+    <span role="img" aria-label={title} title={title}
+      className={"inline-flex shrink-0 items-center gap-[3px] " + (kind==="conflict" ? "text-rose-600" : "text-amber-600")}>
+      {kind==="conflict"
+        ? <span className="h-[6px] w-[6px] shrink-0 rounded-full bg-rose-500"/>
+        : <span className="h-[5px] w-[5px] shrink-0 rotate-45 rounded-[1px] bg-amber-500"/>}
+      {count>1 && <span className="text-[10px] font-semibold leading-none">{count}</span>}
+    </span>
+  );
+}
+// A block's marks sit in a FIXED-WIDTH slot whether or not it has any, so tabs with and without
+// indicators are the same width and the row keeps an even rhythm.
+function TabMarks({fl}){
+  return (
+    <span className="flex w-4 shrink-0 items-center gap-[3px]">
+      {fl.conflict && <TabMark kind="conflict" title={TAB_MARK.conflict}/>}
+      {fl.duplicate && <TabMark kind="duplicate" title={TAB_MARK.duplicate}/>}
+    </span>
+  );
+}
+const markSentence = fl => fl.conflict && fl.duplicate ? "Conflict and duplicate logic detected"
+  : fl.conflict ? TAB_MARK.conflict : fl.duplicate ? TAB_MARK.duplicate : "";
+// Shared geometry — the ruler must reproduce a tab's box exactly, so the class string and the gap live
+// in one place and are used by both.
+const TAB_BOX = "inline-flex h-full shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-2 text-[13px]";
+const TAB_GAP = 2;        // matches gap-0.5
+const OV_SLOT = 116;      // reserved width for one overflow control (px) — see the w-[116px] slots below
+function BlockTabs({blocks, active, onSelect, onAdd, ruleName, conflictFields, dupFields}){
+  const rowRef   = useRef(null);   // the space tabs may occupy — already NET of any reserved slot
+  const rulerRef = useRef(null);   // invisible copy of every tab, measured to decide what fits
+  const kbdRef   = useRef(false);  // last activation came from the keyboard → carry focus with it
+  const trigRef  = useRef(null);   // overflow trigger, so focus can be returned to it on close
+  const menuRef  = useRef(null);
+  const [menu, setMenu] = useState(null);   // {side, top, left|right}
+  const [mAct, setMAct] = useState(0);      // highlighted row inside the dropdown
+  const [ftip, setFtip] = useState(null);   // status tooltip shown on KEYBOARD focus
+  const [start, setStart] = useState(0);    // first rendered tab — the window's left edge
+  const [box, setBox] = useState({avail:0, widths:[]});
+  const n = blocks.length;
+  // ---- measurement -----------------------------------------------------------------------------
+  // Widths come from an invisible ruler rather than the live strip, so a tab that is currently in the
+  // overflow list can still be measured — that is what lets the window grow again when space returns.
+  const measure = ()=>{
+    const row = rowRef.current, ruler = rulerRef.current;
+    if(!row || !ruler) return;
+    const els = ruler.querySelectorAll("[data-rw]");
+    const ws = [];
+    for(let i=0;i<els.length;i++) ws.push(Math.ceil(els[i].getBoundingClientRect().width));
+    const avail = Math.floor(row.getBoundingClientRect().width);
+    setBox(prev=>{
+      if(prev.avail===avail && prev.widths.length===ws.length && prev.widths.every((v,i)=>v===ws[i])) return prev;
+      return {avail, widths:ws};
+    });
+  };
+  useEffect(()=>{
+    window.addEventListener("resize", measure);
+    return ()=> window.removeEventListener("resize", measure);
+  }, []);
+  useEffect(measure);   // no dep array — the reserved slots change avail, so this must settle by re-running
+  // ---- the window ------------------------------------------------------------------------------
+  // Only whole tabs are rendered: a tab that would not fit entirely is moved to an overflow list, never
+  // drawn clipped or faded. end is derived, so the label ranges below cannot disagree with the strip.
+  const measured = box.widths.length===n && box.avail>0;
+  const fitFrom = s => {
+    if(!measured) return n-1;
+    let used = 0, e = s;
+    for(let i=s;i<n;i++){
+      const add = (i===s ? 0 : TAB_GAP) + (box.widths[i]||0);
+      if(i>s && used+add > box.avail) break;
+      used += add; e = i;
+    }
+    return e;
+  };
+  let s0 = Math.min(Math.max(start,0), Math.max(n-1,0));
+  if(active < s0) s0 = active;
+  let end = fitFrom(s0);
+  while(active > end && s0 < n-1){ s0++; end = fitFrom(s0); }   // pull the window along to keep active inside
+  useEffect(()=>{ if(s0!==start) setStart(s0); });
+  const hidL = s0 > 0 ? [0, s0-1] : null;
+  const hidR = end < n-1 ? [end+1, n-1] : null;
+  // ---- status ----------------------------------------------------------------------------------
+  const flagsAt = i => isTabbedBlocksDemo(ruleName) ? (R27_TAB_FLAGS[i]||{}) : blockFlags(blocks[i], ruleName, conflictFields, dupFields);
+  const rangeLabel = r => r[0]===r[1] ? "Block " + (r[0]+1) : "Blocks " + (r[0]+1) + "–" + (r[1]+1);
+  // Aggregated, not repeated — three hidden blocks with conflicts show ONE shape and a count, and the
+  // tooltip names them, so an issue outside the visible window is never lost or double-counted.
+  const rangeStats = r => {
+    const c = [], d = [];
+    for(let i=r[0];i<=r[1];i++){ const f=flagsAt(i); if(f.conflict) c.push(i+1); if(f.duplicate) d.push(i+1); }
+    return {c, d};
+  };
+  const blockList = ns => ns.map(x=>"Block "+x).join(", ");
+  // ---- keyboard --------------------------------------------------------------------------------
+  const tabEl = idx => {
+    const row = rowRef.current; if(!row) return null;
+    const els = row.querySelectorAll("[data-tab]");
+    for(let i=0;i<els.length;i++) if(els[i].getAttribute("data-tab")===String(idx)) return els[i];
+    return null;
+  };
+  useEffect(()=>{
+    if(!kbdRef.current) return;
+    const el = tabEl(active);
+    if(el && el.focus){ kbdRef.current = false; el.focus({preventScroll:true}); }
+  }, [active, s0, end]);
+  const onKey = e => {
+    if(!n) return;
+    let ni = null;
+    if(e.key==="ArrowRight")     ni = Math.min(active+1, n-1);
+    else if(e.key==="ArrowLeft") ni = Math.max(active-1, 0);
+    else if(e.key==="Home")      ni = 0;
+    else if(e.key==="End")       ni = n-1;
+    if(ni===null) return;
+    e.preventDefault();
+    kbdRef.current = true;
+    if(ni!==active) onSelect(ni);
+    else { const el = tabEl(ni); if(el && el.focus) el.focus({preventScroll:true}); kbdRef.current = false; }
+  };
+  // The status tooltip has to work on keyboard focus too, not just hover — and it is portaled so the
+  // strip's own clipping can never eat it.
+  const onTabFocus = (e, fl) => {
+    const text = markSentence(fl); if(!text) return;
+    let vis = true; try { vis = e.target.matches(":focus-visible"); } catch(_){ vis = true; }
+    if(!vis) return;
+    const r = e.target.getBoundingClientRect();
+    setFtip({ left: r.left + r.width/2, top: r.bottom + 6, text });
+  };
+  // ---- overflow dropdown -----------------------------------------------------------------------
+  const mRange = menu ? (menu.side==="l" ? hidL : hidR) : null;
+  const mItems = mRange ? Array.from({length: mRange[1]-mRange[0]+1}, (_,k)=> mRange[0]+k) : [];
+  const closeMenu = (refocus)=>{ setMenu(null); if(refocus && trigRef.current && trigRef.current.focus) trigRef.current.focus(); };
+  useEffect(()=>{ if(menu && menuRef.current && menuRef.current.focus) menuRef.current.focus(); }, [menu]);
+  const onMenuKey = e => {
+    if(e.key==="Escape"){ e.preventDefault(); closeMenu(true); return; }
+    if(!mItems.length) return;
+    if(e.key==="ArrowDown"){ e.preventDefault(); setMAct(v=> (v+1) % mItems.length); }
+    else if(e.key==="ArrowUp"){ e.preventDefault(); setMAct(v=> (v-1+mItems.length) % mItems.length); }
+    else if(e.key==="Home"){ e.preventDefault(); setMAct(0); }
+    else if(e.key==="End"){ e.preventDefault(); setMAct(mItems.length-1); }
+    else if(e.key==="Enter" || e.key===" "){ e.preventDefault(); const i=mItems[mAct]; if(i!=null) jump(i); }
+  };
+  // Picking from the list lands focus on the block you chose (the focus effect above), not back on the
+  // trigger — the trigger's own range has just changed underneath it. Escape is what returns focus.
+  const jump = i => { setMenu(null); kbdRef.current = true; onSelect(i); };
+  const openMenu = (side, e) => {
+    if(menu && menu.side===side){ closeMenu(true); return; }
+    const b = e.currentTarget.getBoundingClientRect();
+    trigRef.current = e.currentTarget;
+    setMAct(0);
+    setMenu({ side, top: b.bottom + 6,
+      left:  side==="l" ? Math.max(8, b.left) : null,
+      right: side==="r" ? Math.max(8, window.innerWidth - b.right) : null });
+  };
+  // The overflow control — a navigation hint by weight (smaller than the tabs, neutral ink, no chrome at
+  // rest), but a real control by behaviour: it opens the list of exactly what is hidden.
+  // A render HELPER, not a nested component: a component declared inside the render body is a new type
+  // every render, so React would remount the button — detaching the very node closeMenu() focuses back.
+  const overflowBtn = (side, r) => {
+    const open = !!menu && menu.side===side;
+    const st = rangeStats(r);
+    const tip = [ st.c.length ? TAB_MARK.conflict + " in " + blockList(st.c) : "",
+                  st.d.length ? TAB_MARK.duplicate + " in " + blockList(st.d) : "" ].filter(Boolean).join(" · ");
+    return (
+      <button key={"ov"+side} type="button" aria-haspopup="menu" aria-expanded={open} onClick={e=>openMenu(side, e)}
+        title={rangeLabel(r) + " hidden" + (tip ? " — " + tip : "") + ". Open the list."}
+        className={"inline-flex h-7 max-w-full items-center gap-1 rounded-md px-1.5 text-[11.5px] font-medium outline-none transition focus-visible:ring-2 focus-visible:ring-sky-300 " +
+          (open ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:bg-white/70 hover:text-slate-800")}>
+        {side==="l" && <Ico name="chevdown" size={12} cls="shrink-0 rotate-90"/>}
+        <span className="truncate">{rangeLabel(r)}</span>
+        {!!st.c.length && <TabMark kind="conflict" count={st.c.length} title={TAB_MARK.conflict + " in " + blockList(st.c)}/>}
+        {!!st.d.length && <TabMark kind="duplicate" count={st.d.length} title={TAB_MARK.duplicate + " in " + blockList(st.d)}/>}
+        {side==="r" && <Ico name="chevdown" size={12} cls="shrink-0 -rotate-90"/>}
+      </button>
+    );
+  };
+  const win = [];
+  for(let i=s0;i<=end && i<n;i++) win.push(i);
+  return (
+    // Navigation strip, not cards — the tinted band and the continuous divider are owned by the sticky
+    // wrapper so they run the full drawer width. Overflow controls occupy their own reserved slots, so a
+    // tab is never drawn underneath one; the tab area's width is measured NET of them.
+    <div className="relative flex h-11 items-center gap-1 pl-6 pr-5">
+      {/* invisible ruler — one box per block, identical geometry to a real tab. Parked in a zero-height
+          clipped layer so it can never add scroll width or be seen. */}
+      <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-0 overflow-hidden">
+        <div ref={rulerRef} className="flex h-11 items-stretch gap-0.5">
+          {blocks.map((b,i)=>(
+            <span key={i} data-rw className={TAB_BOX + " border-transparent"}>
+              <span className="relative block max-w-[140px]"><span className="block truncate font-semibold">{"Block " + (i+1)}</span></span>
+              <span className="flex w-4 shrink-0"/>
+            </span>
+          ))}
+        </div>
+      </div>
+      {/* Edge cue — a hairline on the slot's INNER edge. Nothing is ever clipped now, so a wash-gradient
+          would either be invisible (drawn on the identical strip tint) or sit on top of a fully visible
+          label; an edge rule says "the row continues past here" without doing either. */}
+      {hidL &&
+        <span className="relative flex h-full w-[116px] shrink-0 items-center justify-start">
+          {overflowBtn("l", hidL)}
+          <span className="pointer-events-none absolute inset-y-2.5 right-0 w-px bg-slate-200"/>
+        </span>}
+      <div ref={rowRef} role="tablist" aria-label="Rule blocks" onKeyDown={onKey}
+        className="flex h-full min-w-0 flex-1 items-stretch gap-0.5 overflow-hidden">
+        {win.map(i=>{
+          const b = blocks[i];
+          const t = blockTipData(b);
+          const fl = flagsAt(i);
+          const on = i===active;
+          const label = "Block " + (i+1);
+          return (
+            <BlockTip key={i} cls="shrink-0" title={label} summary={t.summary} started={t.hasContent} triggers={t.triggers}
+              condItems={t.condItems} actItems={t.actItems} condMatch={b.match||"all"}>
+              {/* one selection signal only: the blue underline. No seat, no elevation, no rounding. */}
+              <button type="button" data-tab={i} role="tab" aria-selected={on} tabIndex={on ? 0 : -1}
+                onClick={()=>onSelect(i)} onFocus={e=>onTabFocus(e, fl)} onBlur={()=>setFtip(null)}
+                title={label + (markSentence(fl) ? " — " + markSentence(fl) : "")}
+                className={TAB_BOX + " outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300 " +
+                  (on ? "border-[#1180c1] text-slate-900" : "border-transparent text-slate-500 hover:text-slate-800")}>
+                {/* the label is sized by an invisible SEMIBOLD copy of itself, so going bold on select
+                    cannot change the tab's width — switching tabs moves nothing horizontally */}
+                <span className="relative block max-w-[140px]">
+                  <span aria-hidden="true" className="invisible block truncate font-semibold">{label}</span>
+                  <span className={"absolute inset-0 block truncate " + (on ? "font-semibold" : "font-medium")}>{label}</span>
+                </span>
+                <TabMarks fl={fl}/>
+              </button>
+            </BlockTip>
+          );
+        })}
+      </div>
+      {hidR &&
+        <span className="relative flex h-full w-[116px] shrink-0 items-center justify-end">
+          <span className="pointer-events-none absolute inset-y-2.5 left-0 w-px bg-slate-200"/>
+          {overflowBtn("r", hidR)}
+        </span>}
+      <span className="mx-1.5 h-5 w-px shrink-0 bg-slate-200"/>
+      <button type="button" onClick={onAdd} title="Add a new block to this rule"
+        className="group inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 text-[12.5px] font-semibold text-slate-700 shadow-sm outline-none transition hover:border-[#1180c1] hover:text-[#1180c1] focus-visible:ring-2 focus-visible:ring-sky-300">
+        <Ico name="plus" size={14} cls="text-[#1180c1] transition-transform duration-300 group-hover:rotate-90"/>
+        Add new block
+      </button>
+      {/* status tooltip on keyboard focus (hover is covered by the native title) */}
+      {ftip && ReactDOM.createPortal(
+        <div style={{left:ftip.left, top:ftip.top, transform:"translateX(-50%)"}}
+          className="pointer-events-none fixed z-[70] whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-[11px] font-medium text-white shadow-lg v10-fade">{ftip.text}</div>,
+        document.body)}
+      {/* Hidden-blocks dropdown — portaled so the drawer's scroll container can't clip it. Picking a block
+          activates it, which brings it back into the window; focus returns to the trigger. */}
+      {menu && mRange && ReactDOM.createPortal(
+        <>
+          <div className="fixed inset-0 z-[69]" onClick={()=>closeMenu(true)}/>
+          <div ref={menuRef} tabIndex={-1} role="menu" onKeyDown={onMenuKey}
+            style={menu.left!=null ? {top:menu.top, left:menu.left} : {top:menu.top, right:menu.right}}
+            className="fixed z-[70] max-h-72 w-56 overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-xl outline-none v10-fade">
+            <div className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Hidden blocks</div>
+            {mItems.map((i,k)=>{
+              const fl = flagsAt(i);
+              return (
+                <button key={i} type="button" role="menuitem" onClick={()=>jump(i)} onMouseEnter={()=>setMAct(k)}
+                  title={"Block " + (i+1) + (markSentence(fl) ? " — " + markSentence(fl) : "")}
+                  className={"flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] font-medium outline-none transition " +
+                    (k===mAct ? "bg-sky-50 text-slate-900" : "text-slate-700 hover:bg-sky-50")}>
+                  <span className="min-w-0 flex-1 truncate">Block {i+1}</span>
+                  <TabMarks fl={fl}/>
+                </button>
+              );
+            })}
+          </div>
+        </>, document.body)}
+    </div>
+  );
+}
+// R28 — the hybrid navigator. A long rule shouldn't need a long strip: show a WINDOW of nearby blocks
+// for quick switching, pan it with ◀ / ▶, and reach anything distant through "Block X of Y". The window
+// is capped by both a fixed maximum and the measured width, so tabs are never crowded or clipped.
+const NAV_WINDOW = 5;
+function BlockNav({blocks, active, onSelect, onAdd, ruleName, conflictFields, dupFields}){
+  const n = blocks.length;
+  const rowRef    = useRef(null);
+  const kbdRef    = useRef(false);   // activation came from the keyboard / add → carry focus to the tab
+  const trigRef   = useRef(null);
+  const menuRef   = useRef(null);
+  const searchRef = useRef(null);
+  const [fit, setFit]   = useState(NAV_WINDOW);   // how many tabs actually fit, capped at NAV_WINDOW
+  const [from, setFrom] = useState(0);            // first block in the visible window
+  const [menu, setMenu] = useState(null);         // {top, right} — the jump-to dropdown
+  const [q, setQ]       = useState("");
+  const [mAct, setMAct] = useState(0);
+  const [ftip, setFtip] = useState(null);         // status tooltip on keyboard focus
+  // ---- window --------------------------------------------------------------------------------------
+  // The row is flex-1 with fixed-width siblings, so its width does NOT depend on how many tabs we draw —
+  // measuring it can't feed back into the count, and this settles in one pass.
+  const measure = ()=>{
+    const row = rowRef.current; if(!row) return;
+    const avail = row.getBoundingClientRect().width;
+    const els = row.querySelectorAll("[data-tab]");
+    let tw = 0;
+    for(let i=0;i<els.length;i++) tw = Math.max(tw, els[i].getBoundingClientRect().width);
+    // Floor the estimate: only the tabs currently in the window can be measured, so a window of narrow
+    // labels would otherwise report a smaller tab than the widest one and the count could flip back and
+    // forth as wider blocks scroll in and out.
+    tw = Math.max(tw, 86);
+    const cap = Math.max(1, Math.floor((avail + TAB_GAP) / (tw + TAB_GAP)));
+    const v = Math.max(1, Math.min(NAV_WINDOW, cap));
+    setFit(prev => prev===v ? prev : v);
+  };
+  useEffect(()=>{ window.addEventListener("resize", measure); return ()=> window.removeEventListener("resize", measure); }, []);
+  useEffect(measure);
+  const clamp = s => Math.max(0, Math.min(s, Math.max(0, n - fit)));
+  // Selecting a block re-centres the window on it; panning afterwards is free until the next selection,
+  // so browsing ahead never yanks you back but choosing something always shows where you landed.
+  useEffect(()=>{ setFrom(clamp(active - Math.floor(fit/2))); }, [active, fit, n]);
+  const f0 = clamp(from);
+  const to = Math.min(n-1, f0 + fit - 1);
+  const win = [];
+  for(let i=f0;i<=to;i++) win.push(i);
+  const canBack = f0 > 0, canFwd = to < n-1;
+  const pan = d => setFrom(s => clamp(s + d));
+  // ---- status + keyboard ---------------------------------------------------------------------------
+  const flagsAt = i => isBlockDemo(ruleName) ? (R27_TAB_FLAGS[i]||{}) : blockFlags(blocks[i], ruleName, conflictFields, dupFields);
+  const tabEl = idx => {
+    const row = rowRef.current; if(!row) return null;
+    const els = row.querySelectorAll("[data-tab]");
+    for(let i=0;i<els.length;i++) if(els[i].getAttribute("data-tab")===String(idx)) return els[i];
+    return null;
+  };
+  useEffect(()=>{
+    if(!kbdRef.current) return;
+    const el = tabEl(active);
+    if(el && el.focus){ kbdRef.current = false; el.focus({preventScroll:true}); }
+  }, [active, f0, n]);
+  const go = i => { kbdRef.current = true; onSelect(i); };
+  const onKey = e => {
+    if(!n) return;
+    let ni = null;
+    if(e.key==="ArrowRight")     ni = Math.min(active+1, n-1);
+    else if(e.key==="ArrowLeft") ni = Math.max(active-1, 0);
+    else if(e.key==="Home")      ni = 0;
+    else if(e.key==="End")       ni = n-1;
+    if(ni===null) return;
+    e.preventDefault();
+    if(ni!==active) go(ni);
+    else { const el = tabEl(ni); if(el && el.focus) el.focus({preventScroll:true}); }
+  };
+  const onTabFocus = (e, fl) => {
+    const text = markSentence(fl); if(!text) return;
+    let vis = true; try { vis = e.target.matches(":focus-visible"); } catch(_){ vis = true; }
+    if(!vis) return;
+    const r = e.target.getBoundingClientRect();
+    setFtip({ left: r.left + r.width/2, top: r.bottom + 6, text });
+  };
+  // ---- jump-to dropdown ----------------------------------------------------------------------------
+  const rows = [];
+  for(let i=0;i<n;i++){
+    const label = "Block " + (i+1);
+    const sum = blockTipData(blocks[i]).summary || "";
+    if(!q.trim() || (label + " " + sum).toLowerCase().indexOf(q.trim().toLowerCase())>=0) rows.push({i, label, sum});
+  }
+  const closeMenu = refocus => { setMenu(null); setQ(""); if(refocus && trigRef.current && trigRef.current.focus) trigRef.current.focus(); };
+  const openMenu = e => {
+    if(menu){ closeMenu(true); return; }
+    const b = e.currentTarget.getBoundingClientRect();
+    trigRef.current = e.currentTarget;
+    setQ(""); setMAct(Math.max(0, active));
+    setMenu({ top: b.bottom + 6, right: Math.max(8, window.innerWidth - b.right) });
+  };
+  useEffect(()=>{
+    if(!menu) return;
+    const el = (n>6 && searchRef.current) ? searchRef.current : menuRef.current;
+    if(el && el.focus) el.focus();
+  }, [menu]);
+  const jump = i => { setMenu(null); setQ(""); go(i); };
+  const onMenuKey = e => {
+    if(e.key==="Escape"){ e.preventDefault(); closeMenu(true); return; }
+    if(!rows.length) return;
+    const at = Math.max(0, rows.findIndex(r=>r.i===mAct));
+    if(e.key==="ArrowDown"){ e.preventDefault(); setMAct(rows[(at+1) % rows.length].i); }
+    else if(e.key==="ArrowUp"){ e.preventDefault(); setMAct(rows[(at-1+rows.length) % rows.length].i); }
+    else if(e.key==="Home"){ e.preventDefault(); setMAct(rows[0].i); }
+    else if(e.key==="End"){ e.preventDefault(); setMAct(rows[rows.length-1].i); }
+    else if(e.key==="Enter"){ e.preventDefault(); const r = rows.find(x=>x.i===mAct) || rows[0]; if(r) jump(r.i); }
+  };
+  // Add lands you on the new block AND focuses it, so the next keystroke is already in the right place.
+  const add = ()=>{ kbdRef.current = true; onAdd(); };
+  // A render HELPER, not a nested component: a component declared inside the render body is a new type
+  // every render, so React would unmount and remount the button and drop keyboard focus mid-interaction.
+  const panBtn = (d, can) => (
+    <button key={"pan"+d} type="button" onClick={()=>pan(d)} disabled={!can} title={d<0 ? "Show earlier blocks" : "Show later blocks"}
+      aria-label={d<0 ? "Show earlier blocks" : "Show later blocks"}
+      className={"grid h-7 w-7 shrink-0 place-items-center rounded-md outline-none transition focus-visible:ring-2 focus-visible:ring-sky-300 " +
+        (can ? "text-slate-500 hover:bg-white hover:text-slate-900" : "cursor-default text-slate-300")}>
+      <Ico name="chevdown" size={15} cls={d<0 ? "rotate-90" : "-rotate-90"}/>
+    </button>
+  );
+  return (
+    <div className="flex h-11 items-center gap-1 pl-4 pr-5">
+      {panBtn(-1, canBack)}
+      {/* the window — a handful of nearby blocks, text-first, one selection signal (the underline) */}
+      <div ref={rowRef} role="tablist" aria-label="Rule blocks" onKeyDown={onKey}
+        className="flex h-full min-w-0 flex-1 items-stretch gap-0.5 overflow-hidden">
+        {win.map(i=>{
+          const b = blocks[i];
+          const t = blockTipData(b);
+          const fl = flagsAt(i);
+          const on = i===active;
+          const label = "Block " + (i+1);
+          return (
+            <BlockTip key={i} cls="shrink-0" title={label} summary={t.summary} started={t.hasContent} triggers={t.triggers}
+              condItems={t.condItems} actItems={t.actItems} condMatch={b.match||"all"}>
+              <button type="button" data-tab={i} role="tab" aria-selected={on} tabIndex={on ? 0 : -1}
+                onClick={()=>onSelect(i)} onFocus={e=>onTabFocus(e, fl)} onBlur={()=>setFtip(null)}
+                title={label + (markSentence(fl) ? " — " + markSentence(fl) : "")}
+                className={TAB_BOX + " outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300 " +
+                  (on ? "border-[#1180c1] text-slate-900" : "border-transparent text-slate-500 hover:text-slate-800")}>
+                {/* invisible semibold copy reserves the bold metrics, so selecting a tab moves nothing */}
+                <span className="relative block max-w-[140px]">
+                  <span aria-hidden="true" className="invisible block truncate font-semibold">{label}</span>
+                  <span className={"absolute inset-0 block truncate " + (on ? "font-semibold" : "font-medium")}>{label}</span>
+                </span>
+                <TabMarks fl={fl}/>
+              </button>
+            </BlockTip>
+          );
+        })}
+      </div>
+      {panBtn(1, canFwd)}
+      <span className="mx-1.5 h-5 w-px shrink-0 bg-slate-200"/>
+      {/* position + jump — where you are, out of how many, and the way to anywhere else */}
+      <button type="button" onClick={openMenu} aria-haspopup="menu" aria-expanded={!!menu}
+        title="Jump to a block"
+        className={"inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-[12px] font-medium outline-none transition focus-visible:ring-2 focus-visible:ring-sky-300 " +
+          (menu ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:bg-white/70 hover:text-slate-900")}>
+        <span className="whitespace-nowrap"><span className="font-semibold text-slate-900">Block {active+1}</span> of {n}</span>
+        <Ico name="chevdown" size={12} cls="shrink-0 text-slate-400"/>
+      </button>
+      <span className="mx-1.5 h-5 w-px shrink-0 bg-slate-200"/>
+      <button type="button" onClick={add} title="Add a new block to this rule"
+        className="group inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 text-[12.5px] font-semibold text-slate-700 shadow-sm outline-none transition hover:border-[#1180c1] hover:text-[#1180c1] focus-visible:ring-2 focus-visible:ring-sky-300">
+        <Ico name="plus" size={14} cls="text-[#1180c1] transition-transform duration-300 group-hover:rotate-90"/>
+        Add new block
+      </button>
+      {ftip && ReactDOM.createPortal(
+        <div style={{left:ftip.left, top:ftip.top, transform:"translateX(-50%)"}}
+          className="pointer-events-none fixed z-[70] whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-[11px] font-medium text-white shadow-lg v10-fade">{ftip.text}</div>,
+        document.body)}
+      {/* Jump-to list — every block, its indicators, and a one-line summary so a distant block can be
+          recognised without visiting it. Portaled past the drawer's scroll container. */}
+      {menu && ReactDOM.createPortal(
+        <>
+          <div className="fixed inset-0 z-[69]" onClick={()=>closeMenu(true)}/>
+          <div ref={menuRef} tabIndex={-1} role="menu" onKeyDown={onMenuKey} style={{top:menu.top, right:menu.right}}
+            className="fixed z-[70] flex max-h-[380px] w-72 flex-col rounded-lg border border-slate-200 bg-white py-1 shadow-xl outline-none v10-fade">
+            <div className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Jump to block</div>
+            {n>6 &&
+              <div className="px-2 pb-1.5">
+                <input ref={searchRef} value={q} onChange={e=>setQ(e.target.value)} placeholder="Search blocks"
+                  className="h-8 w-full rounded-md border border-slate-200 px-2.5 text-[12.5px] outline-none focus:border-sky-300"/>
+              </div>}
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {rows.length===0 && <div className="px-3 py-3 text-[12.5px] italic text-slate-400">No matching blocks</div>}
+              {rows.map(r=>{
+                const fl = flagsAt(r.i);
+                return (
+                  <button key={r.i} type="button" role="menuitem" onClick={()=>jump(r.i)} onMouseEnter={()=>setMAct(r.i)}
+                    title={r.label + (markSentence(fl) ? " — " + markSentence(fl) : "")}
+                    className={"flex w-full items-start gap-2 px-3 py-1.5 text-left outline-none transition " +
+                      (r.i===mAct ? "bg-sky-50" : "hover:bg-sky-50")}>
+                    <span className="min-w-0 flex-1">
+                      <span className={"block text-[13px] " + (r.i===active ? "font-semibold text-slate-900" : "font-medium text-slate-700")}>
+                        {r.label}{r.i===active && <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-[#1180c1]">Current</span>}
+                      </span>
+                      {r.sum && <span className="mt-0.5 block truncate text-[11.5px] text-slate-400">{r.sum}</span>}
+                    </span>
+                    <span className="mt-0.5"><TabMarks fl={fl}/></span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </>, document.body)}
+    </div>
+  );
+}
+function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate, onRemove, exec, ruleName, conflictFields, onFieldConflict, noCollapse}){
   // Disclosure gates: WHEN → IF → add-buttons → THEN → add-action → Advanced.
   // The block's own WHEN is the event + execution scope; the audience is common (set once on the rule).
   const whenReady     = !!(block.time && block.exec);
@@ -3640,6 +4376,7 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
   // Cleared shortly after the add so re-expanding a block later never re-fires the auto-open (that stacked menus).
   const [newCondIdx, setNewCondIdx] = useState(-1);
   const [newActIdx, setNewActIdx] = useState(-1);
+  const [collapsedG, setCollapsedG] = useState(()=> new Set());   // condition groups collapsed to a preview line
   useEffect(()=>{ if(newCondIdx<0) return; const t=setTimeout(()=>setNewCondIdx(-1), 400); return ()=>clearTimeout(t); }, [newCondIdx]);
   useEffect(()=>{ if(newActIdx<0) return; const t=setTimeout(()=>setNewActIdx(-1), 400); return ()=>clearTimeout(t); }, [newActIdx]);
   const setCond = (i,p)=> onChange({conditions: block.conditions.map((c,j)=> j===i?{...c,...p}:c)});
@@ -3650,12 +4387,19 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
     const its = block.conditions || [];
     const bare = its.filter(x=> x && !x.group);
     const grp  = ()=> ({group:true, match:"all", conditions:[{fieldId:"", op:"", value:""}]});
+    let next;
     if(bare.length){
       const groups = its.filter(x=> x && x.group);
-      onChange({ conditions:[{group:true, match:(block.match||"all"), conditions:bare}, ...groups, grp()], match:"all" });
+      next = [{group:true, match:(block.match||"all"), conditions:bare}, ...groups, grp()];
+      onChange({ conditions: next, match:"all" });
     } else {
-      onChange({ conditions:[...its, grp()] });
+      next = [...its, grp()];
+      onChange({ conditions: next });
     }
+    // Adding a group collapses every earlier one to its preview — the new (empty) group is the only thing
+    // that needs the room, and the ones already filled in stay reviewable as a single line.
+    const s = new Set(); for(let i=0;i<next.length-1;i++) s.add(i);
+    setCollapsedG(s);
   };
   const rmCond  = i => onChange({conditions: block.conditions.filter((_,j)=>j!==i)});
   const dupCond = i => onChange({conditions: block.conditions.flatMap((c,j)=> j===i ? [c, {...c}] : [c])});
@@ -3675,71 +4419,22 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
       <button onClick={clearBlock} title="Clear this block" className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[12px] font-medium text-slate-500 transition hover:bg-rose-50 hover:text-rose-600"><Ico name="x" size={13}/> Clear</button>
     </div>
   );
-  // Live, progressive summary — grows as WHEN → IF → THEN get filled in.
-  const sum = (()=>{
-    if(!block.time && !block.exec) return "New rule block — start with When";
-    let s = block.time || "When…";
-    if(block.people && block.people!=="Everyone") s += " by " + block.people;
-    const conds = (block.conditions||[]).filter(leafComplete);
-    if(conds.length) s += " if " + conds.map(itemPhrase).join(block.match==="any" ? " or " : " and ");
-    const acts = (block.actions||[]).filter(actComplete);
-    if(acts.length) s += " then " + acts.map(actionPhrase).join(", and ");
-    return cap(s);
-  })();
-  // Structured tooltip data — bulleted conditions (with group hierarchy) + actions (with nested field targets),
-  // so multi-condition / multi-action rules stay scannable instead of collapsing into a comma sentence.
-  let tipGNo = 0;
-  const tipCondItems = (block.conditions||[]).map(it=>{
-    if(it && it.group){
-      const leaves = (it.conditions||[]).filter(condComplete).map(condPhrase);
-      if(!leaves.length) return null;
-      tipGNo += 1;
-      return { group:true, no:tipGNo, match: it.match||"all", leaves };
-    }
-    return condComplete(it) ? { group:false, text: condPhrase(it) } : null;
-  }).filter(Boolean);
-  const tipActItems = (block.actions||[]).filter(actComplete).map(a=>{
-    const ids = (a.fieldIds && a.fieldIds.length) ? a.fieldIds : (a.fieldId ? [a.fieldId] : []);
-    let targets;
-    if(a.behavior==="Filter Data"){
-      const ent = (FD_PERSONS.find(p=>p.value===a.entity)||{}).label || a.entity || "";
-      const sf  = (FD_USER_FIELDS.find(p=>p.value===a.srcField)||{}).label || a.srcField || "";
-      targets = [ (ent ? ent + "’s " : "") + sf + (a.value ? " = " + a.value : "") ];
-    } else if(a.behavior==="Set Value"){
-      targets = ids.map(id => labelOf(id) + (a.value ? " → " + a.value : ""));
-    } else if(a.behavior==="Show Options" || a.behavior==="Hide Options"){
-      targets = ids.map(id => labelOf(id) + (Array.isArray(a.value)&&a.value.length ? " (" + a.value.join(", ") + ")" : ""));
-    } else if(a.behavior==="Run Custom Script"){
-      targets = ["Runs a custom script"];
-    } else {
-      targets = ids.map(labelOf);
-    }
-    return { behavior: a.behavior, targets };
-  });
-  const tipTriggers = ([block.exec, block.time].filter(Boolean).join(", ") || "Not set yet") + " · " + (block.people || "Everyone");
-  const tipHasContent = !!(block.time || block.people || tipCondItems.length || tipActItems.length);
-  // Short, concrete one-line example.
-  const lc = s => s ? s.charAt(0).toLowerCase()+s.slice(1) : s;
-  const tipExample = (()=>{
-    if(!tipActItems.length) return "";
-    const a0 = tipActItems[0];
-    const actTxt = a0.behavior + (a0.targets.length ? " " + a0.targets[0] : "");
-    if(tipCondItems.length){
-      const c0 = tipCondItems[0].group ? tipCondItems[0].leaves[0] : tipCondItems[0].text;
-      return "When " + lc(c0 || "the conditions are met") + ", " + lc(actTxt) + ".";
-    }
-    return "Always applies: " + lc(actTxt) + ".";
-  })();
+  // Summary + structured preview data (shared with the R27 tab strip via blockTipData).
+  const _tip = blockTipData(block);
+  const sum = _tip.summary, tipCondItems = _tip.condItems, tipActItems = _tip.actItems;
+  const tipTriggers = _tip.triggers, tipHasContent = _tip.hasContent;
   return (
     <div className="shadow-sm rounded-xl">
     <div className={"border border-slate-200 bg-white " + (blockCfCount>0 ? "rounded-t-xl" : "rounded-xl shadow-sm")}>
       {/* collapsible-group row — the WHOLE header row is the tooltip's hover target, not just the title */}
-      <BlockTip title={ruleName} summary={sum} started={tipHasContent} triggers={tipTriggers} condItems={tipCondItems} actItems={tipActItems} example={tipExample}>
+      <BlockTip title={ruleName} summary={sum} started={tipHasContent} triggers={tipTriggers} condItems={tipCondItems} actItems={tipActItems} condMatch={block.match||"all"} disabled={expanded}>
         <div className="flex items-center gap-2.5 px-4 py-3">
-          <button onClick={onToggle} className="group flex min-w-0 flex-1 items-center gap-2.5 text-left">
-            <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500 transition group-hover:bg-slate-200" title={expanded ? "Collapse block" : "Expand block"}>
-              <Ico name="chevdown" size={14} cls={expanded ? "rotate-180" : ""}/>
-            </span>
+          <button onClick={noCollapse ? undefined : onToggle} className={"group flex min-w-0 flex-1 items-center gap-2.5 text-left " + (noCollapse ? "cursor-default" : "")}>
+            {/* in tab mode the tab strip IS the navigation, so the collapse chevron is dropped */}
+            {!noCollapse &&
+              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500 transition group-hover:bg-slate-200" title={expanded ? "Collapse block" : "Expand block"}>
+                <Ico name="chevdown" size={14} cls={expanded ? "rotate-180" : ""}/>
+              </span>}
             <span className="min-w-0">
               <span className="block truncate text-[15px] font-bold text-slate-800">Rule {index+1}</span>
               <span className="block truncate text-[12px] text-slate-400">{block.time || "When…"} · {block.people || "Everyone"} <span className="text-slate-300">|</span> {condCount} Condition{condCount===1?"":"s"}{groupCount>0 ? " (" + groupCount + " Group" + (groupCount===1?"":"s") + ")" : ""} · {block.actions.length} Action{block.actions.length===1?"":"s"}</span>
@@ -3803,7 +4498,8 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
                           </div>
                           <div className="mt-3"><button onClick={addCond} className="inline-flex items-center gap-1.5 text-[13px] font-medium text-slate-500 transition hover:text-slate-700"><Ico name="plus" size={13}/> Add Condition</button></div>
                         </div>
-                      : <V7Group g={u.g} n={ui+1} onChange={p=>setCond(items.indexOf(u.g),p)} onRemove={()=>rmCond(items.indexOf(u.g))} onDuplicate={()=>dupGroup(items.indexOf(u.g))} conflictFields={conflictFields} onFieldConflict={onFieldConflict} ruleName={ruleName}/>}
+                      : <V7Group g={u.g} n={ui+1} onChange={p=>setCond(items.indexOf(u.g),p)} onRemove={()=>rmCond(items.indexOf(u.g))} onDuplicate={()=>dupGroup(items.indexOf(u.g))} conflictFields={conflictFields} onFieldConflict={onFieldConflict} ruleName={ruleName}
+                          collapsed={collapsedG.has(ui)} onToggleCollapse={()=>setCollapsedG(s=>{ const t=new Set(s); if(t.has(ui)) t.delete(ui); else t.add(ui); return t; })}/>}
                   </div>);
               })()}
               {firstCondDone &&
@@ -6185,10 +6881,15 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
       // multi-block shape when the rule was saved with one; fall back to the flat single-block model for seeds.
       // Audience is COMMON (one value for the whole rule); Execute-on is PER BLOCK.
       const aud = baseRule.audience || (baseRule.blocks && baseRule.blocks[0] && baseRule.blocks[0].people) || "";
+      // A seed that carries an EXPLICIT empty blocks[] (and no flat conditions/actions) opens on the
+      // "build your first rule" empty state instead of being given a starter block.
+      const emptySeed = Array.isArray(baseRule.blocks) && !baseRule.blocks.length
+        && !((baseRule.conditions||[]).length) && !((baseRule.actions||[]).length);
       const blocks = (baseRule.blocks && baseRule.blocks.length)
         ? baseRule.blocks.map(b=>({ match:b.match||"all", advanced:!!b.advanced, advOpen:false,
             time:b.time, people:aud, exec: b.exec || baseRule.exec || EXEC_OPTS[0],
             conditions:(b.conditions||[]).map(c=>({...c})), actions:(b.actions||[]).map(a=>({...a})) }))
+        : emptySeed ? []
         : [{ match:"all", advanced:!!baseRule.advanced, advOpen:false,
             time: baseRule.when, people: aud, exec: baseRule.exec || EXEC_OPTS[0],
             conditions: (baseRule.conditions||[]).map(c=>({...c})), actions: (baseRule.actions||[]).map(a=>({...a})) }];
@@ -6217,7 +6918,23 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
   const dupBlock = i => setDraft(d=>{ const src=d.blocks[i]; const copy={...src, conditions:src.conditions.map(c=>({...c})), actions:src.actions.map(a=>({...a}))}; const blocks=d.blocks.slice(); blocks.splice(i+1,0,copy); setExpandedIdx(i+1); return {...d, blocks}; });
   const rmBlock = i => setDraft(d=>({...d, blocks: d.blocks.filter((_,j)=>j!==i)}));
   // New blocks inherit the rule's common audience; their Execute-on starts empty (it's per block).
-  const addBlock = ()=> setDraft(d=>{ const blocks=[...d.blocks, {match:"all", advanced:false, advOpen:false, time:"", people:d.people||"", exec:"", conditions:[], actions:[]}]; setExpandedIdx(blocks.length-1); return {...d, blocks}; });
+  const addBlock = ()=> setDraft(d=>{
+    // R27 / R28 prototypes — the FIRST "Add block" loads the whole 10-block demo instead of one empty block,
+    // so the navigator is immediately seen at realistic scale. Deep-cloned so editing never mutates the fixture.
+    if(isBlockDemo(d.name) && !(d.blocks||[]).length){
+      const blocks = R27_DEMO_BLOCKS.map(b=>({
+        match:b.match||"all", advanced:false, advOpen:false, time:b.time||"", exec:b.exec||"", people:d.people||b.people||"",
+        conditions:(b.conditions||[]).map(c=> c && c.group
+          ? {...c, conditions:(c.conditions||[]).map(x=>({...x}))}
+          : {...c}),
+        actions:(b.actions||[]).map(a=>({...a, fieldIds:(a.fieldIds||[]).slice()})),
+      }));
+      setExpandedIdx(0);          // land on Block 1
+      return {...d, blocks};
+    }
+    const blocks=[...d.blocks, {match:"all", advanced:false, advOpen:false, time:"", people:d.people||"", exec:"", conditions:[], actions:[]}];
+    setExpandedIdx(blocks.length-1); return {...d, blocks};
+  });
   // Applies-to is COMMON — setting it writes the rule-level value AND mirrors it onto every block, so all
   // the block-level consumers (summary, conflict helpers, draftToRule) keep seeing a per-block audience.
   const setAudience = v => setDraft(d=>({...d, people:v, blocks:(d.blocks||[]).map(b=>({...b, people:v}))}));
@@ -6247,6 +6964,15 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
     _scen.matrix ? _scen.matrix.map(m=>m.id)
     : _scen.ruleMatrix ? _scen.ruleMatrix.flatMap(r=>r.fields.map(f=>f.id))
     : _scen.rows.flatMap(r=>(r.blocks[0].fields||[]).map(f=>f.id)));
+  // fields whose overlap is a DUPLICATE rather than a conflict — drives the amber dot on the R27 block tabs
+  const scenDupIds = new Set((_scen.preview||[])
+    .filter(f=> (f.pairs||[]).some(p=> pairVerdict(f.cur, p.act, f.value, p.value)==="duplicate"))
+    .map(f=> f.id));
+  // R27 / R28 — one block on the canvas at a time; expandedIdx doubles as the active tab. R27 navigates
+  // with the overflow tab strip, R28 with the windowed navigator — everything below the strip is identical.
+  const tabbed = isBlockDemo(draft.name);
+  const navMode = isBlockNavDemo(draft.name) ? "nav" : "tabs";
+  const activeIdx = (expandedIdx==null ? 0 : expandedIdx);
   // ---- Run Test: a safe, read-only dry run. Shows a short reassurance sequence, then reveals the result —
   // the filled-in FORM PREVIEW for matrix rules (R22), otherwise the conflict drawer. Nothing is saved.
   const [testing, setTesting] = useState(false);
@@ -6314,7 +7040,7 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
     setDraft({ name: rule.name, exec: rule.exec||"", description: rule.description||"", tags:(rule.tags||[]).slice(), blocks:[block] });
     setShowDesc(!!rule.description); setSaved(false); setShowErrors(false); setExpandedIdx(0); setInspectOpen(false);
   };
-  const rz = useDrawerResize(Math.round((typeof window!=="undefined" ? window.innerWidth : 2000) * 0.5), 560, 1400);
+  const rz = useDrawerResize(Math.round((typeof window!=="undefined" ? window.innerWidth : 2000) * 0.55), 560, 1600);
   // Tag chips + add/edit control — shared so it can sit beside "Add description" (collapsed) or below the box (expanded).
   const tagsControls = <>
     {(draft.tags||[]).map((t,i)=>(
@@ -6357,7 +7083,10 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
                   </ul>
                 </div>
               </div>}
-            <div className="pb-1">
+            {/* RULE DETAILS — name / audience / description / tags read as one section, fenced off from the
+                block builder by a full-bleed divider (the negative margin cancels the body's px-8). */}
+            <div className="-mx-8 border-b border-slate-200 px-8 pb-5">
+              <div className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Rule Details</div>
               <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
                 <div>
                   <label className="block text-[12.5px] font-semibold text-slate-700">Rule name <span className="text-rose-500">*</span></label>
@@ -6392,16 +7121,51 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
                     </div>}
               </div>
             </div>
-            <div className="space-y-3">
-              {draft.blocks.map((b,i)=>
-                <V7Block key={i} block={b} index={i} total={draft.blocks.length} expanded={expandedIdx===i}
-                  exec={draft.exec} ruleName={draft.name} conflictFields={scenFieldIds} onFieldConflict={openFieldConflict}
-                  onToggle={()=>setExpandedIdx(expandedIdx===i?null:i)} onChange={p=>setBlock(i,p)}
-                  onDuplicate={()=>dupBlock(i)} onRemove={()=>rmBlock(i)}/>)}
-            </div>
-            {/* Add block — always visible; once a first action exists it gets HIGHLIGHTED (coaching callout,
-                tint, New pill, animated icons) so the multi-block feature lands when it's actually useful. */}
-            {(()=>{ const blockHi = actionOk && blockHint; return (
+            {/* No blocks yet → an empty state that explains what a block is and starts the first one, instead of
+                dropping the user straight into a half-filled form */}
+            {draft.blocks.length===0
+              /* no container — the empty state belongs to the page, not to another nested card */
+              ? <div className="px-6 py-12 text-center v10-fade">
+                  <div className="flex justify-center text-slate-300"><Ico name="layers" size={32}/></div>
+                  <div className="mt-3 text-[15px] font-semibold text-slate-800">Build your first rule</div>
+                  <p className="mx-auto mt-1 max-w-sm text-[13px] leading-relaxed text-slate-500">A block is one trigger, optional conditions, and the actions that follow.</p>
+                  <button onClick={addBlock} className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-4 py-2 text-[13px] font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50">
+                    <Ico name="plus" size={15}/> Add rule block
+                  </button>
+                </div>
+              : tabbed
+                /* R27 — tab strip + the active block only, so vertical height stays flat as blocks grow */
+                ? (()=>{ const ai = Math.min(Math.max(activeIdx,0), draft.blocks.length-1); const b = draft.blocks[ai]; return (
+                    <div>
+                      {/* Rule Details scrolls away; the tab bar then pins to the top of the drawer body and the
+                          block content keeps scrolling underneath. Full-bleed (-mx-8 cancels the body gutter) so
+                          the tint and the divider run the whole drawer width; opaque so nothing shows through. */}
+                      <div className="sticky top-0 z-20 -mx-8 border-b border-slate-200 bg-slate-50 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+                        {navMode==="nav"
+                          ? <BlockNav blocks={draft.blocks} active={ai} onSelect={setExpandedIdx} onAdd={addBlock}
+                              ruleName={draft.name} conflictFields={scenFieldIds} dupFields={scenDupIds}/>
+                          : <BlockTabs blocks={draft.blocks} active={ai} onSelect={setExpandedIdx} onAdd={addBlock}
+                              ruleName={draft.name} conflictFields={scenFieldIds} dupFields={scenDupIds}/>}
+                      </div>
+                      <div className="mt-5 v10-fade">
+                        <V7Block key={ai} block={b} index={ai} total={draft.blocks.length} expanded={true} noCollapse
+                          exec={draft.exec} ruleName={draft.name} conflictFields={scenFieldIds} onFieldConflict={openFieldConflict}
+                          onToggle={()=>{}} onChange={p=>setBlock(ai,p)}
+                          onDuplicate={()=>dupBlock(ai)} onRemove={()=>rmBlock(ai)}/>
+                      </div>
+                    </div>
+                  ); })()
+                : <div className="space-y-3">
+                    {draft.blocks.map((b,i)=>
+                      <V7Block key={i} block={b} index={i} total={draft.blocks.length} expanded={expandedIdx===i}
+                        exec={draft.exec} ruleName={draft.name} conflictFields={scenFieldIds} onFieldConflict={openFieldConflict}
+                        onToggle={()=>setExpandedIdx(expandedIdx===i?null:i)} onChange={p=>setBlock(i,p)}
+                        onDuplicate={()=>dupBlock(i)} onRemove={()=>rmBlock(i)}/>)}
+                  </div>}
+            {/* Add block — once a first action exists it gets HIGHLIGHTED (coaching callout, tint, New pill).
+                Dropped entirely for R27: the empty state owns the first-block CTA and the tab strip's "+" owns
+                the rest, so this section would be a third, redundant way to do the same thing. */}
+            {!tabbed && (()=>{ const blockHi = actionOk && blockHint; return (
             <div className="space-y-2">
               {blockHi && draft.blocks.length===1 &&
                 <div className="relative rounded-xl border border-sky-100 bg-sky-50/60 px-4 py-3.5 v10-fade">
