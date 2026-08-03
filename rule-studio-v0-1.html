@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Motadata ServiceOps — Request Form (V10 · Form Builder)</title>
+<title>Motadata ServiceOps — Request Form (V0.1 · Block recommendations)</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -325,8 +325,8 @@ const actLine = (act, val, fieldLabel) =>
 const WHENS = ["When the form opens","While the form is being filled","When the form opens and while it's being filled","When the form is submitted"];
 const AUDS  = ["Everyone","Requesters only","Technicians only","Signed-in users only"];
 // Rules that drive the hardcoded field-level conflict demo — their conditions/actions surface the ⚠ indicator.
-const DEMO_CONFLICT_RULES = ["HR Rule UI Exp","Critical Incident Handling","R20 - Request Routing Demo","R21 - Request Routing Demo 2","R22 - Conflict Matrix Demo","R23 - Rule Conflict Matrix","R24 - Complex Combinations","R25 - Conflict & Similar Split"];
-const isDemoConflictRule = n => DEMO_CONFLICT_RULES.indexOf(n)>=0;
+// V0: no name allow-list — a rule carries field pips when it genuinely clashes (see isConflictDemo).
+const isDemoConflictRule = n => { const r = RULE_DB.find(x=> x.name===n); return !!r && v0Scenario(r).fields.length>0; };
 // R26 "Add to existing rule" demo — as the user picks a condition, surface existing rules that already run on
 // that exact condition, so they can add their actions there instead of creating a near-duplicate rule.
 const isSameCondDemo = n => /add to existing/i.test(n||"");
@@ -462,369 +462,49 @@ const RULE_DB = [
     conditions:[{fieldId:"impact", op:"Is Not Empty"},{fieldId:"urgency", op:"Is Not Empty"}], actions:[{behavior:"Set Value", fieldId:"priority", value:"the matrix result"}] },
   { id:"r3",  name:"Capture resolution when Resolved", status:"Active", when:"While the form is being filled", audience:"Technicians only", usedInForms:3, recommended:false,
     conditions:[{fieldId:"status", op:"Is", value:"Resolved"}], actions:[{behavior:"Mandate", fieldId:"description"}] },
-  { id:"r4",  name:"Hide Status on the portal", status:"Active", when:"When the form opens", audience:"Requesters only", usedInForms:2, recommended:false,
-    conditions:[], actions:[{behavior:"Hide", fieldId:"status"}] },
+  { id:"r4",  name:"Hide Location on the portal", status:"Active", when:"When the form opens", audience:"Requesters only", usedInForms:2, recommended:false,
+    conditions:[], actions:[{behavior:"Hide", fieldId:"location"}] },
   { id:"r5",  name:"Mandatory Category", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:5, recommended:false,
     conditions:[], actions:[{behavior:"Mandate", fieldId:"category"}] },
   { id:"r6",  name:"Default Department from Requester", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:6, recommended:false,
     conditions:[{fieldId:"requester", op:"Is Not Empty"}], actions:[{behavior:"Set Value", fieldId:"department", value:"the requester's department"}] },
-  { id:"r7",  name:"Lock Priority after assignment", status:"Active", when:"While the form is being filled", audience:"Technicians only", usedInForms:3, recommended:false, advanced:true,
-    conditions:[{fieldId:"assignee", op:"Is Not Empty"}], actions:[{behavior:"Disable", fieldId:"priority"}] },
+  { id:"r7",  name:"Lock Subject after assignment", status:"Active", when:"While the form is being filled", audience:"Technicians only", usedInForms:3, recommended:false, advanced:true,
+    conditions:[{fieldId:"assignee", op:"Is Not Empty"}], actions:[{behavior:"Disable", fieldId:"subject"}] },
   { id:"r8",  name:"Require Urgency for High Impact", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:2, recommended:false,
     conditions:[{fieldId:"impact", op:"Is", value:"High"}], actions:[{behavior:"Mandate", fieldId:"urgency"}] },
   { id:"r9",  name:"Show Vendor for Hardware", status:"Active", when:"While the form is being filled", audience:"Technicians only", usedInForms:1, recommended:false,
     conditions:[{fieldId:"category", op:"Is", value:"Hardware"}], actions:[{behavior:"Show", fieldId:"vendor"},{behavior:"Mandate", fieldId:"vendor"}] },
   { id:"r10", name:"Auto-fill Requester from logged-in user", status:"Active", when:"When the form opens", audience:"Requesters only", usedInForms:8, recommended:false,
     conditions:[], actions:[{behavior:"Set Value", fieldId:"requester", value:"the logged-in user"}] },
-  { id:"r11", name:"Assign Technician Group by Location", status:"Active", when:"While the form is being filled", audience:"Technicians only", usedInForms:3, recommended:false,
-    conditions:[{fieldId:"location", op:"Is Not Empty"}], actions:[{behavior:"Set Value", fieldId:"tech_group", value:"the location's group"}] },
-  { id:"r12", name:"Mandatory Subject & Description", status:"Active", when:"When the form is submitted", audience:"Everyone", usedInForms:9, recommended:false,
-    conditions:[], actions:[{behavior:"Mandate", fieldId:"subject"},{behavior:"Mandate", fieldId:"description"}] },
-  { id:"r13", name:"Reveal Cc Emails when On Hold", status:"Draft", when:"While the form is being filled", audience:"Everyone", usedInForms:1, recommended:false,
-    conditions:[{fieldId:"status", op:"Is", value:"On Hold"}], actions:[{behavior:"Show", fieldId:"cc_emails"}] },
-  { id:"r14", name:"Clear Assignee when reopened", status:"Draft", when:"While the form is being filled", audience:"Technicians only", usedInForms:1, recommended:false,
-    conditions:[{fieldId:"status", op:"Is", value:"Reopened"}], actions:[{behavior:"Clear Value", fieldId:"assignee"}] },
-  // Multi-block rule (3 blocks) — only the middle block touches Priority, so it's the one that conflicts with
-  // other Priority rules. Demonstrates the block inspector: all 3 blocks shown, block 2 flagged + auto-expanded.
-  { id:"r15", name:"Priority & assignment workflow", status:"Active", when:"While the form is being filled", audience:"Technicians only", usedInForms:2, recommended:false,
-    conditions:[{fieldId:"status", op:"Is", value:"In Progress"}], actions:[{behavior:"Mandate", fieldId:"assignee"}],
-    blocks:[
-      { match:"all", time:"While the form is being filled", people:"Technicians only",
-        conditions:[{fieldId:"status", op:"Is", value:"In Progress"}], actions:[{behavior:"Mandate", fieldId:"assignee"}] },
-      { match:"all", time:"While the form is being filled", people:"Technicians only",
-        conditions:[{fieldId:"impact", op:"Is", value:"High"}], actions:[{behavior:"Set Value", fieldId:"priority", value:"High"}] },
-      { match:"all", time:"While the form is being filled", people:"Technicians only",
-        conditions:[], actions:[{behavior:"Show", fieldId:"cc_emails"}] },
-    ] },
-  // Demo scenario S1 — draft: Status = Open · Priority = High → make Attachment/Category/Description/Subject
-  // mandatory. Its conflict inspector maps to the "Simplified Mobile Ticket Form" scenario (Attachment, Category).
-  { id:"r16", name:"Require supporting information for high priority tickets", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:0, recommended:false,
-    conditions:[{fieldId:"status", op:"Is", value:"Open"},{fieldId:"priority", op:"Is", value:"High"}],
-    actions:[{behavior:"Mandate", fieldId:"attachment"},{behavior:"Mandate", fieldId:"category"},{behavior:"Mandate", fieldId:"description"},{behavior:"Mandate", fieldId:"subject"}],
-    blocks:[
-      { match:"all", time:"While the form is being filled", people:"Everyone",
-        conditions:[{fieldId:"status", op:"Is", value:"Open"},{fieldId:"priority", op:"Is", value:"High"}],
-        actions:[{behavior:"Mandate", fieldId:"attachment"},{behavior:"Mandate", fieldId:"category"},{behavior:"Mandate", fieldId:"description"},{behavior:"Mandate", fieldId:"subject"}] },
-    ] },
-  // Demo scenario S2 — draft: Assignee = Priya · Department = HR → make Description/Status/Subject/Category
-  // mandatory. Its conflict inspector maps to the "Hide internal fields for Surat requests" scenario (Subject, Category).
-  { id:"r17", name:"Mandatory information for HR requests", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:0, recommended:false,
-    conditions:[{fieldId:"assignee", op:"Is", value:"Priya"},{fieldId:"department", op:"Is", value:"HR"}],
-    actions:[{behavior:"Mandate", fieldId:"description"},{behavior:"Mandate", fieldId:"status"},{behavior:"Mandate", fieldId:"subject"},{behavior:"Mandate", fieldId:"category"}],
-    blocks:[
-      { match:"all", time:"While the form is being filled", people:"Everyone",
-        conditions:[{fieldId:"assignee", op:"Is", value:"Priya"},{fieldId:"department", op:"Is", value:"HR"}],
-        actions:[{behavior:"Mandate", fieldId:"description"},{behavior:"Mandate", fieldId:"status"},{behavior:"Mandate", fieldId:"subject"},{behavior:"Mandate", fieldId:"category"}] },
-    ] },
-  // Demo scenario S3 — the field-level conflict discovery demo. One block, one Mandate action targeting four
-  // fields; only Department + Designation conflict (flagged inline; click → opens the drawer focused on that field).
-  { id:"r18", name:"HR Rule UI Exp", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:0, recommended:false,
-    conditions:[{fieldId:"department", op:"Is", value:"HR"}],
-    actions:[{behavior:"Mandate", fieldIds:["employee_id","department","designation","joining_date"], fieldId:"employee_id"}],
-    blocks:[
-      { match:"all", time:"While the form is being filled", people:"Everyone",
-        conditions:[{fieldId:"department", op:"Is", value:"HR"}],
-        actions:[{behavior:"Mandate", fieldIds:["employee_id","department","designation","joining_date"], fieldId:"employee_id"}] },
-    ] },
-  // Demo scenario S4 — "Critical Incident Handling": 2 standalone conditions + 2 condition groups + 4 actions.
-  // Real conflicts (DEMO_S4): Group 1 (Impact) & Group 2 (Category) condition-vs-action; Action Mandate Assignee
-  // (opposite behavior) & Action Mandate Description (same behavior). Two carry reverse behavior (Impact, Assignee).
-  { id:"r19", name:"Critical Incident Handling", status:"Active", when:"While the form is being filled", audience:"Technicians only", usedInForms:0, recommended:false,
-    conditions:[{fieldId:"priority", op:"Is", value:"Urgent"},{fieldId:"status", op:"Is", value:"Open"},{fieldId:"impact", op:"Is", value:"High"},{fieldId:"urgency", op:"Is", value:"High"},{fieldId:"category", op:"Is", value:"Network"},{fieldId:"location", op:"Is", value:"Mumbai"}],
-    actions:[{behavior:"Set Value", fieldId:"status", value:"In Progress"},{behavior:"Mandate", fieldId:"assignee"},{behavior:"Set Value", fieldId:"priority", value:"Urgent"},{behavior:"Mandate", fieldId:"description"}],
-    blocks:[
-      { match:"all", time:"While the form is being filled", people:"Technicians only",
-        conditions:[
-          {fieldId:"priority", op:"Is", value:"Urgent"},
-          {fieldId:"status", op:"Is", value:"Open"},
-          {group:true, match:"all", conditions:[{fieldId:"impact", op:"Is", value:"High"},{fieldId:"urgency", op:"Is", value:"High"}]},
-          {group:true, match:"all", conditions:[{fieldId:"category", op:"Is", value:"Network"},{fieldId:"location", op:"Is", value:"Mumbai"}]},
-        ],
-        actions:[
-          {behavior:"Set Value", fieldId:"status", value:"In Progress"},
-          {behavior:"Mandate", fieldIds:["assignee"], fieldId:"assignee"},
-          {behavior:"Set Value", fieldId:"priority", value:"Urgent"},
-          {behavior:"Mandate", fieldIds:["description","subject"], fieldId:"description"},
-        ] },
-    ] },
-  // Demo scenario S5 — "R20 - Request Routing Demo": 2 condition groups (OR), 4 block-level actions. Reverse
-  // behavior ON. Real conflicts: Show CC Email + Description (reverse vs IT Communication Policy), Hide Category
-  // (vs HR Category Policy mandatory), Mandate Attachment (vs IT Attachment Policy hide). Action 4 (Set Priority) clean.
-  { id:"r20", name:"R20 - Request Routing Demo", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:0, recommended:false,
-    conditions:[{fieldId:"department", op:"Is", value:"HR"},{fieldId:"location", op:"Is", value:"India"},{fieldId:"department", op:"Is", value:"IT"},{fieldId:"impact", op:"Is", value:"High"}],
-    actions:[{behavior:"Show", fieldId:"cc_emails"},{behavior:"Hide", fieldId:"category"},{behavior:"Mandate", fieldId:"attachment"},{behavior:"Set Value", fieldId:"priority", value:"High"}],
-    blocks:[
-      { match:"any", advanced:true, time:"While the form is being filled", people:"Everyone",
-        conditions:[
-          {group:true, match:"all", conditions:[{fieldId:"department", op:"Is", value:"HR"},{fieldId:"location", op:"Is", value:"India"}]},
-          {group:true, match:"all", conditions:[{fieldId:"department", op:"Is", value:"IT"},{fieldId:"impact", op:"Is", value:"High"}]},
-        ],
-        actions:[
-          {behavior:"Show", fieldIds:["cc_emails","description"], fieldId:"cc_emails"},
-          {behavior:"Hide", fieldIds:["category"], fieldId:"category"},
-          {behavior:"Mandate", fieldIds:["attachment"], fieldId:"attachment"},
-          {behavior:"Set Value", fieldId:"priority", value:"High"},
-        ] },
-    ] },
-  // Same conflict logic as R20 (maps to DEMO_S5), but its Review Conflict drawer opens in the SIMPLIFIED
-  // field-focused mode (no Current Rule / summary / compare; adds an Edit button per conflicting rule).
-  { id:"r21", name:"R21 - Request Routing Demo 2", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:0, recommended:false,
-    conditions:[{fieldId:"department", op:"Is", value:"HR"},{fieldId:"location", op:"Is", value:"India"},{fieldId:"department", op:"Is", value:"IT"},{fieldId:"impact", op:"Is", value:"High"}],
-    actions:[{behavior:"Show", fieldId:"cc_emails"},{behavior:"Hide", fieldId:"category"},{behavior:"Mandate", fieldId:"attachment"},{behavior:"Set Value", fieldId:"priority", value:"High"}],
-    blocks:[
-      { match:"any", advanced:true, time:"While the form is being filled", people:"Everyone",
-        conditions:[
-          {group:true, match:"all", conditions:[{fieldId:"department", op:"Is", value:"HR"},{fieldId:"location", op:"Is", value:"India"}]},
-          {group:true, match:"all", conditions:[{fieldId:"department", op:"Is", value:"IT"},{fieldId:"impact", op:"Is", value:"High"}]},
-        ],
-        actions:[
-          {behavior:"Show", fieldIds:["cc_emails","description"], fieldId:"cc_emails"},
-          {behavior:"Hide", fieldIds:["category"], fieldId:"category"},
-          {behavior:"Mandate", fieldIds:["attachment"], fieldId:"attachment"},
-          {behavior:"Set Value", fieldId:"priority", value:"High"},
-        ] },
-    ] },
-  // R22 — a DIFFERENT drawer design: field list (left) → conflicting rules (right) → expand a rule to its
-  // blocks → expand a block to see what the current rule vs that block does to the field. Maps to DEMO_S7.
-  { id:"r22", name:"R22 - Conflict Matrix Demo", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:0, recommended:false,
-    conditions:[{fieldId:"priority", op:"Is", value:"High"}],
-    actions:[{behavior:"Set Value", fieldId:"status", value:"In Progress"},{behavior:"Hide", fieldId:"category"},{behavior:"Mandate", fieldId:"assignee"}],
-    blocks:[
-      { match:"all", time:"While the form is being filled", people:"Everyone",
-        conditions:[{fieldId:"priority", op:"Is", value:"High"}],
-        actions:[
-          {behavior:"Set Value", fieldId:"status", value:"In Progress"},
-          {behavior:"Hide", fieldIds:["category"], fieldId:"category"},
-          {behavior:"Mandate", fieldIds:["assignee"], fieldId:"assignee"},
-        ] },
-    ] },
-  // R23 — INVERSE of R22: conflicting rules on the LEFT; selecting one shows its affected fields (as titles)
-  // and the blocks touching each on the RIGHT. A search + field-filter toolbar narrows both sides. Maps to DEMO_S8.
-  { id:"r23", name:"R23 - Rule Conflict Matrix", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:0, recommended:false,
-    conditions:[{fieldId:"priority", op:"Is", value:"High"}],
-    actions:[{behavior:"Set Value", fieldId:"status", value:"In Progress"},{behavior:"Hide", fieldId:"category"},{behavior:"Mandate", fieldId:"assignee"},{behavior:"Set Value", fieldId:"impact", value:"High"},{behavior:"Mandate", fieldId:"tags"},{behavior:"Hide", fieldId:"fill_template"},{behavior:"Disable", fieldId:"transition_model"}],
-    blocks:[
-      { match:"all", time:"While the form is being filled", people:"Everyone",
-        conditions:[{fieldId:"priority", op:"Is", value:"High"}],
-        actions:[
-          {behavior:"Set Value", fieldId:"status", value:"In Progress"},
-          {behavior:"Hide", fieldIds:["category"], fieldId:"category"},
-          {behavior:"Mandate", fieldIds:["assignee"], fieldId:"assignee"},
-          {behavior:"Set Value", fieldId:"impact", value:"High"},
-          // Three fields no other rule touches — they give Run Test's preview its CLEAN states
-          // (mandatory / hidden / read-only with no conflict), so the test doesn't read as "everything is broken".
-          {behavior:"Mandate", fieldIds:["tags"], fieldId:"tags"},
-          {behavior:"Hide", fieldIds:["fill_template"], fieldId:"fill_template"},
-          {behavior:"Disable", fieldIds:["transition_model"], fieldId:"transition_model"},
-        ] },
-    ] },
-  // R24 — six clashing fields covering every outcome we discussed: opposing actions, composite conflicts
-  // (Hide+Mandate, Disable+Mandate), Set/Clear, same-value & same-action DUPLICATES, an independent pair that
-  // drops to nothing, and the execution-scope case (this rule Hides Category on Create+Edit while another Shows
-  // it on Create — different actions, overlapping windows → conflict). exec = On Create and Edit.
-  { id:"r24", name:"R24 - Complex Combinations", status:"Active", when:"When the form is submitted", audience:"Everyone", usedInForms:0, recommended:false, exec:"On Create and Edit",
-    conditions:[{fieldId:"priority", op:"Is", value:"High"}],
-    actions:[{behavior:"Hide", fieldId:"category"},{behavior:"Mandate", fieldId:"status"},{behavior:"Mandate", fieldId:"assignee"},{behavior:"Hide", fieldId:"impact"},{behavior:"Set Value", fieldId:"department", value:"IT"}],
-    blocks:[
-      { match:"all", time:"When the form is submitted", people:"Everyone", exec:"On Create and Edit",
-        conditions:[{fieldId:"priority", op:"Is", value:"High"}],
-        actions:[
-          {behavior:"Hide", fieldIds:["category"], fieldId:"category"},
-          {behavior:"Mandate", fieldIds:["status"], fieldId:"status"},
-          {behavior:"Mandate", fieldIds:["assignee"], fieldId:"assignee"},
-          {behavior:"Hide", fieldIds:["impact"], fieldId:"impact"},
-          {behavior:"Set Value", fieldId:"department", value:"IT"},
-        ] },
-    ] },
-  // R25 — same clashing data as R24, but the drawer is entered via TWO buttons: View conflicts (both views,
-  // conflicts only) and View duplicates (Rule view only, duplicates only). See DEMO_S10 (dualEntry).
-  { id:"r25", name:"R25 - Conflict & Similar Split", status:"Active", when:"When the form is submitted", audience:"Everyone", usedInForms:0, recommended:false, exec:"On Create and Edit",
-    conditions:[{fieldId:"priority", op:"Is", value:"High"}],
-    actions:[{behavior:"Hide", fieldId:"category"},{behavior:"Mandate", fieldId:"status"},{behavior:"Mandate", fieldId:"assignee"},{behavior:"Hide", fieldId:"impact"},{behavior:"Set Value", fieldId:"department", value:"IT"}],
-    blocks:[
-      { match:"all", time:"When the form is submitted", people:"Everyone", exec:"On Create and Edit",
-        conditions:[{fieldId:"priority", op:"Is", value:"High"}],
-        actions:[
-          {behavior:"Hide", fieldIds:["category"], fieldId:"category"},
-          {behavior:"Mandate", fieldIds:["status"], fieldId:"status"},
-          {behavior:"Mandate", fieldIds:["assignee"], fieldId:"assignee"},
-          {behavior:"Hide", fieldIds:["impact"], fieldId:"impact"},
-          {behavior:"Set Value", fieldId:"department", value:"IT"},
-        ] },
-    ] },
-  // R26 — "Add to existing rule". A rule being CREATED: trigger set, condition field/operator ready but the VALUE
-  // still blank, no actions. The moment the user picks the condition value (e.g. Priority In High), the editor
-  // nudges that existing rules already run on it → click opens a side drawer of those rules + their actions, so
-  // they can add to one instead of making a near-duplicate. Not a conflict/similar-rule demo (no drawer fixture).
-  { id:"r26", name:"R26 - Add to Existing Rule", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:0, recommended:false, exec:"On Create and Edit",
-    conditions:[{fieldId:"priority", op:"Is", value:""}],
-    actions:[],
-    blocks:[
-      { match:"all", time:"While the form is being filled", people:"Everyone", exec:"On Create and Edit",
-        conditions:[{fieldId:"priority", op:"Is", value:""}],
-        actions:[] },
-    ] },
-  // Use case 7 — one rule, three blocks, each firing on ANY of its 2-3 condition groups (each group = two ANDed
-  // conditions). All fields/values/operators are real. Audience is common (Everyone); blocks carry their own trigger.
-  { id:"r27", name:"Risk-based escalation (Use case 7)", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:0, recommended:false, exec:"On Create and Edit",
-    conditions:[], actions:[],
-    blocks:[
-      // Block 1 — Major-incident signals (any of three groups)
-      { match:"any", time:"While the form is being filled", exec:"On Create and Edit", people:"Everyone",
-        conditions:[
-          { group:true, match:"all", conditions:[{fieldId:"impact", op:"Is", value:"High"},{fieldId:"priority", op:"Is", value:"High"}] },
-          { group:true, match:"all", conditions:[{fieldId:"priority", op:"Is", value:"Urgent"},{fieldId:"subject", op:"Contains", value:"outage"}] },
-          { group:true, match:"all", conditions:[{fieldId:"impact", op:"Is", value:"High"},{fieldId:"status", op:"Is", value:"Reopened"}] },
-        ],
-        actions:[
-          {behavior:"Set Value", fieldId:"priority", fieldIds:["priority"], value:"Urgent"},
-          {behavior:"Show",   fieldId:"assignee", fieldIds:["assignee"]},
-          {behavior:"Mandate", fieldId:"assignee", fieldIds:["assignee"]},
-          {behavior:"Set Value", fieldId:"tags", fieldIds:["tags"], value:"Escalated"},
-        ] },
-      // Block 2 — Security-sensitive signals (any of two groups)
-      { match:"any", time:"While the form is being filled", exec:"On Create and Edit", people:"Everyone",
-        conditions:[
-          { group:true, match:"all", conditions:[{fieldId:"tags", op:"Is", value:"Security"},{fieldId:"impact", op:"Is", value:"High"}] },
-          { group:true, match:"all", conditions:[{fieldId:"category", op:"Is", value:"Access"},{fieldId:"priority", op:"Is", value:"High"}] },
-        ],
-        actions:[
-          {behavior:"Show",   fieldId:"cc_emails", fieldIds:["cc_emails"]},
-          {behavior:"Mandate", fieldId:"cc_emails", fieldIds:["cc_emails"]},
-          {behavior:"Mandate", fieldId:"description", fieldIds:["description"]},
-          {behavior:"Show",   fieldId:"attachment", fieldIds:["attachment"]},
-          {behavior:"Mandate", fieldId:"attachment", fieldIds:["attachment"]},
-        ] },
-      // Block 3 — VIP / business-critical signals (any of three groups)
-      { match:"any", time:"While the form is being filled", exec:"On Create and Edit", people:"Everyone",
-        conditions:[
-          { group:true, match:"all", conditions:[{fieldId:"tags", op:"Is", value:"VIP"},{fieldId:"priority", op:"Is", value:"High"}] },
-          { group:true, match:"all", conditions:[{fieldId:"department", op:"Is", value:"Finance"},{fieldId:"impact", op:"Is", value:"High"}] },
-          { group:true, match:"all", conditions:[{fieldId:"tags", op:"Is", value:"VIP"},{fieldId:"urgency", op:"Is", value:"High"}] },
-        ],
-        actions:[
-          {behavior:"Show",   fieldId:"assignee", fieldIds:["assignee"]},
-          {behavior:"Mandate", fieldId:"assignee", fieldIds:["assignee"]},
-          {behavior:"Show",   fieldId:"cc_emails", fieldIds:["cc_emails"]},
-          {behavior:"Mandate", fieldId:"cc_emails", fieldIds:["cc_emails"]},
-          {behavior:"Set Value", fieldId:"assignee", fieldIds:["assignee"], value:"Priya"},
-        ] },
-    ] },
-  // R27 — the block-tab navigator demo. Starts with NO blocks so the editor opens on the empty state; the first
-  // "Add block" loads R27_DEMO_BLOCKS (10 blocks) in one go, so tab navigation is judged at realistic scale.
-  { id:"r28", name:"R27 - Block Tabs Demo", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:0, recommended:false, exec:"On Create and Edit",
-    conditions:[], actions:[], blocks:[] },
-  // R28 — identical rule and identical demo blocks; the ONLY difference is the navigator above the block
-  // (windowed tabs + a "Block X of Y" jump control instead of one long overflow strip).
-  { id:"r29", name:"R28 - Block Navigator Demo", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:0, recommended:false, exec:"On Create and Edit",
-    conditions:[], actions:[], blocks:[] },
+  // ---- The last five rules are the conflicting set. -------------------------------------------------
+  // Conflicts are SYMMETRIC: if one of these clashed with an early rule, that early rule would light up
+  // too and the list would show more than five. So they clash only with EACH OTHER, on fields the first
+  // ten never touch (Cc Emails / Attachment / Tags / Technician Group). That makes "the last five have
+  // conflicts" literally true, not just a display filter. Between them they cover every kind the drawer
+  // reads: opposing actions (conflicts) and repeated ones (similar).
+  { id:"r11", name:"Simplified intake for requesters", status:"Active", when:"When the form opens", audience:"Requesters only", usedInForms:2, recommended:false, exec:"On Create",
+    conditions:[], actions:[{behavior:"Hide", fieldId:"cc_emails"},{behavior:"Non-Mandate", fieldId:"attachment"}] },
+  { id:"r12", name:"Loop in stakeholders for major incidents", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:4, recommended:false, exec:"On Create and Edit",
+    conditions:[{fieldId:"impact", op:"Is", value:"High"}], actions:[{behavior:"Show", fieldId:"cc_emails"}] },
+  { id:"r13", name:"Require evidence for hardware issues", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:3, recommended:false, exec:"On Create and Edit",
+    conditions:[{fieldId:"category", op:"Is", value:"Hardware"}], actions:[{behavior:"Mandate", fieldId:"attachment"}] },
+  { id:"r14", name:"Route network issues to the network team", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:5, recommended:false, exec:"On Create and Edit",
+    conditions:[{fieldId:"category", op:"Is", value:"Network"}], actions:[{behavior:"Set Value", fieldId:"tech_group", value:"Network"},{behavior:"Set Value", fieldId:"tags", value:"Escalated"}] },
+  { id:"r15", name:"Tag and escalate VIP requests", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:2, recommended:false, exec:"On Create and Edit",
+    conditions:[{fieldId:"impact", op:"Is", value:"High"}], actions:[{behavior:"Set Value", fieldId:"tags", value:"VIP"},{behavior:"Mandate", fieldId:"cc_emails"}] },
+  // ---- V0.1 onboarding demo -------------------------------------------------------------------------
+  // The FIRST branch of the onboarding policy, saved as an ordinary rule — exactly what an admin would
+  // have built before anyone mentioned blocks. Building the HR branch next is what triggers the block
+  // recommendation, and because this rule is read back from the persisted inventory the suggestion
+  // survives a refresh without any UI memory.
+  { id:"r16", name:"Onboarding form — IT", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:6, recommended:false, exec:"On Create and Edit",
+    description:"How the onboarding form behaves for IT requests.",
+    conditions:[{fieldId:"department", op:"Is", value:"IT"}],
+    actions:[{behavior:"Show", fieldId:"tech_group", fieldIds:["tech_group"]},
+             {behavior:"Show", fieldId:"vendor", fieldIds:["vendor"]},
+             {behavior:"Show", fieldId:"location", fieldIds:["location"]},
+             {behavior:"Mandate", fieldId:"assignee", fieldIds:["assignee"]}] },
 ];
-// The 10 demo blocks R27 loads on its first "Add block" — mixed complexity (standard / actions-only / multi-group)
-// so horizontal scrolling, hover previews and the status dots can all be exercised immediately.
-// Every action set uses DISTINCT single-use behaviours per block (Show/Hide/Mandate/… may appear only once).
-const R27_DEMO_BLOCKS = [
-      // 1 — standard: major-incident triage
-      { match:"all", time:"While the form is being filled", exec:"On Create and Edit", people:"Everyone",
-        conditions:[{fieldId:"impact", op:"Is", value:"High"},{fieldId:"priority", op:"Is", value:"High"}],
-        actions:[
-          {behavior:"Set Value", fieldId:"priority", fieldIds:["priority"], value:"Urgent"},
-          {behavior:"Show",    fieldId:"assignee",  fieldIds:["assignee","cc_emails"]},
-          {behavior:"Mandate", fieldId:"assignee",  fieldIds:["assignee","cc_emails"]},
-          {behavior:"Set Value", fieldId:"tags", fieldIds:["tags"], value:"Escalated"},
-        ] },
-      // 2 — actions only: baseline intake defaults
-      { match:"all", time:"When the form opens", exec:"On Create", people:"Everyone",
-        conditions:[],
-        actions:[
-          {behavior:"Show",    fieldId:"subject", fieldIds:["subject","description","category"]},
-          {behavior:"Mandate", fieldId:"subject", fieldIds:["subject","description"]},
-          {behavior:"Set Value", fieldId:"status", fieldIds:["status"], value:"Open"},
-          {behavior:"Set Value", fieldId:"priority", fieldIds:["priority"], value:"Medium"},
-          {behavior:"Hide",    fieldId:"vendor",  fieldIds:["vendor"]},
-        ] },
-      // 3 — standard: hardware requests
-      { match:"all", time:"While the form is being filled", exec:"On Create and Edit", people:"Everyone",
-        conditions:[{fieldId:"category", op:"Is", value:"Hardware"},{fieldId:"location", op:"Is Not Empty"}],
-        actions:[
-          {behavior:"Show",    fieldId:"vendor", fieldIds:["vendor","tech_group","attachment"]},
-          {behavior:"Mandate", fieldId:"vendor", fieldIds:["vendor","location"]},
-          {behavior:"Set Value", fieldId:"tech_group", fieldIds:["tech_group"], value:"Hardware"},
-          {behavior:"Set Value", fieldId:"tags", fieldIds:["tags"], value:"Hardware"},
-        ] },
-      // 4 — actions only: requester portal simplification
-      { match:"all", time:"When the form opens", exec:"On Create and Edit", people:"Everyone",
-        conditions:[],
-        actions:[
-          {behavior:"Hide",    fieldId:"tech_group", fieldIds:["tech_group","assignee","vendor"]},
-          {behavior:"Mandate", fieldId:"subject",    fieldIds:["subject","description"]},
-          {behavior:"Non-Mandate", fieldId:"category", fieldIds:["category"]},
-          {behavior:"Set Value", fieldId:"impact", fieldIds:["impact"], value:"Low"},
-          {behavior:"Set Value", fieldId:"status", fieldIds:["status"], value:"Open"},
-        ] },
-      // 5 — multi-group: any of three major-incident shapes
-      { match:"any", time:"While the form is being filled", exec:"On Create and Edit", people:"Everyone",
-        conditions:[
-          {group:true, match:"all", conditions:[{fieldId:"impact", op:"Is", value:"High"},{fieldId:"priority", op:"Is", value:"High"}]},
-          {group:true, match:"all", conditions:[{fieldId:"priority", op:"Is", value:"Urgent"},{fieldId:"subject", op:"Contains", value:"outage"}]},
-          {group:true, match:"all", conditions:[{fieldId:"status", op:"Is", value:"Reopened"},{fieldId:"impact", op:"Is", value:"High"}]},
-        ],
-        actions:[
-          {behavior:"Set Value", fieldId:"priority", fieldIds:["priority"], value:"Urgent"},
-          {behavior:"Show",    fieldId:"cc_emails", fieldIds:["cc_emails","assignee"]},
-          {behavior:"Mandate", fieldId:"cc_emails", fieldIds:["cc_emails","assignee"]},
-          {behavior:"Set Value", fieldId:"tags", fieldIds:["tags"], value:"Escalated"},
-        ] },
-      // 6 — standard: finance approvals
-      { match:"all", time:"While the form is being filled", exec:"On Create and Edit", people:"Everyone",
-        conditions:[{fieldId:"department", op:"Is", value:"Finance"},{fieldId:"impact", op:"Is", value:"High"}],
-        actions:[
-          {behavior:"Show",    fieldId:"cc_emails", fieldIds:["cc_emails","attachment"]},
-          {behavior:"Mandate", fieldId:"cc_emails", fieldIds:["cc_emails","attachment"]},
-          {behavior:"Set Value", fieldId:"assignee", fieldIds:["assignee"], value:"Priya"},
-          {behavior:"Set Value", fieldId:"tags", fieldIds:["tags"], value:"Escalated"},
-        ] },
-      // 7 — multi-group: security-sensitive requests
-      { match:"any", time:"While the form is being filled", exec:"On Create and Edit", people:"Everyone",
-        conditions:[
-          {group:true, match:"all", conditions:[{fieldId:"category", op:"Is", value:"Access"},{fieldId:"priority", op:"Is", value:"High"}]},
-          {group:true, match:"all", conditions:[{fieldId:"tags", op:"Is", value:"Security"},{fieldId:"impact", op:"Is", value:"High"}]},
-          {group:true, match:"all", conditions:[{fieldId:"department", op:"Is", value:"IT"},{fieldId:"urgency", op:"Is", value:"High"}]},
-        ],
-        actions:[
-          {behavior:"Show",    fieldId:"cc_emails", fieldIds:["cc_emails","attachment"]},
-          {behavior:"Mandate", fieldId:"cc_emails", fieldIds:["cc_emails","description"]},
-          {behavior:"Disable", fieldId:"category",  fieldIds:["category"]},
-          {behavior:"Set Value", fieldId:"tags", fieldIds:["tags"], value:"Security"},
-        ] },
-      // 8 — standard: resolution capture
-      { match:"all", time:"While the form is being filled", exec:"On Edit", people:"Everyone",
-        conditions:[{fieldId:"status", op:"Is", value:"Resolved"},{fieldId:"assignee", op:"Is Not Empty"}],
-        actions:[
-          {behavior:"Show",    fieldId:"attachment",  fieldIds:["attachment","cc_emails"]},
-          {behavior:"Mandate", fieldId:"description", fieldIds:["description","attachment"]},
-          {behavior:"Disable", fieldId:"category",    fieldIds:["category","priority"]},
-          {behavior:"Set Value", fieldId:"tags", fieldIds:["tags"], value:"Escalated"},
-        ] },
-      // 9 — standard: VIP handling
-      { match:"all", time:"While the form is being filled", exec:"On Create and Edit", people:"Everyone",
-        conditions:[{fieldId:"tags", op:"Is", value:"VIP"},{fieldId:"priority", op:"Is", value:"High"}],
-        actions:[
-          {behavior:"Show",    fieldId:"assignee", fieldIds:["assignee","cc_emails"]},
-          {behavior:"Mandate", fieldId:"assignee", fieldIds:["assignee","cc_emails"]},
-          {behavior:"Set Value", fieldId:"assignee", fieldIds:["assignee"], value:"Priya"},
-          {behavior:"Set Value", fieldId:"priority", fieldIds:["priority"], value:"Urgent"},
-        ] },
-      // 10 — standard: network outage routing
-      { match:"all", time:"When the form is submitted", exec:"On Create and Edit", people:"Everyone",
-        conditions:[{fieldId:"category", op:"Is", value:"Network"},{fieldId:"urgency", op:"Is", value:"High"}],
-        actions:[
-          {behavior:"Show",    fieldId:"tech_group",  fieldIds:["tech_group","cc_emails"]},
-          {behavior:"Mandate", fieldId:"tech_group",  fieldIds:["tech_group","description"]},
-          {behavior:"Set Value", fieldId:"tech_group", fieldIds:["tech_group"], value:"Network"},
-          {behavior:"Set Value", fieldId:"tags", fieldIds:["tags"], value:"Escalated"},
-        ] },
-];
-
 const cap = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 const condPhrase = c => {
   const f = labelOf(c.fieldId);
@@ -967,7 +647,7 @@ function Tab({active, icon, label, badge, onClick}){
     </button>
   );
 }
-function TabsRow({tab, onBuilder, onRules, onExec, total, onCreateForm, onCreateCustom}){
+function TabsRow({tab, onBuilder, onRules, total, onCreateForm, onCreateCustom}){
   const [saved, setSaved] = useState(false);
   useEffect(()=>{ if(!saved) return; const t=setTimeout(()=>setSaved(false), 1600); return ()=>clearTimeout(t); }, [saved]);
   return (
@@ -975,8 +655,6 @@ function TabsRow({tab, onBuilder, onRules, onExec, total, onCreateForm, onCreate
       <div className="flex items-end">
         <Tab active={tab==="rules"}   icon="sliders" label="Form Rules"   badge={total} onClick={onRules}/>
         <Tab active={tab==="builder"} icon="layout"  label="Form Builder" onClick={onBuilder}/>
-        {/* Execution Order — the one place cross-rule block precedence is managed. */}
-        <Tab active={tab==="exec"}    icon="branch"  label="Execution Order" onClick={onExec}/>
       </div>
       {tab==="builder" &&
         <div className="flex items-center gap-2 pr-2">
@@ -1362,7 +1040,7 @@ RULE_DB.forEach((r,i)=>{ if(!r.exec) r.exec = RULE_EXEC[i % RULE_EXEC.length]; i
 // Bumped to v3: r23 gained its three clean actions, and merge-by-id below lets a STORED r23 win over the
 // seed — so without this bump any browser that had already saved would keep the old 5-action r23 while the
 // Run Test preview (which resolves by rule name) still claimed effects on tags/fill_template/transition_model.
-const RULE_STORE_KEY = "v10_form_rules_v4";
+const RULE_STORE_KEY = "v01_form_rules_v1";
 function saveStoredRules(){ try { localStorage.setItem(RULE_STORE_KEY, JSON.stringify(RULE_DB)); } catch(_){} }
 (function hydrateRules(){
   try {
@@ -1375,88 +1053,6 @@ function saveStoredRules(){ try { localStorage.setItem(RULE_STORE_KEY, JSON.stri
     } }
   } catch(_){}
 })();
-// ---- Execution order: the global, cross-rule BLOCK sequence ---------------------------------------
-// Precedence used to be a rule-level idea ("the last rule wins"). With blocks, the real unit of
-// execution is the block, and a useful order can interleave blocks from different rules. So the order
-// is stored separately from the rules themselves: an ordered list of "ruleId#blockIndex" keys. Keeping
-// it out of the rule objects means authoring a rule never silently reshuffles the runtime sequence.
-const EXEC_ORDER_KEY = "v10_exec_order_v1";
-let EXEC_ORDER = [];
-(function hydrateExecOrder(){
-  try { const raw = localStorage.getItem(EXEC_ORDER_KEY);
-    if(raw){ const a = JSON.parse(raw); if(Array.isArray(a)) EXEC_ORDER = a.filter(x=> typeof x==="string"); }
-  } catch(_){}
-})();
-function saveExecOrder(){ try { localStorage.setItem(EXEC_ORDER_KEY, JSON.stringify(EXEC_ORDER)); } catch(_){} }
-const execKey = (ruleId, bi) => ruleId + "#" + bi;
-// A rule saved before the block model still describes exactly one block — represent it as one, so every
-// rule is present in the sequence rather than silently missing.
-function execBlocksOf(r){
-  if(r.blocks && r.blocks.length) return r.blocks;
-  return [{ match:"all", time:r.when, exec:r.exec, people:r.audience,
-            conditions:(r.conditions||[]), actions:(r.actions||[]) }];
-}
-// Authoring order — the sequence blocks would run in with no manual ordering applied.
-function execNatural(){
-  const out = [];
-  RULE_DB.forEach((r, ri)=>{
-    execBlocksOf(r).forEach((b, bi)=>{
-      out.push({ key: execKey(r.id, bi), ruleId:r.id, ruleName:r.name, ruleNo: ri+1,
-                 blockNo: bi+1, block:b, disabled: !!r.disabled });
-    });
-  });
-  return out;
-}
-// The live sequence. Reconciled against the inventory on every read, so a block added or removed in the
-// rule editor can never leave a stale or missing entry: known keys hold their saved position, and blocks
-// the order has never seen fall in at the end in authoring order.
-function execList(){
-  const units = execNatural();
-  const pos = {}; EXEC_ORDER.forEach((k,i)=> { pos[k] = i; });
-  const known = units.filter(u=> pos[u.key]!=null).sort((a,b)=> pos[a.key] - pos[b.key]);
-  const fresh = units.filter(u=> pos[u.key]==null);
-  return known.concat(fresh);
-}
-function setExecOrder(keys){ EXEC_ORDER = keys.slice(); saveExecOrder(); }
-function resetExecOrder(){ EXEC_ORDER = []; saveExecOrder(); }
-const execIsCustomOrder = () => EXEC_ORDER.length > 0;
-// Actions a block performs, flattened to {behavior, value, fieldId} per target field.
-function execActs(block){
-  const out = [];
-  (block.actions||[]).forEach(a=>{
-    if(!a || !a.behavior) return;
-    const ids = (a.fieldIds && a.fieldIds.length) ? a.fieldIds : (a.fieldId ? [a.fieldId] : []);
-    ids.filter(Boolean).forEach(fid=> out.push({behavior:a.behavior, value:a.value, fieldId:fid}));
-  });
-  return out;
-}
-const execCondCount = block => (block.conditions||[])
-  .reduce((n,it)=> n + (it && it.group ? (it.conditions||[]).filter(c=>c && c.fieldId).length : ((it && it.fieldId) ? 1 : 0)), 0);
-const execActCount = block => (block.actions||[]).filter(a=> a && a.behavior).length;
-// What the order actually DOES. Walking the sequence top to bottom, when two blocks touch the same field
-// in a way that clashes, the LOWER one wins — that is the existing "last one wins" model, just expressed
-// per block. Recomputed from the live list, so dragging a row changes these immediately.
-function execOverrides(list){
-  const out = list.map(()=> null);
-  const seen = {};   // fieldId -> [{i, behavior, value}]
-  list.forEach((u,i)=>{
-    if(u.disabled) return;
-    execActs(u.block).forEach(a=>{
-      const prior = seen[a.fieldId] || [];
-      prior.forEach(p=>{
-        const v = pairVerdict(p.behavior, a.behavior, p.value, a.value);
-        if(v==="conflict" || v==="duplicate"){
-          if(!out[p.i]) out[p.i] = { by:i, fields:[] };
-          out[p.i].by = i;                                  // last writer wins
-          if(out[p.i].fields.indexOf(a.fieldId)<0) out[p.i].fields.push(a.fieldId);
-        }
-      });
-      prior.push({i, behavior:a.behavior, value:a.value});
-      seen[a.fieldId] = prior;
-    });
-  });
-  return out;
-}
 // --- Listing conflict model: a rule's actions/conditions vs every other saved rule. -----------------
 // Two ways rules collide: (1) both act on the same field (contradict / duplicate / both change it), and
 // (2) one rule hides/disables/clears a field another rule relies on in its conditions.
@@ -1635,11 +1231,10 @@ function RulesListing({customSel, onEditRule, onCustom, onToast}){
                 {rows.map((row, idx)=>{
                   const k = keyOf(row);
                   const conflicts = conflictsFor(row.rule);
-                  // Conflict tag is a demo cue only: hide it on the first 10 rules and on any user-created rule
-                  // (new rules get ids r101+ via makeRuleId). Later seeded demo rules keep their tag.
-                  const _idm = row.rule && /^r(\d+)$/.exec(row.rule.id||"");
-                  const isNewRule = !!(_idm && parseInt(_idm[1],10) > 100);
-                  const showConflictTag = idx >= 10 && !isNewRule && conflicts.length>0;
+                  // No display gate in V0 — the tag shows wherever a rule genuinely conflicts. The seeds are
+                  // authored so only the last five do (conflicts are symmetric, so they clash with each
+                  // other rather than with the first ten, which would have lit those up as well).
+                  const showConflictTag = conflicts.length>0;
                   return (
                     <React.Fragment key={k}>
                     <div
@@ -2674,16 +2269,6 @@ function V9Block({block, index, total, onChange, onDuplicate, onRemove, fieldOpt
   const Divider = () => <div className="border-t border-slate-200"/>;
   return (
     <div className="rounded-xl border border-slate-200 bg-white">
-      {/* block header */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-100">
-        <span className="w-6 h-6 rounded-md bg-slate-100 text-slate-500 text-[12px] font-semibold grid place-items-center shrink-0">{index+1}</span>
-        <div className="flex-1 min-w-0">
-          <div className="text-[13.5px] font-semibold text-slate-800">Rule block</div>
-        </div>
-        <button onClick={onDuplicate} className="text-slate-300 hover:text-slate-600 p-1.5 rounded-md hover:bg-slate-50" title="Duplicate block"><Ico name="copy" size={15}/></button>
-        {total>1 && <button onClick={onRemove} className="text-slate-300 hover:text-rose-500 p-1.5 rounded-md hover:bg-slate-50" title="Remove block"><Ico name="x" size={15}/></button>}
-        <button onClick={onToggle} className="text-slate-300 hover:text-slate-600 p-1.5 rounded-md hover:bg-slate-50" title="Collapse"><Ico name="chevdown" size={15} cls={collapsed?"-rotate-90":""}/></button>
-      </div>
       {!collapsed &&
         <div className="px-5 py-5 space-y-6">
           {/* WHEN — shown first; nothing else until both fields are set */}
@@ -2803,7 +2388,6 @@ function RuleEditor({fieldId, dir, baseRule, onClose, onSaved, attach=true}){
   }, [baseRule, dir, fieldId, attach]);
   const [draft, setDraft] = useState(init);
   const [saved, setSaved] = useState(false);
-  const [expandedIdx, setExpandedIdx] = useState(0);   // single block expanded at a time (adding one collapses the rest)
   const fieldOpts = ALL_FIELDS.map(f=>({value:f.id, label:f.label}));
   const patch = p => setDraft(d=>({...d, ...p}));
   // Optional metadata (matches the Form Rules editor): description (revealed by a link) + tag chips.
@@ -2814,9 +2398,6 @@ function RuleEditor({fieldId, dir, baseRule, onClose, onSaved, attach=true}){
   const commitTag = () => { const t=tagDraft.trim(); if(t) setDraft(d=>({...d, tags:[...(d.tags||[]), t]})); setTagDraft(""); setTagEditing(false); };
   const cancelTag = () => { setTagDraft(""); setTagEditing(false); };
   const setBlock = (i,p) => setDraft(d=>({...d, blocks: d.blocks.map((b,j)=> j===i?{...b,...p}:b)}));
-  const dupBlock = i => setDraft(d=>{ const src=d.blocks[i]; const copy={...src, conditions:src.conditions.map(c=>({...c})), actions:src.actions.map(a=>({...a}))}; const blocks=d.blocks.slice(); blocks.splice(i+1,0,copy); return {...d, blocks}; });
-  const rmBlock = i => setDraft(d=>({...d, blocks: d.blocks.filter((_,j)=>j!==i)}));
-  const addBlock = () => setDraft(d=>{ const blocks=[...d.blocks, {match:"all", advanced:false, advOpen:false, time:"", requests:"", people:"", conditions:[{fieldId:"", op:"", value:""}], actions:[{behavior:"", fieldId:"", value:""}]}]; setExpandedIdx(blocks.length-1); return {...d, blocks}; });
   const summary = summarizeRule(draft);
   // Save gates — identical to the Form Rules editor so a Form Builder rule is treated exactly the same: a NAME,
   // an execution TRIGGER, and at least one usable When → Then block. Validation surfaces inline on a save attempt.
@@ -2875,16 +2456,9 @@ function RuleEditor({fieldId, dir, baseRule, onClose, onSaved, attach=true}){
           <textarea value={draft.description} onChange={e=>patch({description:e.target.value})} rows={2} placeholder="What does this rule do?"
             className="w-full rounded-md border border-slate-200 px-3 py-2 text-[13px] outline-none focus:ring-1 focus:ring-sky-200 focus:border-sky-300 resize-y"/>
         </div>}
-      <div className="space-y-3">
-        {draft.blocks.map((b,i)=>
-          <V9Block key={i} block={b} index={i} total={draft.blocks.length} fieldOpts={fieldOpts}
-            expanded={expandedIdx===i} onToggle={()=>setExpandedIdx(expandedIdx===i?null:i)}
-            onChange={p=>setBlock(i,p)} onDuplicate={()=>dupBlock(i)} onRemove={()=>rmBlock(i)}/>)}
-      </div>
-      <button onClick={addBlock}
-        className="mt-3 w-full inline-flex items-center justify-center gap-1.5 h-11 rounded-xl border border-dashed border-slate-300 text-[13.5px] font-medium text-slate-500 hover:border-sky-300 hover:text-[#1180c1] hover:bg-sky-50/40 transition">
-        <Ico name="plus" size={15}/> Add another rule block
-      </button>
+      {/* V0 — one rule, one unit. No block list, no "add another block". */}
+      <V9Block block={draft.blocks[0]} index={0} total={1} fieldOpts={fieldOpts}
+        expanded={true} onToggle={()=>{}} onChange={p=>setBlock(0,p)}/>
       <div className="mt-4 flex items-center justify-end gap-3">
         {!canSave && !saved && <span className="hidden sm:inline text-[11.5px] text-slate-400">Needed to save: <span className="font-medium text-slate-500">{missing.join(" · ")}</span></span>}
         <button onClick={onClose} className="h-9 px-4 rounded-md text-[13px] font-medium text-slate-600 border border-slate-200 bg-white hover:bg-slate-50">Cancel</button>
@@ -3477,6 +3051,9 @@ const V7_BADGE = { when:"bg-sky-50 text-sky-600 ring-sky-100", if:"bg-amber-50 t
 const V7_BAR   = { when:"before:bg-sky-300", if:"before:bg-amber-300", then:"before:bg-emerald-300", review:"before:bg-slate-300" };
 const V7_CARD  = "relative overflow-hidden rounded-xl border border-slate-200 bg-slate-50/50 p-4 pl-5 before:absolute before:left-0 before:top-0 before:h-full before:w-1 before:content-['']";
 // Inline section header — coloured pill badge (When / Check If / Action) + a plain descriptor line.
+// The panel fill is the SAME neutral grey for all three — colour stays on the icon and the step label,
+// where it identifies the step; the fill's only job is to bound the section.
+const STEP_PANEL = "border border-slate-200/45 bg-slate-50/60";
 const STEP_TONE = {
   when: { dot:"bg-sky-100 text-[#1180c1]",       text:"text-[#1180c1]",   icon:"history" },
   if:   { dot:"bg-amber-100 text-amber-600",     text:"text-amber-600",   icon:"branch"  },
@@ -3488,8 +3065,8 @@ const STEP_TONE = {
 function V7Step({tone, tag, title, children}){
   const t = STEP_TONE[tone] || STEP_TONE.when;
   return (
-    <div className="relative pl-8">
-      <span className={"absolute left-0 top-0 grid h-6 w-6 place-items-center rounded-full " + t.dot}><Ico name={t.icon} size={13}/></span>
+    <div className={"relative rounded-xl p-4 pl-12 " + STEP_PANEL}>
+      <span className={"absolute left-4 top-4 grid h-6 w-6 place-items-center rounded-full " + t.dot}><Ico name={t.icon} size={13}/></span>
       <div className="mb-3 flex min-h-[24px] flex-wrap items-center gap-2">
         <span className={"text-[12px] font-bold uppercase tracking-wide " + t.text}>{tag}</span>
         <span className="text-[13px] text-slate-500">{title}</span>
@@ -3583,7 +3160,7 @@ function V7Group({g, n, onChange, onRemove, onDuplicate, conflictFields, onField
     const leaves = (g.conditions||[]).filter(condComplete);
     const preview = leaves.map(condPhrase).join((g.match||"all")==="any" ? " or " : " and ");
     return (
-      <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+      <div className="rounded-xl bg-white px-3 py-2.5">
         <div className="flex items-center gap-2">
           {chev}
           <span className="inline-flex shrink-0 items-center rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">{label}</span>
@@ -3597,7 +3174,7 @@ function V7Group({g, n, onChange, onRemove, onDuplicate, conflictFields, onField
     );
   }
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-3">
+    <div className="rounded-xl bg-white p-3">
       <div className="mb-2.5 flex items-center gap-2">
         {chev}
         <span className="inline-flex items-center rounded-md bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-500">{label}</span>
@@ -3749,111 +3326,6 @@ function duplicateRule(id){
 // Hover tooltip for a rule block's title — PORTALED (escapes the drawer's overflow so it never clips) and
 // pointer-transparent. Structured into sections so complex rules stay scannable: Title · Summary · Triggers
 // (compact line) · Conditions (bulleted, group hierarchy) · Actions (bulleted, nested field targets) · Example.
-function BlockTip({title, summary, started, triggers, condItems, actItems, condMatch, disabled, cls, children}){
-  const [pos, setPos] = useState(null);
-  const ref = useRef(null);
-  // Short close delay so the pointer can travel from the row into the card without it vanishing mid-move.
-  const hideT = useRef(null);
-  const cancelHide = () => { if(hideT.current){ clearTimeout(hideT.current); hideT.current = null; } };
-  const scheduleHide = () => { cancelHide(); hideT.current = setTimeout(()=> setPos(null), 140); };
-  useEffect(()=> cancelHide, []);
-  useEffect(()=>{ if(disabled){ cancelHide(); setPos(null); } }, [disabled]);
-  const show = () => {
-    // Suppressed while the block is expanded — everything the tooltip would say is already on screen.
-    if(disabled || !ref.current) return;
-    const r = ref.current.getBoundingClientRect();
-    const W = 340, GAP = 8, EDGE = 12;
-    let left = r.left - 4; if(left + W > window.innerWidth - 8) left = window.innerWidth - W - 8; if(left < 8) left = 8;
-    // Open on whichever side has MORE room (a fixed height guess used to overflow tall tooltips off-screen),
-    // then cap the height to exactly that space so the content is always reachable by scrolling.
-    const spaceBelow = window.innerHeight - r.bottom - GAP - EDGE;
-    const spaceAbove = r.top - GAP - EDGE;
-    const below = spaceBelow >= spaceAbove;
-    setPos({ left, W, maxH: Math.max(180, Math.floor(below ? spaceBelow : spaceAbove)),
-      top: below ? r.bottom + GAP : null, bottom: below ? null : (window.innerHeight - r.top + GAP) });
-  };
-  const Section = ({label, children}) => (
-    <div className="mt-2 border-t border-slate-100 pt-2">
-      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{label}</div>
-      <div className="mt-1">{children}</div>
-    </div>
-  );
-  const Bullet = ({tone="slate", children}) => (
-    <li className="flex gap-1.5 text-[12px] leading-snug text-slate-700">
-      <span className={"mt-[7px] h-1 w-1 shrink-0 rounded-full " + (tone==="sky"?"bg-sky-400":"bg-slate-300")}/><span className="min-w-0">{children}</span>
-    </li>
-  );
-  return (
-    <span ref={ref} onMouseEnter={()=>{ cancelHide(); show(); }} onMouseLeave={scheduleHide} className={"block min-w-0 " + (cls||"")}>
-      {children}
-      {pos && ReactDOM.createPortal(
-        // Interactive + scrollable: a long rule (many groups/actions) would otherwise be clipped with no way to
-        // reach the rest. Hovering the card keeps it open; leaving either the row or the card closes it.
-        <div onMouseEnter={cancelHide} onMouseLeave={scheduleHide}
-          style={{left:pos.left, width:pos.W, maxHeight:pos.maxH, ...(pos.top!=null?{top:pos.top}:{bottom:pos.bottom})}}
-          className="fixed z-[60] overflow-y-auto overscroll-contain rounded-lg border border-slate-200 bg-white p-3 shadow-xl v10-fade">
-          {/* 1 Title · 2 Summary */}
-          {title && <div className="text-[13px] font-bold leading-snug text-slate-800">{title}</div>}
-          <div className={(title?"mt-0.5 ":"") + "text-[12px] leading-snug text-slate-600"}>{summary}</div>
-          {started && <>
-            {/* 3 Triggers — compact, comma-separated is fine here */}
-            {triggers && <Section label="Triggers"><div className="text-[12px] leading-snug text-slate-700">{triggers}</div></Section>}
-            {/* 4 Conditions — bulleted, with the AND/OR operator shown BETWEEN rows and between groups, so the
-                logic reads the same way it does in the editor instead of being implied by a "Match ALL" label */}
-            <Section label="Conditions">
-              {condItems && condItems.length
-                ? <div>
-                    {condItems.map((c,i)=>(
-                      <div key={i}>
-                        {/* group separator — the operator sits centred on a hairline, so it reads as a break
-                            between groups rather than as another row inside one */}
-                        {i>0 &&
-                          <div className="my-2 flex items-center gap-2">
-                            <span className="h-px flex-1 bg-slate-100"/>
-                            <span className="inline-flex items-center rounded-full border border-slate-200 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wider text-slate-400">{condMatch==="any" ? "Or" : "And"}</span>
-                            <span className="h-px flex-1 bg-slate-100"/>
-                          </div>}
-                        {c.group
-                          ? <div>
-                              <div className="text-[11px] font-semibold text-slate-500">Group {c.no}</div>
-                              <ul className="mt-0.5 space-y-0.5 pl-1">
-                                {c.leaves.map((t,j)=>(
-                                  <React.Fragment key={j}>
-                                    {j>0 && <li className="py-0.5"><span className="inline-flex items-center rounded-full border border-slate-200 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wider text-slate-400">{c.match==="any" ? "Or" : "And"}</span></li>}
-                                    <Bullet>{t}</Bullet>
-                                  </React.Fragment>
-                                ))}
-                              </ul>
-                            </div>
-                          : <ul><Bullet>{c.text}</Bullet></ul>}
-                      </div>
-                    ))}
-                  </div>
-                : <div className="text-[12px] italic text-slate-400">Always runs (no conditions)</div>}
-            </Section>
-            {/* 5 Actions — bulleted; each action's target field(s) nested underneath */}
-            <Section label="Actions">
-              {actItems && actItems.length
-                ? <div className="space-y-1">
-                    {actItems.map((a,i)=>
-                      <div key={i}>
-                        <ul><Bullet tone="sky"><span className="font-medium text-slate-700">{a.behavior}</span></Bullet></ul>
-                        {a.targets.length>0 &&
-                          <ul className="ml-3.5 mt-0.5 space-y-0.5">{a.targets.map((t,j)=>
-                            <li key={j} className="flex gap-1.5 text-[12px] leading-snug text-slate-600"><span className="text-slate-300">–</span><span className="min-w-0">{t}</span></li>)}</ul>}
-                      </div>)}
-                  </div>
-                : <div className="text-[12px] italic text-slate-400">No actions yet</div>}
-            </Section>
-          </>}
-        </div>, document.body)}
-    </span>
-  );
-}
-// R26 side drawer — the existing rules that already run on the condition the user just picked, each with the
-// actions it already performs, plus the one-line nudge to reuse a rule rather than create a near-duplicate.
-// R26 similar-rules drawer — reuses R25's layout: a collapsed summary of YOUR rule (trigger/conditions/actions)
-// then the existing rules on the same condition, each collapsed (matching actions highlighted when you have any).
 function SameCondDrawer({ when, exec, conds, curActions, rules, onClose }){
   const curSet = new Set(curActions||[]);
   return ReactDOM.createPortal(
@@ -3880,560 +3352,6 @@ function SameCondDrawer({ when, exec, conds, curActions, rules, onClose }){
         </div>
       </aside>
     </>, document.body);
-}
-// Preview data for a block — the live summary sentence plus structured trigger / condition / action lists.
-// Module-level so the block header tooltip AND the R27 tab strip render an identical preview from one source.
-function blockTipData(block){
-  const summary = (()=>{
-    if(!block.time && !block.exec) return "New rule block — start with When";
-    let s = block.time || "When…";
-    if(block.people && block.people!=="Everyone") s += " by " + block.people;
-    const conds = (block.conditions||[]).filter(leafComplete);
-    if(conds.length) s += " if " + conds.map(itemPhrase).join(block.match==="any" ? " or " : " and ");
-    const acts = (block.actions||[]).filter(actComplete);
-    if(acts.length) s += " then " + acts.map(actionPhrase).join(", and ");
-    return cap(s);
-  })();
-  let gNo = 0;
-  const condItems = (block.conditions||[]).map(it=>{
-    if(it && it.group){
-      const leaves = (it.conditions||[]).filter(condComplete).map(condPhrase);
-      if(!leaves.length) return null;
-      gNo += 1;
-      return { group:true, no:gNo, match: it.match||"all", leaves };
-    }
-    return condComplete(it) ? { group:false, text: condPhrase(it) } : null;
-  }).filter(Boolean);
-  const actItems = (block.actions||[]).filter(actComplete).map(a=>{
-    const ids = (a.fieldIds && a.fieldIds.length) ? a.fieldIds : (a.fieldId ? [a.fieldId] : []);
-    let targets;
-    if(a.behavior==="Filter Data"){
-      const ent = (FD_PERSONS.find(p=>p.value===a.entity)||{}).label || a.entity || "";
-      const sf  = (FD_USER_FIELDS.find(p=>p.value===a.srcField)||{}).label || a.srcField || "";
-      targets = [ (ent ? ent + "’s " : "") + sf + (a.value ? " = " + a.value : "") ];
-    } else if(a.behavior==="Set Value"){
-      targets = ids.map(id => labelOf(id) + (a.value ? " → " + a.value : ""));
-    } else if(a.behavior==="Show Options" || a.behavior==="Hide Options"){
-      targets = ids.map(id => labelOf(id) + (Array.isArray(a.value)&&a.value.length ? " (" + a.value.join(", ") + ")" : ""));
-    } else if(a.behavior==="Run Custom Script"){
-      targets = ["Runs a custom script"];
-    } else {
-      targets = ids.map(labelOf);
-    }
-    return { behavior: a.behavior, targets };
-  });
-  const triggers = ([block.exec, block.time].filter(Boolean).join(", ") || "Not set yet") + " · " + (block.people || "Everyone");
-  return { summary, condItems, actItems, triggers, hasContent: !!(block.time || block.people || condItems.length || actItems.length) };
-}
-// R27 — blocks as an editor-style horizontal tab strip instead of a vertical stack, so 8-10 blocks stay
-// navigable without the page growing. One block is open at a time; hovering a tab previews it in place.
-const isTabbedBlocksDemo = n => /^r27\b/i.test((n||"").trim());
-// R28 — same rule, same blocks, same everything BELOW the strip; only the navigator differs. Instead of
-// one long overflow row it shows a small window of nearby blocks plus a "Block X of Y" jump control, so
-// the model stops depending on how many tabs happen to fit.
-const isBlockNavDemo = n => /^r28\b/i.test((n||"").trim());
-// Either navigator — what gates the single-block canvas, the 10-block demo loader and the tab flags.
-const isBlockDemo = n => isTabbedBlocksDemo(n) || isBlockNavDemo(n);
-// Per-block conflict/duplicate state for the tab dots. Uses the SAME gated demo signal as the block card's
-// own conflict strip, so a tab can never claim a conflict the block itself doesn't show.
-function blockFlags(block, ruleName, conflictFields, dupFields){
-  const ids = new Set([
-    ...(block.actions||[]).flatMap(a=>{ const f=(a.fieldIds&&a.fieldIds.length)?a.fieldIds:(a.fieldId?[a.fieldId]:[]); return f.filter(Boolean); }),
-    ...(block.conditions||[]).flatMap(it=> it && it.group ? (it.conditions||[]) : [it]).map(c=> c && c.fieldId).filter(Boolean),
-  ]);
-  const on = isDemoConflictRule(ruleName);
-  const hit = set => on && set ? [...ids].some(id=> set.has(id)) : false;
-  return { conflict: hit(conflictFields), duplicate: hit(dupFields) };
-}
-// R27 demo only — which block tabs carry a conflict / duplicate marker, so the dot states can be exercised
-// without inventing conflict data the block editor itself can't explain. Keyed by block index.
-const R27_TAB_FLAGS = { 0:{conflict:true}, 2:{duplicate:true}, 4:{conflict:true, duplicate:true}, 6:{conflict:true}, 8:{duplicate:true} };
-// One indicator per severity, distinguished by SHAPE as well as colour (round = conflict, diamond =
-// duplicate) so the two never depend on colour alone. Repeated shapes are collapsed into one shape +
-// a count. Same markup on a tab, on the overflow control, and in its dropdown.
-const TAB_MARK = { conflict:"Conflict detected", duplicate:"Duplicate logic detected" };
-function TabMark({kind, count, title}){
-  return (
-    <span role="img" aria-label={title} title={title}
-      className={"inline-flex shrink-0 items-center gap-[3px] " + (kind==="conflict" ? "text-rose-600" : "text-amber-600")}>
-      {kind==="conflict"
-        ? <span className="h-[6px] w-[6px] shrink-0 rounded-full bg-rose-500"/>
-        : <span className="h-[5px] w-[5px] shrink-0 rotate-45 rounded-[1px] bg-amber-500"/>}
-      {count>1 && <span className="text-[10px] font-semibold leading-none">{count}</span>}
-    </span>
-  );
-}
-// A block's marks sit in a FIXED-WIDTH slot whether or not it has any, so tabs with and without
-// indicators are the same width and the row keeps an even rhythm.
-function TabMarks({fl}){
-  return (
-    <span className="flex w-4 shrink-0 items-center gap-[3px]">
-      {fl.conflict && <TabMark kind="conflict" title={TAB_MARK.conflict}/>}
-      {fl.duplicate && <TabMark kind="duplicate" title={TAB_MARK.duplicate}/>}
-    </span>
-  );
-}
-const markSentence = fl => fl.conflict && fl.duplicate ? "Conflict and duplicate logic detected"
-  : fl.conflict ? TAB_MARK.conflict : fl.duplicate ? TAB_MARK.duplicate : "";
-// Shared geometry — the ruler must reproduce a tab's box exactly, so the class string and the gap live
-// in one place and are used by both.
-const TAB_BOX = "inline-flex h-full shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-2 text-[13px]";
-const TAB_GAP = 2;        // matches gap-0.5
-const OV_SLOT = 116;      // reserved width for one overflow control (px) — see the w-[116px] slots below
-function BlockTabs({blocks, active, onSelect, onAdd, ruleName, conflictFields, dupFields}){
-  const rowRef   = useRef(null);   // the space tabs may occupy — already NET of any reserved slot
-  const rulerRef = useRef(null);   // invisible copy of every tab, measured to decide what fits
-  const kbdRef   = useRef(false);  // last activation came from the keyboard → carry focus with it
-  const trigRef  = useRef(null);   // overflow trigger, so focus can be returned to it on close
-  const menuRef  = useRef(null);
-  const [menu, setMenu] = useState(null);   // {side, top, left|right}
-  const [mAct, setMAct] = useState(0);      // highlighted row inside the dropdown
-  const [ftip, setFtip] = useState(null);   // status tooltip shown on KEYBOARD focus
-  const [start, setStart] = useState(0);    // first rendered tab — the window's left edge
-  const [box, setBox] = useState({avail:0, widths:[]});
-  const n = blocks.length;
-  // ---- measurement -----------------------------------------------------------------------------
-  // Widths come from an invisible ruler rather than the live strip, so a tab that is currently in the
-  // overflow list can still be measured — that is what lets the window grow again when space returns.
-  const measure = ()=>{
-    const row = rowRef.current, ruler = rulerRef.current;
-    if(!row || !ruler) return;
-    const els = ruler.querySelectorAll("[data-rw]");
-    const ws = [];
-    for(let i=0;i<els.length;i++) ws.push(Math.ceil(els[i].getBoundingClientRect().width));
-    const avail = Math.floor(row.getBoundingClientRect().width);
-    setBox(prev=>{
-      if(prev.avail===avail && prev.widths.length===ws.length && prev.widths.every((v,i)=>v===ws[i])) return prev;
-      return {avail, widths:ws};
-    });
-  };
-  useEffect(()=>{
-    window.addEventListener("resize", measure);
-    return ()=> window.removeEventListener("resize", measure);
-  }, []);
-  useEffect(measure);   // no dep array — the reserved slots change avail, so this must settle by re-running
-  // ---- the window ------------------------------------------------------------------------------
-  // Only whole tabs are rendered: a tab that would not fit entirely is moved to an overflow list, never
-  // drawn clipped or faded. end is derived, so the label ranges below cannot disagree with the strip.
-  const measured = box.widths.length===n && box.avail>0;
-  const fitFrom = s => {
-    if(!measured) return n-1;
-    let used = 0, e = s;
-    for(let i=s;i<n;i++){
-      const add = (i===s ? 0 : TAB_GAP) + (box.widths[i]||0);
-      if(i>s && used+add > box.avail) break;
-      used += add; e = i;
-    }
-    return e;
-  };
-  let s0 = Math.min(Math.max(start,0), Math.max(n-1,0));
-  if(active < s0) s0 = active;
-  let end = fitFrom(s0);
-  while(active > end && s0 < n-1){ s0++; end = fitFrom(s0); }   // pull the window along to keep active inside
-  useEffect(()=>{ if(s0!==start) setStart(s0); });
-  const hidL = s0 > 0 ? [0, s0-1] : null;
-  const hidR = end < n-1 ? [end+1, n-1] : null;
-  // ---- status ----------------------------------------------------------------------------------
-  const flagsAt = i => isTabbedBlocksDemo(ruleName) ? (R27_TAB_FLAGS[i]||{}) : blockFlags(blocks[i], ruleName, conflictFields, dupFields);
-  const rangeLabel = r => r[0]===r[1] ? "Block " + (r[0]+1) : "Blocks " + (r[0]+1) + "–" + (r[1]+1);
-  // Aggregated, not repeated — three hidden blocks with conflicts show ONE shape and a count, and the
-  // tooltip names them, so an issue outside the visible window is never lost or double-counted.
-  const rangeStats = r => {
-    const c = [], d = [];
-    for(let i=r[0];i<=r[1];i++){ const f=flagsAt(i); if(f.conflict) c.push(i+1); if(f.duplicate) d.push(i+1); }
-    return {c, d};
-  };
-  const blockList = ns => ns.map(x=>"Block "+x).join(", ");
-  // ---- keyboard --------------------------------------------------------------------------------
-  const tabEl = idx => {
-    const row = rowRef.current; if(!row) return null;
-    const els = row.querySelectorAll("[data-tab]");
-    for(let i=0;i<els.length;i++) if(els[i].getAttribute("data-tab")===String(idx)) return els[i];
-    return null;
-  };
-  useEffect(()=>{
-    if(!kbdRef.current) return;
-    const el = tabEl(active);
-    if(el && el.focus){ kbdRef.current = false; el.focus({preventScroll:true}); }
-  }, [active, s0, end]);
-  const onKey = e => {
-    if(!n) return;
-    let ni = null;
-    if(e.key==="ArrowRight")     ni = Math.min(active+1, n-1);
-    else if(e.key==="ArrowLeft") ni = Math.max(active-1, 0);
-    else if(e.key==="Home")      ni = 0;
-    else if(e.key==="End")       ni = n-1;
-    if(ni===null) return;
-    e.preventDefault();
-    kbdRef.current = true;
-    if(ni!==active) onSelect(ni);
-    else { const el = tabEl(ni); if(el && el.focus) el.focus({preventScroll:true}); kbdRef.current = false; }
-  };
-  // The status tooltip has to work on keyboard focus too, not just hover — and it is portaled so the
-  // strip's own clipping can never eat it.
-  const onTabFocus = (e, fl) => {
-    const text = markSentence(fl); if(!text) return;
-    let vis = true; try { vis = e.target.matches(":focus-visible"); } catch(_){ vis = true; }
-    if(!vis) return;
-    const r = e.target.getBoundingClientRect();
-    setFtip({ left: r.left + r.width/2, top: r.bottom + 6, text });
-  };
-  // ---- overflow dropdown -----------------------------------------------------------------------
-  const mRange = menu ? (menu.side==="l" ? hidL : hidR) : null;
-  const mItems = mRange ? Array.from({length: mRange[1]-mRange[0]+1}, (_,k)=> mRange[0]+k) : [];
-  const closeMenu = (refocus)=>{ setMenu(null); if(refocus && trigRef.current && trigRef.current.focus) trigRef.current.focus(); };
-  useEffect(()=>{ if(menu && menuRef.current && menuRef.current.focus) menuRef.current.focus(); }, [menu]);
-  const onMenuKey = e => {
-    if(e.key==="Escape"){ e.preventDefault(); closeMenu(true); return; }
-    if(!mItems.length) return;
-    if(e.key==="ArrowDown"){ e.preventDefault(); setMAct(v=> (v+1) % mItems.length); }
-    else if(e.key==="ArrowUp"){ e.preventDefault(); setMAct(v=> (v-1+mItems.length) % mItems.length); }
-    else if(e.key==="Home"){ e.preventDefault(); setMAct(0); }
-    else if(e.key==="End"){ e.preventDefault(); setMAct(mItems.length-1); }
-    else if(e.key==="Enter" || e.key===" "){ e.preventDefault(); const i=mItems[mAct]; if(i!=null) jump(i); }
-  };
-  // Picking from the list lands focus on the block you chose (the focus effect above), not back on the
-  // trigger — the trigger's own range has just changed underneath it. Escape is what returns focus.
-  const jump = i => { setMenu(null); kbdRef.current = true; onSelect(i); };
-  const openMenu = (side, e) => {
-    if(menu && menu.side===side){ closeMenu(true); return; }
-    const b = e.currentTarget.getBoundingClientRect();
-    trigRef.current = e.currentTarget;
-    setMAct(0);
-    setMenu({ side, top: b.bottom + 6,
-      left:  side==="l" ? Math.max(8, b.left) : null,
-      right: side==="r" ? Math.max(8, window.innerWidth - b.right) : null });
-  };
-  // The overflow control — a navigation hint by weight (smaller than the tabs, neutral ink, no chrome at
-  // rest), but a real control by behaviour: it opens the list of exactly what is hidden.
-  // A render HELPER, not a nested component: a component declared inside the render body is a new type
-  // every render, so React would remount the button — detaching the very node closeMenu() focuses back.
-  const overflowBtn = (side, r) => {
-    const open = !!menu && menu.side===side;
-    const st = rangeStats(r);
-    const tip = [ st.c.length ? TAB_MARK.conflict + " in " + blockList(st.c) : "",
-                  st.d.length ? TAB_MARK.duplicate + " in " + blockList(st.d) : "" ].filter(Boolean).join(" · ");
-    return (
-      <button key={"ov"+side} type="button" aria-haspopup="menu" aria-expanded={open} onClick={e=>openMenu(side, e)}
-        title={rangeLabel(r) + " hidden" + (tip ? " — " + tip : "") + ". Open the list."}
-        className={"inline-flex h-7 max-w-full items-center gap-1 rounded-md px-1.5 text-[11.5px] font-medium outline-none transition focus-visible:ring-2 focus-visible:ring-sky-300 " +
-          (open ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:bg-white/70 hover:text-slate-800")}>
-        {side==="l" && <Ico name="chevdown" size={12} cls="shrink-0 rotate-90"/>}
-        <span className="truncate">{rangeLabel(r)}</span>
-        {!!st.c.length && <TabMark kind="conflict" count={st.c.length} title={TAB_MARK.conflict + " in " + blockList(st.c)}/>}
-        {!!st.d.length && <TabMark kind="duplicate" count={st.d.length} title={TAB_MARK.duplicate + " in " + blockList(st.d)}/>}
-        {side==="r" && <Ico name="chevdown" size={12} cls="shrink-0 -rotate-90"/>}
-      </button>
-    );
-  };
-  const win = [];
-  for(let i=s0;i<=end && i<n;i++) win.push(i);
-  return (
-    // Navigation strip, not cards — the tinted band and the continuous divider are owned by the sticky
-    // wrapper so they run the full drawer width. Overflow controls occupy their own reserved slots, so a
-    // tab is never drawn underneath one; the tab area's width is measured NET of them.
-    <div className="relative flex h-11 items-center gap-1 pl-6 pr-5">
-      {/* invisible ruler — one box per block, identical geometry to a real tab. Parked in a zero-height
-          clipped layer so it can never add scroll width or be seen. */}
-      <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-0 overflow-hidden">
-        <div ref={rulerRef} className="flex h-11 items-stretch gap-0.5">
-          {blocks.map((b,i)=>(
-            <span key={i} data-rw className={TAB_BOX + " border-transparent"}>
-              <span className="relative block max-w-[140px]"><span className="block truncate font-semibold">{"Block " + (i+1)}</span></span>
-              <span className="flex w-4 shrink-0"/>
-            </span>
-          ))}
-        </div>
-      </div>
-      {/* Edge cue — a hairline on the slot's INNER edge. Nothing is ever clipped now, so a wash-gradient
-          would either be invisible (drawn on the identical strip tint) or sit on top of a fully visible
-          label; an edge rule says "the row continues past here" without doing either. */}
-      {hidL &&
-        <span className="relative flex h-full w-[116px] shrink-0 items-center justify-start">
-          {overflowBtn("l", hidL)}
-          <span className="pointer-events-none absolute inset-y-2.5 right-0 w-px bg-slate-200"/>
-        </span>}
-      <div ref={rowRef} role="tablist" aria-label="Rule blocks" onKeyDown={onKey}
-        className="flex h-full min-w-0 flex-1 items-stretch gap-0.5 overflow-hidden">
-        {win.map(i=>{
-          const b = blocks[i];
-          const t = blockTipData(b);
-          const fl = flagsAt(i);
-          const on = i===active;
-          const label = "Block " + (i+1);
-          return (
-            <BlockTip key={i} cls="shrink-0" title={label} summary={t.summary} started={t.hasContent} triggers={t.triggers}
-              condItems={t.condItems} actItems={t.actItems} condMatch={b.match||"all"}>
-              {/* one selection signal only: the blue underline. No seat, no elevation, no rounding. */}
-              <button type="button" data-tab={i} role="tab" aria-selected={on} tabIndex={on ? 0 : -1}
-                onClick={()=>onSelect(i)} onFocus={e=>onTabFocus(e, fl)} onBlur={()=>setFtip(null)}
-                title={label + (markSentence(fl) ? " — " + markSentence(fl) : "")}
-                className={TAB_BOX + " outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300 " +
-                  (on ? "border-[#1180c1] text-slate-900" : "border-transparent text-slate-500 hover:text-slate-800")}>
-                {/* the label is sized by an invisible SEMIBOLD copy of itself, so going bold on select
-                    cannot change the tab's width — switching tabs moves nothing horizontally */}
-                <span className="relative block max-w-[140px]">
-                  <span aria-hidden="true" className="invisible block truncate font-semibold">{label}</span>
-                  <span className={"absolute inset-0 block truncate " + (on ? "font-semibold" : "font-medium")}>{label}</span>
-                </span>
-                <TabMarks fl={fl}/>
-              </button>
-            </BlockTip>
-          );
-        })}
-      </div>
-      {hidR &&
-        <span className="relative flex h-full w-[116px] shrink-0 items-center justify-end">
-          <span className="pointer-events-none absolute inset-y-2.5 left-0 w-px bg-slate-200"/>
-          {overflowBtn("r", hidR)}
-        </span>}
-      <span className="mx-1.5 h-5 w-px shrink-0 bg-slate-200"/>
-      <button type="button" onClick={onAdd} title="Add a new block to this rule"
-        className="group inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 text-[12.5px] font-semibold text-slate-700 shadow-sm outline-none transition hover:border-[#1180c1] hover:text-[#1180c1] focus-visible:ring-2 focus-visible:ring-sky-300">
-        <Ico name="plus" size={14} cls="text-[#1180c1] transition-transform duration-300 group-hover:rotate-90"/>
-        Add new block
-      </button>
-      {/* status tooltip on keyboard focus (hover is covered by the native title) */}
-      {ftip && ReactDOM.createPortal(
-        <div style={{left:ftip.left, top:ftip.top, transform:"translateX(-50%)"}}
-          className="pointer-events-none fixed z-[70] whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-[11px] font-medium text-white shadow-lg v10-fade">{ftip.text}</div>,
-        document.body)}
-      {/* Hidden-blocks dropdown — portaled so the drawer's scroll container can't clip it. Picking a block
-          activates it, which brings it back into the window; focus returns to the trigger. */}
-      {menu && mRange && ReactDOM.createPortal(
-        <>
-          <div className="fixed inset-0 z-[69]" onClick={()=>closeMenu(true)}/>
-          <div ref={menuRef} tabIndex={-1} role="menu" onKeyDown={onMenuKey}
-            style={menu.left!=null ? {top:menu.top, left:menu.left} : {top:menu.top, right:menu.right}}
-            className="fixed z-[70] max-h-72 w-56 overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-xl outline-none v10-fade">
-            <div className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Hidden blocks</div>
-            {mItems.map((i,k)=>{
-              const fl = flagsAt(i);
-              return (
-                <button key={i} type="button" role="menuitem" onClick={()=>jump(i)} onMouseEnter={()=>setMAct(k)}
-                  title={"Block " + (i+1) + (markSentence(fl) ? " — " + markSentence(fl) : "")}
-                  className={"flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] font-medium outline-none transition " +
-                    (k===mAct ? "bg-sky-50 text-slate-900" : "text-slate-700 hover:bg-sky-50")}>
-                  <span className="min-w-0 flex-1 truncate">Block {i+1}</span>
-                  <TabMarks fl={fl}/>
-                </button>
-              );
-            })}
-          </div>
-        </>, document.body)}
-    </div>
-  );
-}
-// R28 — the hybrid navigator. A long rule shouldn't need a long strip: show a WINDOW of nearby blocks
-// for quick switching, pan it with ◀ / ▶, and reach anything distant through "Block X of Y". The window
-// is capped by both a fixed maximum and the measured width, so tabs are never crowded or clipped.
-const NAV_WINDOW = 5;
-function BlockNav({blocks, active, onSelect, onAdd, ruleName, conflictFields, dupFields}){
-  const n = blocks.length;
-  const rowRef    = useRef(null);
-  const kbdRef    = useRef(false);   // activation came from the keyboard / add → carry focus to the tab
-  const trigRef   = useRef(null);
-  const menuRef   = useRef(null);
-  const searchRef = useRef(null);
-  const [fit, setFit]   = useState(NAV_WINDOW);   // how many tabs actually fit, capped at NAV_WINDOW
-  const [from, setFrom] = useState(0);            // first block in the visible window
-  const [menu, setMenu] = useState(null);         // {top, right} — the jump-to dropdown
-  const [q, setQ]       = useState("");
-  const [mAct, setMAct] = useState(0);
-  const [ftip, setFtip] = useState(null);         // status tooltip on keyboard focus
-  // ---- window --------------------------------------------------------------------------------------
-  // The row is flex-1 with fixed-width siblings, so its width does NOT depend on how many tabs we draw —
-  // measuring it can't feed back into the count, and this settles in one pass.
-  const measure = ()=>{
-    const row = rowRef.current; if(!row) return;
-    const avail = row.getBoundingClientRect().width;
-    const els = row.querySelectorAll("[data-tab]");
-    let tw = 0;
-    for(let i=0;i<els.length;i++) tw = Math.max(tw, els[i].getBoundingClientRect().width);
-    // Floor the estimate: only the tabs currently in the window can be measured, so a window of narrow
-    // labels would otherwise report a smaller tab than the widest one and the count could flip back and
-    // forth as wider blocks scroll in and out.
-    tw = Math.max(tw, 86);
-    const cap = Math.max(1, Math.floor((avail + TAB_GAP) / (tw + TAB_GAP)));
-    const v = Math.max(1, Math.min(NAV_WINDOW, cap));
-    setFit(prev => prev===v ? prev : v);
-  };
-  useEffect(()=>{ window.addEventListener("resize", measure); return ()=> window.removeEventListener("resize", measure); }, []);
-  useEffect(measure);
-  const clamp = s => Math.max(0, Math.min(s, Math.max(0, n - fit)));
-  // Selecting a block re-centres the window on it; panning afterwards is free until the next selection,
-  // so browsing ahead never yanks you back but choosing something always shows where you landed.
-  useEffect(()=>{ setFrom(clamp(active - Math.floor(fit/2))); }, [active, fit, n]);
-  const f0 = clamp(from);
-  const to = Math.min(n-1, f0 + fit - 1);
-  const win = [];
-  for(let i=f0;i<=to;i++) win.push(i);
-  const canBack = f0 > 0, canFwd = to < n-1;
-  const pan = d => setFrom(s => clamp(s + d));
-  // ---- status + keyboard ---------------------------------------------------------------------------
-  const flagsAt = i => isBlockDemo(ruleName) ? (R27_TAB_FLAGS[i]||{}) : blockFlags(blocks[i], ruleName, conflictFields, dupFields);
-  const tabEl = idx => {
-    const row = rowRef.current; if(!row) return null;
-    const els = row.querySelectorAll("[data-tab]");
-    for(let i=0;i<els.length;i++) if(els[i].getAttribute("data-tab")===String(idx)) return els[i];
-    return null;
-  };
-  useEffect(()=>{
-    if(!kbdRef.current) return;
-    const el = tabEl(active);
-    if(el && el.focus){ kbdRef.current = false; el.focus({preventScroll:true}); }
-  }, [active, f0, n]);
-  const go = i => { kbdRef.current = true; onSelect(i); };
-  const onKey = e => {
-    if(!n) return;
-    let ni = null;
-    if(e.key==="ArrowRight")     ni = Math.min(active+1, n-1);
-    else if(e.key==="ArrowLeft") ni = Math.max(active-1, 0);
-    else if(e.key==="Home")      ni = 0;
-    else if(e.key==="End")       ni = n-1;
-    if(ni===null) return;
-    e.preventDefault();
-    if(ni!==active) go(ni);
-    else { const el = tabEl(ni); if(el && el.focus) el.focus({preventScroll:true}); }
-  };
-  const onTabFocus = (e, fl) => {
-    const text = markSentence(fl); if(!text) return;
-    let vis = true; try { vis = e.target.matches(":focus-visible"); } catch(_){ vis = true; }
-    if(!vis) return;
-    const r = e.target.getBoundingClientRect();
-    setFtip({ left: r.left + r.width/2, top: r.bottom + 6, text });
-  };
-  // ---- jump-to dropdown ----------------------------------------------------------------------------
-  const rows = [];
-  for(let i=0;i<n;i++){
-    const label = "Block " + (i+1);
-    const sum = blockTipData(blocks[i]).summary || "";
-    if(!q.trim() || (label + " " + sum).toLowerCase().indexOf(q.trim().toLowerCase())>=0) rows.push({i, label, sum});
-  }
-  const closeMenu = refocus => { setMenu(null); setQ(""); if(refocus && trigRef.current && trigRef.current.focus) trigRef.current.focus(); };
-  const openMenu = e => {
-    if(menu){ closeMenu(true); return; }
-    const b = e.currentTarget.getBoundingClientRect();
-    trigRef.current = e.currentTarget;
-    setQ(""); setMAct(Math.max(0, active));
-    setMenu({ top: b.bottom + 6, right: Math.max(8, window.innerWidth - b.right) });
-  };
-  useEffect(()=>{
-    if(!menu) return;
-    const el = (n>6 && searchRef.current) ? searchRef.current : menuRef.current;
-    if(el && el.focus) el.focus();
-  }, [menu]);
-  const jump = i => { setMenu(null); setQ(""); go(i); };
-  const onMenuKey = e => {
-    if(e.key==="Escape"){ e.preventDefault(); closeMenu(true); return; }
-    if(!rows.length) return;
-    const at = Math.max(0, rows.findIndex(r=>r.i===mAct));
-    if(e.key==="ArrowDown"){ e.preventDefault(); setMAct(rows[(at+1) % rows.length].i); }
-    else if(e.key==="ArrowUp"){ e.preventDefault(); setMAct(rows[(at-1+rows.length) % rows.length].i); }
-    else if(e.key==="Home"){ e.preventDefault(); setMAct(rows[0].i); }
-    else if(e.key==="End"){ e.preventDefault(); setMAct(rows[rows.length-1].i); }
-    else if(e.key==="Enter"){ e.preventDefault(); const r = rows.find(x=>x.i===mAct) || rows[0]; if(r) jump(r.i); }
-  };
-  // Add lands you on the new block AND focuses it, so the next keystroke is already in the right place.
-  const add = ()=>{ kbdRef.current = true; onAdd(); };
-  // A render HELPER, not a nested component: a component declared inside the render body is a new type
-  // every render, so React would unmount and remount the button and drop keyboard focus mid-interaction.
-  const panBtn = (d, can) => (
-    <button key={"pan"+d} type="button" onClick={()=>pan(d)} disabled={!can} title={d<0 ? "Show earlier blocks" : "Show later blocks"}
-      aria-label={d<0 ? "Show earlier blocks" : "Show later blocks"}
-      className={"grid h-7 w-7 shrink-0 place-items-center rounded-md outline-none transition focus-visible:ring-2 focus-visible:ring-sky-300 " +
-        (can ? "text-slate-500 hover:bg-white hover:text-slate-900" : "cursor-default text-slate-300")}>
-      <Ico name="chevdown" size={15} cls={d<0 ? "rotate-90" : "-rotate-90"}/>
-    </button>
-  );
-  return (
-    <div className="flex h-11 items-center gap-1 pl-4 pr-5">
-      {panBtn(-1, canBack)}
-      {/* the window — a handful of nearby blocks, text-first, one selection signal (the underline) */}
-      <div ref={rowRef} role="tablist" aria-label="Rule blocks" onKeyDown={onKey}
-        className="flex h-full min-w-0 flex-1 items-stretch gap-0.5 overflow-hidden">
-        {win.map(i=>{
-          const b = blocks[i];
-          const t = blockTipData(b);
-          const fl = flagsAt(i);
-          const on = i===active;
-          const label = "Block " + (i+1);
-          return (
-            <BlockTip key={i} cls="shrink-0" title={label} summary={t.summary} started={t.hasContent} triggers={t.triggers}
-              condItems={t.condItems} actItems={t.actItems} condMatch={b.match||"all"}>
-              <button type="button" data-tab={i} role="tab" aria-selected={on} tabIndex={on ? 0 : -1}
-                onClick={()=>onSelect(i)} onFocus={e=>onTabFocus(e, fl)} onBlur={()=>setFtip(null)}
-                title={label + (markSentence(fl) ? " — " + markSentence(fl) : "")}
-                className={TAB_BOX + " outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300 " +
-                  (on ? "border-[#1180c1] text-slate-900" : "border-transparent text-slate-500 hover:text-slate-800")}>
-                {/* invisible semibold copy reserves the bold metrics, so selecting a tab moves nothing */}
-                <span className="relative block max-w-[140px]">
-                  <span aria-hidden="true" className="invisible block truncate font-semibold">{label}</span>
-                  <span className={"absolute inset-0 block truncate " + (on ? "font-semibold" : "font-medium")}>{label}</span>
-                </span>
-                <TabMarks fl={fl}/>
-              </button>
-            </BlockTip>
-          );
-        })}
-      </div>
-      {panBtn(1, canFwd)}
-      <span className="mx-1.5 h-5 w-px shrink-0 bg-slate-200"/>
-      {/* position + jump — where you are, out of how many, and the way to anywhere else */}
-      <button type="button" onClick={openMenu} aria-haspopup="menu" aria-expanded={!!menu}
-        title="Jump to a block"
-        className={"inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-[12px] font-medium outline-none transition focus-visible:ring-2 focus-visible:ring-sky-300 " +
-          (menu ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:bg-white/70 hover:text-slate-900")}>
-        <span className="whitespace-nowrap"><span className="font-semibold text-slate-900">Block {active+1}</span> of {n}</span>
-        <Ico name="chevdown" size={12} cls="shrink-0 text-slate-400"/>
-      </button>
-      <span className="mx-1.5 h-5 w-px shrink-0 bg-slate-200"/>
-      <button type="button" onClick={add} title="Add a new block to this rule"
-        className="group inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 text-[12.5px] font-semibold text-slate-700 shadow-sm outline-none transition hover:border-[#1180c1] hover:text-[#1180c1] focus-visible:ring-2 focus-visible:ring-sky-300">
-        <Ico name="plus" size={14} cls="text-[#1180c1] transition-transform duration-300 group-hover:rotate-90"/>
-        Add new block
-      </button>
-      {ftip && ReactDOM.createPortal(
-        <div style={{left:ftip.left, top:ftip.top, transform:"translateX(-50%)"}}
-          className="pointer-events-none fixed z-[70] whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-[11px] font-medium text-white shadow-lg v10-fade">{ftip.text}</div>,
-        document.body)}
-      {/* Jump-to list — every block, its indicators, and a one-line summary so a distant block can be
-          recognised without visiting it. Portaled past the drawer's scroll container. */}
-      {menu && ReactDOM.createPortal(
-        <>
-          <div className="fixed inset-0 z-[69]" onClick={()=>closeMenu(true)}/>
-          <div ref={menuRef} tabIndex={-1} role="menu" onKeyDown={onMenuKey} style={{top:menu.top, right:menu.right}}
-            className="fixed z-[70] flex max-h-[380px] w-72 flex-col rounded-lg border border-slate-200 bg-white py-1 shadow-xl outline-none v10-fade">
-            <div className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Jump to block</div>
-            {n>6 &&
-              <div className="px-2 pb-1.5">
-                <input ref={searchRef} value={q} onChange={e=>setQ(e.target.value)} placeholder="Search blocks"
-                  className="h-8 w-full rounded-md border border-slate-200 px-2.5 text-[12.5px] outline-none focus:border-sky-300"/>
-              </div>}
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              {rows.length===0 && <div className="px-3 py-3 text-[12.5px] italic text-slate-400">No matching blocks</div>}
-              {rows.map(r=>{
-                const fl = flagsAt(r.i);
-                return (
-                  <button key={r.i} type="button" role="menuitem" onClick={()=>jump(r.i)} onMouseEnter={()=>setMAct(r.i)}
-                    title={r.label + (markSentence(fl) ? " — " + markSentence(fl) : "")}
-                    className={"flex w-full items-start gap-2 px-3 py-1.5 text-left outline-none transition " +
-                      (r.i===mAct ? "bg-sky-50" : "hover:bg-sky-50")}>
-                    <span className="min-w-0 flex-1">
-                      <span className={"block text-[13px] " + (r.i===active ? "font-semibold text-slate-900" : "font-medium text-slate-700")}>
-                        {r.label}{r.i===active && <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-[#1180c1]">Current</span>}
-                      </span>
-                      {r.sum && <span className="mt-0.5 block truncate text-[11.5px] text-slate-400">{r.sum}</span>}
-                    </span>
-                    <span className="mt-0.5"><TabMarks fl={fl}/></span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </>, document.body)}
-    </div>
-  );
 }
 function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate, onRemove, exec, ruleName, conflictFields, onFieldConflict, noCollapse}){
   // Disclosure gates: WHEN → IF → add-buttons → THEN → add-action → Advanced.
@@ -4497,43 +3415,11 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
   // Clears the block's own content — the audience (people) is rule-level/common, so it is left intact.
   const clearBlock = ()=> onChange({ time:"", exec:"", match:"all", advanced:false, advOpen:false, conditions:[], actions:[] });
   // Tertiary block tools shown around the Advanced row (right-aligned, secondary to the rule content).
-  const blockTools = (
-    <div className="flex items-center gap-1">
-      <button onClick={onDuplicate} title="Duplicate this block" className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[12px] font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"><Ico name="copy" size={13}/> Duplicate</button>
-      <button onClick={clearBlock} title="Clear this block" className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[12px] font-medium text-slate-500 transition hover:bg-rose-50 hover:text-rose-600"><Ico name="x" size={13}/> Clear</button>
-    </div>
-  );
-  // Summary + structured preview data (shared with the R27 tab strip via blockTipData).
-  const _tip = blockTipData(block);
-  const sum = _tip.summary, tipCondItems = _tip.condItems, tipActItems = _tip.actItems;
-  const tipTriggers = _tip.triggers, tipHasContent = _tip.hasContent;
   return (
-    <div className="shadow-sm rounded-xl">
-    <div className={"border border-slate-200 bg-white " + (blockCfCount>0 ? "rounded-t-xl" : "rounded-xl shadow-sm")}>
-      {/* collapsible-group row — the WHOLE header row is the tooltip's hover target, not just the title */}
-      <BlockTip title={ruleName} summary={sum} started={tipHasContent} triggers={tipTriggers} condItems={tipCondItems} actItems={tipActItems} condMatch={block.match||"all"} disabled={expanded}>
-        <div className="flex items-center gap-2.5 px-4 py-3">
-          <button onClick={noCollapse ? undefined : onToggle} className={"group flex min-w-0 flex-1 items-center gap-2.5 text-left " + (noCollapse ? "cursor-default" : "")}>
-            {/* in tab mode the tab strip IS the navigation, so the collapse chevron is dropped */}
-            {!noCollapse &&
-              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500 transition group-hover:bg-slate-200" title={expanded ? "Collapse block" : "Expand block"}>
-                <Ico name="chevdown" size={14} cls={expanded ? "rotate-180" : ""}/>
-              </span>}
-            <span className="min-w-0">
-              <span className="block truncate text-[15px] font-bold text-slate-800">Rule {index+1}</span>
-              <span className="block truncate text-[12px] text-slate-400">{block.time || "When…"} · {block.people || "Everyone"} <span className="text-slate-300">|</span> {condCount} Condition{condCount===1?"":"s"}{groupCount>0 ? " (" + groupCount + " Group" + (groupCount===1?"":"s") + ")" : ""} · {block.actions.length} Action{block.actions.length===1?"":"s"}</span>
-            </span>
-          </button>
-          {/* top-right block tools — Delete is ALWAYS available; Duplicate joins it only when collapsed
-              (when expanded, Duplicate lives in the footer) */}
-          <div className="flex items-center gap-0.5 shrink-0">
-            {!expanded && <button onClick={onDuplicate} title="Duplicate block" className="text-slate-400 hover:text-slate-600 p-1"><Ico name="copy" size={16}/></button>}
-            <button onClick={onRemove} title="Delete block" className="grid place-items-center h-7 w-7 rounded-md text-slate-400 transition hover:bg-rose-50 hover:text-rose-500"><Ico name="trash" size={16}/></button>
-          </div>
-        </div>
-      </BlockTip>
+    <div className="rounded-xl">
+    <div className={blockCfCount>0 ? "rounded-t-xl" : "rounded-xl"}>
       {expanded &&
-        <div className="border-t border-slate-100 bg-slate-50/60 px-4 py-4 space-y-5">
+        <div className="space-y-3">
           {/* WHEN — event + execution scope (audience is common, set once on the rule) */}
           <V7Step tone="when" tag="When" title="Pick the event and when it runs">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -4559,7 +3445,7 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
             <div className="v10-fade">
               <V7Step tone="if" tag="Check If" title="set the conditions that must match">
               {items.length===0 &&
-                <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-5">
+                <div className="rounded-xl bg-white/80 px-4 py-5">
                   <div className="text-[13px] font-semibold text-slate-700">No conditions yet</div>
                   <div className="mt-1 text-[12px] text-slate-500">Add a condition to control when this rule applies. Without one, it runs on every matching event.</div>
                   <div className="mt-3.5"><button onClick={addCond} className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3.5 py-2 text-[13px] font-medium text-slate-700 transition hover:bg-slate-50"><Ico name="plus" size={14}/> Add Condition</button></div>
@@ -4574,7 +3460,7 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
                   <div key={ui}>
                     {ui>0 && <GroupConnector index={ui-1} match={block.match||"all"} onToggle={toggleBlock}/>}
                     {u.kind==="bares"
-                      ? <div className="rounded-xl border border-slate-200 bg-white p-3">
+                      ? <div className="rounded-xl bg-white p-3">
                           <div className="mb-2.5"><span className="inline-flex items-center rounded-md bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-500">Condition group {ui+1}</span></div>
                           <div className="space-y-2.5">
                             {bares.map((c,bi)=>
@@ -4601,12 +3487,12 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
             <div className="v10-fade">
               <V7Step tone="then" tag="Action" title="choose what the rule does">
               {block.actions.length===0
-                ? <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-5">
+                ? <div className="rounded-xl bg-white/80 px-4 py-5">
                     <div className="text-[13px] font-semibold text-slate-700">No actions yet</div>
                     <div className="mt-1 text-[12px] text-slate-500">Add an action to define what this rule does when it runs.</div>
                     <div className="mt-3.5"><button onClick={addAct} className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3.5 py-2 text-[13px] font-medium text-slate-700 transition hover:bg-slate-50"><Ico name="plus" size={14}/> Add Action</button></div>
                   </div>
-                : <div className="space-y-2.5 rounded-xl border border-slate-200 bg-white p-3">
+                : <div className="space-y-2.5 rounded-xl bg-white p-3">
                     {block.actions.map((a,i)=> <V7ActRow key={i} a={a} onChange={p=>setAct(i,p)} onRemove={()=>rmAct(i)} onDuplicate={()=>dupAct(i)} ruleName={ruleName} conflictFields={conflictFields} onFieldConflict={onFieldConflict} autoStart={i===newActIdx} usedBehaviors={block.actions.filter((_,j)=>j!==i).map(x=>x.behavior).filter(Boolean)}/>)}
                     {firstActDone &&
                       <button onClick={addAct} className="inline-flex items-center gap-1.5 text-[13px] font-medium text-slate-500 transition hover:text-slate-700"><Ico name="plus" size={13}/> Add Action</button>}
@@ -4615,12 +3501,12 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
             </div>}
           {/* ADVANCED — reverse-on-exit shown as a labelled toggle (matches the product's switch) */}
           {whenReady && firstActDone &&
-            <div className="pl-8 v10-fade">
-              <p className="mb-2 text-[13px] text-slate-500">Advanced behavior for this block</p>
-              <div className="flex items-start justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
+            <div className={"rounded-xl p-4 v10-fade " + STEP_PANEL}>
+              <p className="mb-2 text-[13px] text-slate-500">Advanced behavior for this rule</p>
+              <div className="flex items-start justify-between gap-3 rounded-xl bg-white px-4 py-3">
                 <span className="min-w-0">
                   <span className="block text-[13px] font-medium text-slate-700">Reverse when the condition is no longer true</span>
-                  <span className="mt-0.5 block text-[11px] leading-tight text-slate-400">Undo this block's action automatically when its conditions stop matching</span>
+                  <span className="mt-0.5 block text-[11px] leading-tight text-slate-400">Undo this rule's action automatically when its conditions stop matching</span>
                 </span>
                 <button type="button" onClick={()=>onChange({advanced:!block.advanced})} title="Toggle reverse behavior" className="mt-0.5 inline-flex shrink-0 items-center gap-2">
                   <span className={"relative h-5 w-9 rounded-full transition " + (block.advanced?"bg-sky-500":"bg-slate-300")}>
@@ -4630,9 +3516,9 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
                 </button>
               </div>
             </div>}
-          {/* FOOTER — block-level tools while expanded (Delete lives at the top of the block, not here) */}
-          <div className="flex items-center justify-between pl-8 pt-1">
-            <button onClick={onDuplicate} className="inline-flex items-center gap-1.5 rounded-md bg-sky-50 px-3 py-1.5 text-[13px] font-medium text-[#1180c1] transition hover:bg-sky-100"><Ico name="copy" size={14}/> Duplicate Block</button>
+          {/* FOOTER — Clear only. There is no block to duplicate: duplicating the whole rule is a listing
+              action, and onDuplicate is no longer passed here at all. */}
+          <div className="flex items-center justify-end pt-1">
             <button onClick={clearBlock} className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"><Ico name="x" size={14}/> Clear</button>
           </div>
         </div>}
@@ -5031,23 +3917,51 @@ const DEMO_S10 = { dualEntry:true, fields: DEMO_S9.fields, rows: [], ruleMatrix:
   }) };
 // Resolve a field's preview entry from the ACTIVE scenario's preview array (threaded down from the editor).
 const previewFor = (preview, id) => (preview||[]).find(p => p.id === id) || null;
-// Pick the scenario from the draft — by name, or by its distinctive fields/conditions.
-const demoFor = draft => { const s = JSON.stringify(draft||{}).toLowerCase(); const name=((draft&&draft.name)||"").toLowerCase();
-  if(name.indexOf("similar split")>=0) return DEMO_S10;
-  if(name.indexOf("complex combinations")>=0) return DEMO_S9;
-  if(name.indexOf("rule conflict matrix")>=0) return DEMO_S8;
-  if(name.indexOf("conflict matrix")>=0) return DEMO_S7;
-  if(name.indexOf("routing demo 2")>=0) return DEMO_S6;
-  if(name.indexOf("request routing")>=0) return DEMO_S5;
-  if(name.indexOf("critical incident")>=0) return DEMO_S4;
-  if(name.indexOf("hr rule ui exp")>=0 || s.indexOf("designation")>=0 || s.indexOf("employee_id")>=0) return DEMO_S3;
-  if(/hr requests/i.test((draft&&draft.name)||"") || s.indexOf("priya")>=0) return DEMO_S2;
-  return DEMO_S1; };
-// Only the seeded demo rules carry a scripted conflict scenario. A NEW, user-created rule (or any rule whose
-// name isn't one of the demo names) must show NO conflicts — the conflict banner, the field pips and the
-// Run-Test drawer are all gated on this so user testing starts from a clean slate.
-const DEMO_NAME_KEYS = ["similar split","complex combinations","rule conflict matrix","conflict matrix","routing demo 2","request routing","critical incident","hr rule ui exp","hr requests"];
-const isConflictDemo = draft => { const n=((draft&&draft.name)||"").toLowerCase(); return DEMO_NAME_KEYS.some(k=> n.indexOf(k)>=0); };
+// V0 — ONE conflict direction: the R25 split drawer (conflicts + similar rules, two bottom-bar entries).
+// Rather than hand-authoring a fixture, the scenario is DERIVED from the live inventory: for every field a
+// rule acts on, every other rule acting on the same field becomes a pair. The drawer, the bottom-bar count
+// and the listing pill therefore all read the same rules — they cannot drift apart the way a scripted
+// fixture can. Shape matches what buildClashEntries/ClashCard expect.
+const v0ActionRows = r => {
+  const out = [];
+  ruleActions(r).forEach(a=>{
+    if(!a || !a.behavior) return;
+    const ids = (a.fieldIds && a.fieldIds.length) ? a.fieldIds : (a.fieldId ? [a.fieldId] : []);
+    ids.filter(Boolean).forEach(f=> out.push({field:f, act:a.behavior, val:a.value}));
+  });
+  return out;
+};
+function v0Preview(rule){
+  if(!rule) return [];
+  const mine = {};                       // field -> the last action this rule applies to it
+  v0ActionRows(rule).forEach(a=> { mine[a.field] = a; });
+  const selfId = rule.id, selfName = rule.name;
+  return Object.keys(mine).map(fid=>{
+    const pairs = [];
+    RULE_DB.forEach(o=>{
+      if(o.disabled) return;
+      if(selfId ? o.id===selfId : o.name===selfName) return;   // a draft has no id — fall back to the name
+      const rows = v0ActionRows(o);
+      const hit = rows.filter(x=> x.field===fid).pop();
+      if(!hit) return;
+      pairs.push({ act:hit.act, val:hit.val, rule:o.name, scope:o.exec || "On Create and Edit",
+                   ruleActions: rows });                        // full action set — the duplicate comparison
+    });
+    return { id:fid, cur:mine[fid].act, curVal:mine[fid].val,
+             curScope:(rule.exec || "On Create and Edit"), pairs };
+  }).filter(p=> p.pairs.length);
+}
+// Only fields whose pair actually clashes count — pairVerdict drops compatible ones, and the count beside
+// "conflicts with existing rules" must match what the drawer goes on to show.
+function v0Scenario(rule){
+  const preview = v0Preview(rule);
+  const live = preview.filter(p => (p.pairs||[]).some(pr => pairVerdict(p.cur, pr.act, p.curVal, pr.val) !== "compatible"));
+  return { dualEntry:true, rows:[], preview, fields: live.map(p=> ({id:p.id, label:labelOf(p.id)})) };
+}
+const demoFor = draft => v0Scenario(draft);
+// A rule shows conflicts only if it really has some — so a brand-new rule starts clean with no gating list
+// to maintain, and the five seeded clashes light up on their own.
+const isConflictDemo = draft => v0Scenario(draft).fields.length > 0;
 // Collapsed-row roles for a demo conflicting rule: the field is an Action if the conflicting rule
 // changes it (a `their` behavior), and a Condition if its label heads any of that block's condition
 // tokens. Aggregated across all blocks and de-duplicated to one entry per field.
@@ -6958,7 +5872,132 @@ function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onTogg
     </>,
     document.body);
 }
-function FormRuleEditorV7({baseRule, onClose, onSaved}){
+// ---- V0.1: block recommendation ---------------------------------------------------------------------
+// The premise of V0 is that an admin writes ordinary, separate rules. Often several of those rules are not
+// separate policies at all — they are BRANCHES of one policy, split by the value of a single field. This
+// layer notices that and offers to keep them together as blocks of one rule. It only ever SUGGESTS.
+//
+// It is deliberately derived, never remembered: the signal is recomputed from the persisted inventory and
+// the draft on screen. That is what makes the suggestion survive a refresh — there is no UI state to lose.
+const ACTION_FAMILY = { Show:"visibility", Hide:"visibility", Mandate:"requirement", "Non-Mandate":"requirement",
+                        Enable:"availability", Disable:"availability", "Set Value":"value", "Clear Value":"value" };
+// Every condition a rule checks, flattened past groups, as {field, value} — the branch key lives here.
+function recConds(r){
+  const out = [];
+  ruleConditions(r).forEach(c=>{ if(c && c.fieldId) out.push({field:c.fieldId, op:c.op, value:Array.isArray(c.value)? c.value.join("|") : (c.value||"")}); });
+  return out;
+}
+function recActs(r){
+  const out = [];
+  ruleActions(r).forEach(a=>{
+    if(!a || !a.behavior) return;
+    const ids = (a.fieldIds && a.fieldIds.length) ? a.fieldIds : (a.fieldId ? [a.fieldId] : []);
+    ids.filter(Boolean).forEach(f=> out.push({field:f, behavior:a.behavior, family: ACTION_FAMILY[a.behavior] || "other"}));
+  });
+  return out;
+}
+const recFieldSet = rows => { const s={}; rows.forEach(r=> { s[r.field]=1; }); return Object.keys(s).sort(); };
+const sameSet = (a,b) => a.length===b.length && a.every((v,i)=> v===b[i]);
+const overlapRatio = (a,b) => { if(!a.length || !b.length) return 0; const B={}; b.forEach(x=>{B[x]=1;}); return a.filter(x=>B[x]).length / Math.min(a.length, b.length); };
+// Score one candidate. The threshold is high on purpose: a weak match must produce NOTHING, or the
+// suggestion becomes noise and the admin stops reading it.
+function recScore(draftRule, other){
+  const dC = recConds(draftRule), oC = recConds(other);
+  if(!dC.length || !oC.length) return null;
+  const dCF = recFieldSet(dC), oCF = recFieldSet(oC);
+  // The branching signal: both rules key off the SAME field(s) but on DIFFERENT values. Same field AND
+  // same value is a duplicate, not a branch — a different feature entirely, so it is excluded here.
+  if(!sameSet(dCF, oCF)) return null;
+  const dVals = dC.map(c=>c.field+"="+c.value).sort().join(","),
+        oVals = oC.map(c=>c.field+"="+c.value).sort().join(",");
+  if(dVals === oVals) return null;
+  const dA = recActs(draftRule), oA = recActs(other);
+  if(!dA.length || !oA.length) return null;
+  const dAF = recFieldSet(dA), oAF = recFieldSet(oA);
+  const fieldOverlap = overlapRatio(dAF, oAF);
+  if(fieldOverlap < 0.5) return null;              // acts on largely different fields → different policy
+  const dFam = {}; dA.forEach(a=>{ dFam[a.family]=1; });
+  const oFam = {}; oA.forEach(a=>{ oFam[a.family]=1; });
+  const famOverlap = overlapRatio(Object.keys(dFam).sort(), Object.keys(oFam).sort());
+  if(!famOverlap) return null;                      // e.g. one sets values, the other changes visibility
+  const reasons = [];
+  let score = 4;                                    // same trigger field, different value — the branch itself
+  reasons.push("Both branch on " + dCF.map(labelOf).join(" and "));
+  if(fieldOverlap >= 0.5){ score += 2; reasons.push("They configure the same fields (" + dAF.filter(f=> oAF.indexOf(f)>=0).map(labelOf).join(", ") + ")"); }
+  if(famOverlap >= 0.5){ score += 1; }
+  if((draftRule.audience||"") === (other.audience||"")){ score += 1; reasons.push("Same audience — " + (other.audience||"Everyone")); }
+  if((draftRule.when||"") === (other.when||"")){ score += 1; reasons.push("Same event — " + (other.when||"").toLowerCase()); }
+  if((draftRule.exec||"") === (other.exec||"")){ score += 1; }
+  return { score, reasons, fieldOverlap };
+}
+const REC_THRESHOLD = 8;
+// The best candidate for the rule on screen, or null. skipId keeps a rule from matching itself on edit.
+function recommendBlockFor(draftRule, skipId){
+  if(!draftRule) return null;
+  let best = null;
+  RULE_DB.forEach(o=>{
+    if(o.disabled) return;
+    if(skipId && o.id===skipId) return;
+    if(draftRule.name && o.name===draftRule.name) return;
+    const s = recScore(draftRule, o);
+    if(!s || s.score < REC_THRESHOLD) return;
+    if(!best || s.score > best.score) best = {...s, rule:o};
+  });
+  return best;
+}
+// A rule the admin has already grouped shows what its branches are, in the rule's own words.
+const branchLabel = block => {
+  const cs = (block.conditions||[]).flatMap(it=> it && it.group ? (it.conditions||[]) : [it]).filter(c=> c && c.fieldId && c.value);
+  if(!cs.length) return "Always";
+  return cs.map(c=> labelOf(c.fieldId) + " " + (OP_PHRASE[c.op] || (c.op||"").toLowerCase()) + " " + (Array.isArray(c.value)? c.value.join(", ") : c.value)).join(" and ");
+};
+// The suggestion itself — calm, inline, and never in the way. It states what it noticed, why, and offers
+// the two choices the brief requires. Declining is remembered for this draft only; it is not persisted,
+// because a later edit may genuinely change the answer.
+function BlockSuggestion({ rec, onAdd, onKeep }){
+  const [why, setWhy] = useState(false);
+  return (
+    <div className="rounded-xl border border-sky-200/70 bg-sky-50/50 px-4 py-3.5 v10-fade">
+      <div className="flex items-start gap-3">
+        <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-white text-[#1180c1] ring-1 ring-sky-100"><Ico name="sparkles" size={15}/></span>
+        <div className="min-w-0 flex-1">
+          <div className="text-[13.5px] font-semibold text-slate-800">This looks like another branch of “{rec.rule.name}”</div>
+          <p className="mt-1 text-[12.5px] leading-relaxed text-slate-600">
+            Both rules run on the same event and change the same fields — they differ only in which {rec.branchField} they apply to.
+            You can keep this logic as a block inside that rule, so the whole policy stays in one place.
+          </p>
+          <button type="button" onClick={()=>setWhy(v=>!v)}
+            className="mt-1.5 inline-flex items-center gap-1 text-[12px] font-medium text-[#1180c1] outline-none hover:underline focus-visible:ring-2 focus-visible:ring-sky-300 rounded">
+            {why ? "Hide details" : "Why this suggestion?"}<Ico name="chevdown" size={11} cls={why ? "rotate-180" : ""}/>
+          </button>
+          {why &&
+            <ul className="mt-2 space-y-1">
+              {rec.reasons.map((r,i)=>(
+                <li key={i} className="flex items-start gap-1.5 text-[12px] text-slate-500">
+                  <span className="mt-[6px] h-1 w-1 shrink-0 rounded-full bg-slate-300"/>{r}
+                </li>
+              ))}
+            </ul>}
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button type="button" onClick={onAdd}
+              className="inline-flex h-8 items-center gap-1.5 rounded-md px-3.5 text-[12.5px] font-semibold text-white shadow-sm outline-none transition hover:brightness-105 focus-visible:ring-2 focus-visible:ring-sky-300"
+              style={{background:BRAND}}>
+              <Ico name="layers" size={14}/> Add as block
+            </button>
+            <button type="button" onClick={onKeep}
+              className="inline-flex h-8 items-center rounded-md border border-slate-300 bg-white px-3.5 text-[12.5px] font-medium text-slate-600 outline-none transition hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-300">
+              Keep as separate rule
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+function FormRuleEditorV7({baseRule: baseProp, onClose, onSaved, onGrouped}){
+  // After an "Add as block", the editor is editing the TARGET rule — not the new one it started as.
+  const [baseOverride, setBaseOverride] = useState(null);
+  const baseRule = baseOverride || baseProp;
   const init = useMemo(()=>{
     if(baseRule){
       // Editing a built rule → everything is revealed (its context is already decided). Round-trip the full
@@ -6984,14 +6023,12 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
   }, [baseRule]);
   const [draft, setDraft] = useState(init);
   const [saved, setSaved] = useState(false);
-  const [expandedIdx, setExpandedIdx] = useState(0);
+  const [, setExpandedIdx] = useState(0);   // retained only so loadRule() keeps its reset call harmless
   const patch = p => setDraft(d=>({...d, ...p}));
   // Optional metadata (V7): description (revealed by a link) + tag chips with inline entry.
   const [showDesc, setShowDesc] = useState(!!(baseRule && baseRule.description));
   // Coaching for the multi-block feature — surfaces every time a rule is configured, the moment a first action
   // exists (so it lands when it's actually relevant). Dismissible per rule (resets for the next rule).
-  const [blockHint, setBlockHint] = useState(true);
-  const dismissBlockHint = ()=> setBlockHint(false);
   const [tagEditing, setTagEditing] = useState(false);
   const [tagDraft, setTagDraft] = useState("");
   const rmTag = i => setDraft(d=>({...d, tags: (d.tags||[]).filter((_,j)=>j!==i)}));
@@ -6999,26 +6036,8 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
   const cancelTag = () => { setTagDraft(""); setTagEditing(false); };
   const setBlock = (i,p)=> setDraft(d=>({...d, blocks: d.blocks.map((b,j)=> j===i?{...b,...p}:b)}));
   // Duplicating a block opens the new copy and collapses the source (only one block is expanded at a time).
-  const dupBlock = i => setDraft(d=>{ const src=d.blocks[i]; const copy={...src, conditions:src.conditions.map(c=>({...c})), actions:src.actions.map(a=>({...a}))}; const blocks=d.blocks.slice(); blocks.splice(i+1,0,copy); setExpandedIdx(i+1); return {...d, blocks}; });
-  const rmBlock = i => setDraft(d=>({...d, blocks: d.blocks.filter((_,j)=>j!==i)}));
   // New blocks inherit the rule's common audience; their Execute-on starts empty (it's per block).
-  const addBlock = ()=> setDraft(d=>{
-    // R27 / R28 prototypes — the FIRST "Add block" loads the whole 10-block demo instead of one empty block,
-    // so the navigator is immediately seen at realistic scale. Deep-cloned so editing never mutates the fixture.
-    if(isBlockDemo(d.name) && !(d.blocks||[]).length){
-      const blocks = R27_DEMO_BLOCKS.map(b=>({
-        match:b.match||"all", advanced:false, advOpen:false, time:b.time||"", exec:b.exec||"", people:d.people||b.people||"",
-        conditions:(b.conditions||[]).map(c=> c && c.group
-          ? {...c, conditions:(c.conditions||[]).map(x=>({...x}))}
-          : {...c}),
-        actions:(b.actions||[]).map(a=>({...a, fieldIds:(a.fieldIds||[]).slice()})),
-      }));
-      setExpandedIdx(0);          // land on Block 1
-      return {...d, blocks};
-    }
-    const blocks=[...d.blocks, {match:"all", advanced:false, advOpen:false, time:"", people:d.people||"", exec:"", conditions:[], actions:[]}];
-    setExpandedIdx(blocks.length-1); return {...d, blocks};
-  });
+  const addBlock = ()=> setDraft(d=>({...d, blocks:[{match:"all", advanced:false, advOpen:false, time:"", people:d.people||"", exec:"", conditions:[], actions:[]}]}));
   // Applies-to is COMMON — setting it writes the rule-level value AND mirrors it onto every block, so all
   // the block-level consumers (summary, conflict helpers, draftToRule) keep seeing a per-block audience.
   const setAudience = v => setDraft(d=>({...d, people:v, blocks:(d.blocks||[]).map(b=>({...b, people:v}))}));
@@ -7044,19 +6063,8 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
   const conflicts = conflictsFor(draftToRule(draft, baseRule));
   // field-level conflict discovery — the scenario's conflicting field ids, + a focus handler for the inspector
   const _scen = demoFor(draft);
-  const scenFieldIds = new Set(
-    _scen.matrix ? _scen.matrix.map(m=>m.id)
-    : _scen.ruleMatrix ? _scen.ruleMatrix.flatMap(r=>r.fields.map(f=>f.id))
-    : _scen.rows.flatMap(r=>(r.blocks[0].fields||[]).map(f=>f.id)));
-  // fields whose overlap is a DUPLICATE rather than a conflict — drives the amber dot on the R27 block tabs
-  const scenDupIds = new Set((_scen.preview||[])
-    .filter(f=> (f.pairs||[]).some(p=> pairVerdict(f.cur, p.act, f.value, p.value)==="duplicate"))
-    .map(f=> f.id));
-  // R27 / R28 — one block on the canvas at a time; expandedIdx doubles as the active tab. R27 navigates
-  // with the overflow tab strip, R28 with the windowed navigator — everything below the strip is identical.
-  const tabbed = isBlockDemo(draft.name);
-  const navMode = isBlockNavDemo(draft.name) ? "nav" : "tabs";
-  const activeIdx = (expandedIdx==null ? 0 : expandedIdx);
+  // V0: the scenario is derived, so the clashing fields are simply its own field list.
+  const scenFieldIds = new Set((_scen.fields||[]).map(f=>f.id));
   // ---- Run Test: a safe, read-only dry run. Shows a short reassurance sequence, then reveals the result —
   // the filled-in FORM PREVIEW for matrix rules (R22), otherwise the conflict drawer. Nothing is saved.
   const [testing, setTesting] = useState(false);
@@ -7117,6 +6125,56 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
     if(after !== conflicts.length) console.warn("[conflict] draft/saved mismatch — draft:", conflicts.length, "saved:", after, rule.id);
     setTimeout(()=> onSaved && onSaved(rule), 600);
   };
+  // ---- block recommendation --------------------------------------------------------------------
+  // Recomputed on every render from the draft + the persisted inventory, so it is correct after a refresh
+  // without anything being remembered. keepSeparate only suppresses it for the rule being written.
+  const [keepSeparate, setKeepSeparate] = useState(false);
+  const recRule = draftToRule(draft, baseRule);
+  const rec = keepSeparate ? null : recommendBlockFor(recRule, baseRule && baseRule.id);
+  const recBranchField = (()=>{
+    const cs = recConds(recRule);
+    return cs.length ? labelOf(cs[0].field).toLowerCase() : "value";
+  })();
+  // Accept — the draft's logic becomes a NEW BLOCK on the existing rule. The target keeps its identity,
+  // its id and its place in the list; the admin stays in this editor, now editing that rule with the new
+  // branch open, so the flow is continuous rather than "saved and bounced somewhere else".
+  const addAsBlock = ()=>{
+    const target = rec.rule;
+    const mine = draft.blocks[0];
+    const existing = (target.blocks && target.blocks.length)
+      ? target.blocks.map(b=>({...b, conditions:(b.conditions||[]).map(c=>({...c})), actions:(b.actions||[]).map(a=>({...a}))}))
+      : [{ match:"all", advanced:!!target.advanced, time:target.when, exec:target.exec, people:target.audience,
+           conditions:(target.conditions||[]).map(c=>({...c})), actions:(target.actions||[]).map(a=>({...a})) }];
+    const merged = { match:mine.match||"all", advanced:!!mine.advanced, time:mine.time, exec:mine.exec,
+                     people:mine.people || target.audience,
+                     conditions:(mine.conditions||[]).map(c=>({...c})), actions:(mine.actions||[]).map(a=>({...a})) };
+    const blocks = existing.concat([merged]);
+    const updated = { ...target, blocks,
+      conditions: (blocks[0].conditions||[]).map(c=>({...c})),   // flat mirror stays the FIRST branch
+      actions: (blocks[0].actions||[]).map(a=>({...a})) };
+    persistRule(updated);
+    setDraft({ name:updated.name, exec:updated.exec||"", description:updated.description||"",
+               tags:(updated.tags||[]).slice(), people:updated.audience||"",
+               blocks: blocks.map(b=>({...b, advOpen:false})) });
+    setBaseOverride(updated);
+    setKeepSeparate(false); setSaved(false); setShowErrors(false);
+    onGrouped && onGrouped(updated, blocks.length);
+  };
+  // Grouping has to be reversible, or accepting a suggestion is a one-way door. Splitting a branch out
+  // saves it back as its own rule and leaves the remaining branches behind.
+  const ungroup = i => setDraft(d=>{
+    const b = d.blocks[i];
+    const rest = d.blocks.filter((_,j)=> j!==i);
+    const spun = { id:makeRuleId(), name:(d.name||"Rule") + " — branch " + (i+1), status:"Active",
+      when:b.time, audience:b.people||d.people||"Everyone", exec:b.exec||d.exec, usedInForms:0, recommended:false,
+      conditions:(b.conditions||[]).map(c=>({...c})), actions:(b.actions||[]).map(a=>({...a})),
+      blocks:[{...b, conditions:(b.conditions||[]).map(c=>({...c})), actions:(b.actions||[]).map(a=>({...a}))}],
+      created: today() };
+    persistRule(spun);
+    setKeepSeparate(true);                      // don't immediately re-suggest what was just split apart
+    onGrouped && onGrouped(spun, rest.length);
+    return {...d, blocks: rest.length ? rest : d.blocks};
+  });
   // Edit a conflicting rule from the inspector → reload THIS editor with that rule's values (prefilled), close inspector.
   const loadRule = rule => {
     const block = { match:"all", advanced:!!rule.advanced, advOpen:false, time: rule.when, people: rule.audience,
@@ -7205,85 +6263,39 @@ function FormRuleEditorV7({baseRule, onClose, onSaved}){
                     </div>}
               </div>
             </div>
-            {/* No blocks yet → an empty state that explains what a block is and starts the first one, instead of
-                dropping the user straight into a half-filled form */}
-            {draft.blocks.length===0
-              /* no container — the empty state belongs to the page, not to another nested card */
-              ? <div className="px-6 py-12 text-center v10-fade">
-                  <div className="flex justify-center text-slate-300"><Ico name="layers" size={32}/></div>
-                  <div className="mt-3 text-[15px] font-semibold text-slate-800">Build your first rule</div>
-                  <p className="mx-auto mt-1 max-w-sm text-[13px] leading-relaxed text-slate-500">A block is one trigger, optional conditions, and the actions that follow.</p>
-                  <button onClick={addBlock} className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-4 py-2 text-[13px] font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50">
-                    <Ico name="plus" size={15}/> Add rule block
-                  </button>
-                </div>
-              : tabbed
-                /* R27 — tab strip + the active block only, so vertical height stays flat as blocks grow */
-                ? (()=>{ const ai = Math.min(Math.max(activeIdx,0), draft.blocks.length-1); const b = draft.blocks[ai]; return (
-                    <div>
-                      {/* Rule Details scrolls away; the tab bar then pins to the top of the drawer body and the
-                          block content keeps scrolling underneath. Full-bleed (-mx-8 cancels the body gutter) so
-                          the tint and the divider run the whole drawer width; opaque so nothing shows through. */}
-                      <div className="sticky top-0 z-20 -mx-8 border-b border-slate-200 bg-slate-50 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-                        {navMode==="nav"
-                          ? <BlockNav blocks={draft.blocks} active={ai} onSelect={setExpandedIdx} onAdd={addBlock}
-                              ruleName={draft.name} conflictFields={scenFieldIds} dupFields={scenDupIds}/>
-                          : <BlockTabs blocks={draft.blocks} active={ai} onSelect={setExpandedIdx} onAdd={addBlock}
-                              ruleName={draft.name} conflictFields={scenFieldIds} dupFields={scenDupIds}/>}
-                      </div>
-                      <div className="mt-5 v10-fade">
-                        <V7Block key={ai} block={b} index={ai} total={draft.blocks.length} expanded={true} noCollapse
-                          exec={draft.exec} ruleName={draft.name} conflictFields={scenFieldIds} onFieldConflict={openFieldConflict}
-                          onToggle={()=>{}} onChange={p=>setBlock(ai,p)}
-                          onDuplicate={()=>dupBlock(ai)} onRemove={()=>rmBlock(ai)}/>
-                      </div>
-                    </div>
-                  ); })()
-                : <div className="space-y-3">
-                    {draft.blocks.map((b,i)=>
-                      <V7Block key={i} block={b} index={i} total={draft.blocks.length} expanded={expandedIdx===i}
-                        exec={draft.exec} ruleName={draft.name} conflictFields={scenFieldIds} onFieldConflict={openFieldConflict}
-                        onToggle={()=>setExpandedIdx(expandedIdx===i?null:i)} onChange={p=>setBlock(i,p)}
-                        onDuplicate={()=>dupBlock(i)} onRemove={()=>rmBlock(i)}/>)}
-                  </div>}
-            {/* Add block — once a first action exists it gets HIGHLIGHTED (coaching callout, tint, New pill).
-                Dropped entirely for R27: the empty state owns the first-block CTA and the tab strip's "+" owns
-                the rest, so this section would be a third, redundant way to do the same thing. */}
-            {!tabbed && (()=>{ const blockHi = actionOk && blockHint; return (
-            <div className="space-y-2">
-              {blockHi && draft.blocks.length===1 &&
-                <div className="relative rounded-xl border border-sky-100 bg-sky-50/60 px-4 py-3.5 v10-fade">
-                  <div className="flex items-start gap-2.5">
-                    <span className="mt-0.5 shrink-0 text-sky-500 v10-twinkle"><Ico name="sparkles" size={17}/></span>
-                    <div className="min-w-0 flex-1">
-                      <div className="text-[13.5px] font-semibold text-slate-800"><span className="text-sky-600">New</span> — one rule can now hold several blocks</div>
-                      <p className="mt-1 text-[12.5px] leading-relaxed text-slate-500">Each block has its own conditions and actions — so you can keep different kinds of rules under one heading, instead of creating them separately.</p>
-                      <div className="mt-3 flex items-center gap-1.5">
-                        <button onClick={()=>{ addBlock(); dismissBlockHint(); }} className="group inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12.5px] font-semibold text-white shadow-sm transition hover:brightness-105" style={{background:BRAND}}><Ico name="plus" size={13} cls="transition-transform duration-300 group-hover:rotate-90"/> Add a second block</button>
-                        <button onClick={dismissBlockHint} className="rounded-full px-3 py-1.5 text-[12.5px] font-medium text-slate-500 transition hover:bg-white/70 hover:text-slate-700">Got it</button>
-                      </div>
-                    </div>
-                    <button onClick={dismissBlockHint} title="Dismiss" className="-mr-1 -mt-1 grid h-6 w-6 shrink-0 place-items-center rounded-md text-slate-400 transition hover:bg-white/70 hover:text-slate-600"><Ico name="x" size={14}/></button>
+            {/* The suggestion sits between the rule's details and its logic — where the admin has just
+                finished describing what they are building, and before they commit to it. Inline and
+                dismissible: it never blocks the form or steals focus. */}
+            {rec && <BlockSuggestion rec={{...rec, branchField:recBranchField}} onAdd={addAsBlock} onKeep={()=>setKeepSeparate(true)}/>}
+            {/* A rule is ONE When → If → Then unit unless the admin accepted a grouping, in which case it
+                holds several branches. There is still no way to add a block by hand — blocks only ever
+                appear because the system grouped related rules, so nobody has to learn them upfront. */}
+            {draft.blocks.length===1
+              ? <V7Block block={draft.blocks[0]} index={0} total={1} expanded={true} noCollapse
+                  exec={draft.exec} ruleName={draft.name} conflictFields={scenFieldIds} onFieldConflict={openFieldConflict}
+                  onToggle={()=>{}} onChange={p=>setBlock(0,p)}/>
+              : <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-[12px] text-slate-500">
+                    <Ico name="layers" size={14} cls="text-slate-400"/>
+                    <span>This rule has <span className="font-semibold text-slate-700">{draft.blocks.length} branches</span> — each runs on its own condition.</span>
                   </div>
-                  {/* pointer connecting the callout to the Add rule block box below — gentle idle nudge */}
-                  <span className="absolute -bottom-[7px] left-8 h-3 w-3 border-b border-r border-sky-100 bg-sky-50/60 v10-nudge"/>
+                  {draft.blocks.map((b,i)=>(
+                    <div key={i}>
+                      <div className="mb-1.5 flex items-center gap-2">
+                        <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Branch {i+1}</span>
+                        <span className="min-w-0 truncate text-[12px] text-slate-500">{branchLabel(b)}</span>
+                        {draft.blocks.length>1 &&
+                          <button type="button" onClick={()=>ungroup(i)} title="Split this branch back into its own rule"
+                            className="ml-auto shrink-0 rounded-md px-2 py-1 text-[11.5px] font-medium text-slate-400 outline-none transition hover:bg-slate-100 hover:text-slate-600 focus-visible:ring-2 focus-visible:ring-sky-300">
+                            Split out
+                          </button>}
+                      </div>
+                      <V7Block block={b} index={i} total={draft.blocks.length} expanded={true} noCollapse
+                        exec={draft.exec} ruleName={draft.name} conflictFields={scenFieldIds} onFieldConflict={openFieldConflict}
+                        onToggle={()=>{}} onChange={p=>setBlock(i,p)}/>
+                    </div>
+                  ))}
                 </div>}
-              {/* the add-block target — icon + title + subtitle, left-aligned; highlighted state matches the callout */}
-              <button onClick={addBlock}
-                className={"group flex w-full items-center gap-3 rounded-xl border border-dashed px-4 py-3.5 text-left transition " + (blockHi ? "border-sky-300 bg-sky-50/40 hover:bg-sky-50" : "border-slate-300 bg-white hover:border-slate-400 hover:bg-slate-50")}>
-                <span className={"grid h-8 w-8 shrink-0 place-items-center rounded-lg transition " + (blockHi ? "bg-white text-[#1180c1] ring-1 ring-sky-100 v10-float" : "bg-slate-100 text-slate-500 group-hover:bg-slate-200")}>
-                  <Ico name="plus" size={18} cls="transition-transform duration-300 group-hover:rotate-90"/>
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-1.5">
-                    <span className="text-[13.5px] font-semibold text-slate-800">Add rule block</span>
-                    <InfoTip title="What's a block?">Use blocks when one rule needs to handle different scenarios. Each block has its own conditions and actions. Instead of creating multiple similar rules, add another block for each scenario.</InfoTip>
-                  </span>
-                  <span className="block text-[12px] text-slate-500">Handle another case inside this same rule</span>
-                </span>
-                {blockHi && <span className="shrink-0 rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">New</span>}
-              </button>
-            </div>); })()}
           </div>
         </div>
         {/* bottom bar — conflict status is the primary info (replaces the old block count) */}
@@ -7644,168 +6656,6 @@ function FieldRulesDrawer({fieldId, onClose}){
 }
 
 /* ============================================================ APP */
-// ---- Execution Order tab ---------------------------------------------------------------------------
-// The authoritative runtime sequence. NOT an editor: it never touches a block's logic, only where that
-// block sits in the chain. Rule authoring stays in the rule editor; precedence lives here and nowhere
-// else, so there is no second, hidden place where order is implied.
-function ExecRow({u, idx, over, dragging, dropBefore, dropAfter, onDragStart, onDragEnd, onDragOver, onDrop,
-                  onMove, onOpen, first, last}){
-  const b = u.block;
-  const nc = execCondCount(b), na = execActCount(b);
-  const meta = [ b.time || "No trigger set",
-                 nc + " condition" + (nc===1?"":"s"),
-                 na + " action" + (na===1?"":"s") ].join(" · ");
-  const summary = summarizeBlock(b, b.people) || "No actions configured yet.";
-  return (
-    <li className="relative" onDragOver={onDragOver} onDrop={onDrop}>
-      {/* drop indicator — a single brand line in the gap, so the landing spot is never ambiguous */}
-      {dropBefore && <span className="pointer-events-none absolute -top-[3px] left-0 right-0 z-10 h-[2px] rounded bg-[#1180c1]"/>}
-      {dropAfter  && <span className="pointer-events-none absolute -bottom-[3px] left-0 right-0 z-10 h-[2px] rounded bg-[#1180c1]"/>}
-      <div draggable onDragStart={onDragStart} onDragEnd={onDragEnd}
-        className={"group flex items-start gap-3 rounded-xl border bg-white px-3 py-3 transition " +
-          (dragging ? "border-[#1180c1] opacity-40" : "border-slate-200 hover:border-slate-300 hover:shadow-sm") +
-          (u.disabled ? " opacity-60" : "")}>
-        {/* position in the chain — the ordinal IS the precedence, so it leads */}
-        <span className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-md bg-slate-100 text-[11.5px] font-semibold text-slate-500">{idx+1}</span>
-        <span className="mt-0.5 shrink-0 cursor-grab text-slate-300 transition group-hover:text-slate-400 active:cursor-grabbing" title="Drag to reorder">
-          <Ico name="grip" size={16}/>
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
-            <span className="truncate text-[13.5px] font-semibold text-slate-800">{u.ruleName}</span>
-            <span className="text-slate-300">·</span>
-            <span className="whitespace-nowrap text-[13px] font-medium text-slate-600">Block {u.blockNo}</span>
-            {u.disabled &&
-              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">Disabled</span>}
-            {over &&
-              <span title={"Later blocks change " + over.fields.map(labelOf).join(", ") + " after this one runs, so their result is what the user sees."}
-                className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10.5px] font-semibold text-amber-700 ring-1 ring-amber-200">
-                <span className="h-[5px] w-[5px] rotate-45 rounded-[1px] bg-amber-500"/>
-                Overridden by #{over.by+1}
-              </span>}
-          </div>
-          <div className="mt-1 truncate text-[12px] text-slate-500">{meta}</div>
-          <div className="mt-0.5 truncate text-[12px] text-slate-400" title={summary}>{summary}</div>
-        </div>
-        {/* keyboard / pointer alternative to dragging — reordering must not require a mouse */}
-        <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition group-hover:opacity-100 focus-within:opacity-100">
-          <button type="button" onClick={()=>onMove(-1)} disabled={first} title="Move earlier" aria-label={"Move " + u.ruleName + " Block " + u.blockNo + " earlier"}
-            className={"grid h-7 w-7 place-items-center rounded-md outline-none transition focus-visible:ring-2 focus-visible:ring-sky-300 " +
-              (first ? "cursor-default text-slate-200" : "text-slate-400 hover:bg-slate-100 hover:text-slate-700")}>
-            <Ico name="chevdown" size={14} cls="rotate-180"/>
-          </button>
-          <button type="button" onClick={()=>onMove(1)} disabled={last} title="Move later" aria-label={"Move " + u.ruleName + " Block " + u.blockNo + " later"}
-            className={"grid h-7 w-7 place-items-center rounded-md outline-none transition focus-visible:ring-2 focus-visible:ring-sky-300 " +
-              (last ? "cursor-default text-slate-200" : "text-slate-400 hover:bg-slate-100 hover:text-slate-700")}>
-            <Ico name="chevdown" size={14}/>
-          </button>
-          <button type="button" onClick={onOpen} title="Open this rule in the editor" aria-label={"Open " + u.ruleName + " in the rule editor"}
-            className="grid h-7 w-7 place-items-center rounded-md text-slate-400 outline-none transition hover:bg-slate-100 hover:text-slate-700 focus-visible:ring-2 focus-visible:ring-sky-300">
-            <Ico name="pencil" size={14}/>
-          </button>
-        </div>
-      </div>
-    </li>
-  );
-}
-function ExecutionOrder({onOpenRule, onToast}){
-  const [, bump] = useReducer(x=>x+1, 0);
-  const [q, setQ] = useState("");
-  const [drag, setDrag] = useState(null);     // key being dragged
-  const [dropAt, setDropAt] = useState(-1);   // insertion index while dragging
-  const list = execList();
-  const over = execOverrides(list);
-  const keys = list.map(u=>u.key);
-  const commit = (next, msg)=>{ setExecOrder(next); bump(); onToast && onToast(msg); };
-  // Move by one place. Kept separate from the drag path so the buttons stay exact at the ends.
-  const move = (i, d)=>{
-    const j = i + d;
-    if(j<0 || j>=keys.length) return;
-    const next = keys.slice();
-    next.splice(j, 0, next.splice(i,1)[0]);
-    commit(next, "Execution order updated — " + list[i].ruleName + " · Block " + list[i].blockNo + " now runs " + (d<0 ? "earlier" : "later") + ".");
-  };
-  const drop = ()=>{
-    const from = keys.indexOf(drag);
-    setDrag(null); setDropAt(-1);
-    if(from<0 || dropAt<0) return;
-    // The insertion index is measured on the PRE-move list, so remove first and only then adjust.
-    let to = dropAt > from ? dropAt-1 : dropAt;
-    if(to===from) return;
-    const next = keys.slice();
-    next.splice(to, 0, next.splice(from,1)[0]);
-    const u = list[from];
-    commit(next, "Execution order updated — " + u.ruleName + " · Block " + u.blockNo + " now runs at position " + (to+1) + ".");
-  };
-  const overRow = (i, e)=>{
-    if(!drag) return;
-    e.preventDefault();
-    const r = e.currentTarget.getBoundingClientRect();
-    setDropAt(e.clientY < r.top + r.height/2 ? i : i+1);
-  };
-  const ql = q.trim().toLowerCase();
-  const shown = ql
-    ? list.map((u,i)=>({u,i})).filter(({u})=>
-        (u.ruleName + " block " + u.blockNo + " " + (u.block.time||"") + " " + (summarizeBlock(u.block, u.block.people)||"")).toLowerCase().indexOf(ql)>=0)
-    : list.map((u,i)=>({u,i}));
-  const nRules = (()=>{ const s={}; list.forEach(u=> { s[u.ruleId]=1; }); return Object.keys(s).length; })();
-  const nOver = over.filter(Boolean).length;
-  return (
-    <div className="h-full overflow-y-auto bg-slate-100">
-      <div className="mx-auto max-w-4xl px-6 py-6">
-        <div className="mb-4">
-          <h1 className="text-[19px] font-bold text-slate-800">Execution Order</h1>
-          <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-slate-500">
-            Blocks run from top to bottom. When two blocks change the same field, the one <span className="font-medium text-slate-600">lower in this list</span> runs
-            last, so its result is what the user sees. Drag a block to change when it runs — this list is the runtime order.
-          </p>
-          <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-slate-500">
-            <span><span className="font-semibold text-slate-700">{list.length}</span> block{list.length===1?"":"s"} across <span className="font-semibold text-slate-700">{nRules}</span> rule{nRules===1?"":"s"}</span>
-            {nOver>0 && <span className="inline-flex items-center gap-1.5"><span className="h-[5px] w-[5px] rotate-45 rounded-[1px] bg-amber-500"/>{nOver} block{nOver===1?"":"s"} overridden by a later block</span>}
-            <span className="text-slate-400">{execIsCustomOrder() ? "Custom order" : "Authoring order"}</span>
-          </div>
-        </div>
-        <div className="mb-3 flex items-center gap-2">
-          <div className="relative flex-1">
-            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"><Ico name="search" size={14}/></span>
-            <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search rules or blocks"
-              className="h-9 w-full rounded-lg border border-slate-200 bg-white pl-8 pr-3 text-[13px] outline-none focus:border-sky-300"/>
-          </div>
-          <button type="button" onClick={()=>{ resetExecOrder(); bump(); onToast && onToast("Execution order reset to authoring order."); }}
-            disabled={!execIsCustomOrder()}
-            title={execIsCustomOrder() ? "Discard the custom order and fall back to authoring order" : "Already in authoring order"}
-            className={"inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border px-3 text-[12.5px] font-medium outline-none transition focus-visible:ring-2 focus-visible:ring-sky-300 " +
-              (execIsCustomOrder() ? "border-slate-300 bg-white text-slate-700 hover:border-slate-400 hover:bg-slate-50" : "cursor-default border-slate-200 bg-white text-slate-300")}>
-            <Ico name="history" size={14}/> Reset order
-          </button>
-        </div>
-        {ql && <div className="mb-2 text-[12px] text-slate-500">Showing {shown.length} of {list.length} — drag is disabled while filtering.</div>}
-        {list.length===0
-          ? <div className="rounded-xl border border-dashed border-slate-300 bg-white px-6 py-14 text-center">
-              <div className="flex justify-center text-slate-300"><Ico name="layers" size={30}/></div>
-              <div className="mt-3 text-[14.5px] font-semibold text-slate-700">No blocks to order yet</div>
-              <p className="mx-auto mt-1 max-w-sm text-[12.5px] text-slate-500">Once a rule has a block, it appears here and you can decide when it runs.</p>
-            </div>
-          : <ol className="space-y-2" onDragOver={e=>{ if(drag) e.preventDefault(); }}>
-              {shown.map(({u,i})=>(
-                <ExecRow key={u.key} u={u} idx={i} over={over[i]}
-                  dragging={drag===u.key}
-                  dropBefore={!ql && drag && dropAt===i}
-                  dropAfter={!ql && drag && dropAt===i+1 && i===list.length-1}
-                  onDragStart={e=>{ if(ql){ e.preventDefault(); return; } setDrag(u.key); e.dataTransfer.effectAllowed="move"; try { e.dataTransfer.setData("text/plain", u.key); } catch(_){} }}
-                  onDragEnd={()=>{ setDrag(null); setDropAt(-1); }}
-                  onDragOver={e=>{ if(!ql) overRow(i, e); }}
-                  onDrop={e=>{ if(ql) return; e.preventDefault(); drop(); }}
-                  onMove={d=>move(i, d)}
-                  onOpen={()=> onOpenRule && onOpenRule(u.ruleId)}
-                  first={i===0} last={i===list.length-1}/>
-              ))}
-              {shown.length===0 && <li className="rounded-xl border border-slate-200 bg-white px-4 py-6 text-center text-[13px] text-slate-500">No blocks match “{q}”.</li>}
-            </ol>}
-      </div>
-    </div>
-  );
-}
 function AppV10(){
   const [tab, setTab]           = useState("rules");
   const [selField, setSelField] = useState(null);
@@ -7838,7 +6688,6 @@ function AppV10(){
   const viewFieldRules = (fieldId) => setFieldRules(fieldId); // review the rules already applying to this field
   const openTab    = () => { setTab("rules"); };
   const openBuilder= () => { setTab("builder"); };
-  const openExec   = () => { setSelField(null); setTab("exec"); };
   const onOpen     = (fieldId, it) => { setSelField(fieldId); setIntent(it); };
   const onClear    = () => { setSelField(null); setIntent(null); };
 
@@ -7858,12 +6707,10 @@ function AppV10(){
         <IconRail/>
         <main className="flex-1 flex flex-col min-w-0">
           <HeaderRow/>
-          <TabsRow tab={tab} onBuilder={openBuilder} onRules={openTab} onExec={openExec} total={totalRules()} onCreateForm={createForm} onCreateCustom={openCustom}/>
+          <TabsRow tab={tab} onBuilder={openBuilder} onRules={openTab} total={totalRules()} onCreateForm={createForm} onCreateCustom={openCustom}/>
           <div className="flex-1 min-h-0 overflow-hidden">
             <div key={tab} className={(tab==="rules" ? "v10-slide" : "v10-fade") + " h-full"}>
-              {tab==="exec"
-                ? <ExecutionOrder onOpenRule={openRule} onToast={setToast}/>
-                : tab==="builder"
+              {tab==="builder"
                 ? <FormBuilder flash={flash} goRules={goRules} viewFieldRules={viewFieldRules}/>
                 : <FormRulesHome field={selField} intent={intent} onBack={openBuilder} onOpen={onOpen} onClear={onClear} onCreateForm={createForm} onCreateCustom={openCustom} onCustomFamily={openCustomFamily} customSel={customSel} onEditRule={openRule} onToast={setToast}/>}
             </div>
@@ -7872,7 +6719,9 @@ function AppV10(){
       </div>
       {flow && <RuleFlow flow={flow} setFlow={setFlow} onClose={closeFlow} onCustom={openCustomFamily} onToast={setToast}
         onSaved={(rule)=>{ if(rule){ const editing = RULE_DB.some(r=>r.id===rule.id); persistRule(rule); closeFlow(); setToast("“"+rule.name+"” "+(editing?"updated":"saved to Form Rules")+"."); } else { closeFlow(); } }}/>}
-      {formRule && <FormRuleEditorV7 baseRule={formRule.baseRule} onClose={()=>setFormRule(null)} onSaved={(rule)=>{ const editing=!!(formRule&&formRule.baseRule); if(rule) persistRule(rule); setFormRule(null); setTab("rules"); setToast(rule ? ("“"+rule.name+"” "+(editing?"updated":"saved")+" in Form Rules.") : "Form rule saved successfully."); }}/>}
+      {formRule && <FormRuleEditorV7 baseRule={formRule.baseRule} onClose={()=>setFormRule(null)}
+        onGrouped={(rule,n)=> setToast(n>1 ? ("Added as a block — “"+rule.name+"” now has "+n+" branches.") : ("“"+rule.name+"” split out as its own rule."))}
+        onSaved={(rule)=>{ const editing=!!(formRule&&formRule.baseRule); if(rule) persistRule(rule); setFormRule(null); setTab("rules"); setToast(rule ? ("“"+rule.name+"” "+(editing?"updated":"saved")+" in Form Rules.") : "Form rule saved successfully."); }}/>}
       {customOpen && <CustomRuleDrawer initialFamily={customFamily} sel={customSel} setSel={setCustomSel} onClose={closeCustom} onSaved={saveCustom}/>}
       {fieldRules && <FieldRulesDrawer fieldId={fieldRules} onClose={()=>setFieldRules(null)}/>}
       {toast && <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[60] rounded-lg bg-slate-900 text-white text-[13px] px-4 py-2.5 shadow-lg flex items-center gap-2"><Ico name="check" size={15} cls="text-emerald-400"/>{toast}</div>}
