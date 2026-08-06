@@ -3041,25 +3041,34 @@ const V7_CARD  = "relative overflow-hidden rounded-xl border border-slate-200 bg
 // Inline section header — coloured pill badge (When / Check If / Action) + a plain descriptor line.
 // The panel fill is the SAME neutral grey for all three — colour stays on the icon and the step label,
 // where it identifies the step; the fill's only job is to bound the section.
-const STEP_PANEL = "border border-slate-200/45 bg-slate-50/60";
+const STEP_PANEL = "border border-slate-200/45 bg-[#f8fafc]";
 const STEP_TONE = {
   when: { dot:"bg-sky-100 text-[#1180c1]",       text:"text-[#1180c1]",   icon:"history" },
   if:   { dot:"bg-amber-100 text-amber-600",     text:"text-amber-600",   icon:"branch"  },
   then: { dot:"bg-emerald-100 text-emerald-600", text:"text-emerald-600", icon:"zap"     },
 };
-// A rule step: a coloured icon disc sits in a left gutter and marks where the step starts, with the step's
-// content hanging beside it. The icon carries the colour, so the old badge+pill (same colour twice, side by
-// side) is gone.
+// A rule step. The header is STICKY within its own panel: scroll into the conditions and "Check if these
+// conditions match" pins to the top until the next step pushes it out — so you always know which part of
+// the rule you are editing, however long the section gets. Sticky works here because the panel is a plain
+// block inside the drawer's scroll container, with no overflow of its own in between.
 function V7Step({tone, tag, title, children}){
   const t = STEP_TONE[tone] || STEP_TONE.when;
   return (
-    <div className={"relative rounded-xl p-4 pl-12 " + STEP_PANEL}>
-      <span className={"absolute left-4 top-4 grid h-6 w-6 place-items-center rounded-full " + t.dot}><Ico name={t.icon} size={13}/></span>
-      <div className="mb-3 flex min-h-[24px] flex-wrap items-center gap-2">
-        <span className={"text-[12px] font-bold uppercase tracking-wide " + t.text}>{tag}</span>
-        <span className="text-[13px] text-slate-500">{title}</span>
+    // The heading sits on the PAGE, not inside the panel — the icon and the sentence label the section from
+    // outside it, and the tinted container holds only the controls. The wrapper is the sticky containing
+    // block, so the heading pins for as long as its own section is on screen and no longer.
+    <div className="relative">
+      <div className="sticky top-0 z-10 flex items-center gap-2.5 bg-white pb-2.5 pt-1">
+        <span className={"grid h-7 w-7 shrink-0 place-items-center rounded-full " + t.dot}><Ico name={t.icon} size={14}/></span>
+        {/* the step's own word carries the colour; the rest of the sentence is quiet, so the eye lands on
+            "When" / "Check if" / "Then" and reads the explanation only if it needs to */}
+        <span className="min-w-0 text-[15px] leading-snug">
+          <span className={"font-semibold " + t.text}>{tag}</span>{" "}
+          <span className="text-slate-500">{title}</span>
+        </span>
       </div>
-      {children}
+      {/* indented to start under the heading's text, so the icon column reads as the section marker */}
+      <div className={"ml-[38px] rounded-xl p-4 " + STEP_PANEL}>{children}</div>
     </div>
   );
 }
@@ -3409,7 +3418,7 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
       {expanded &&
         <div className="space-y-3">
           {/* WHEN — event + execution scope (audience is common, set once on the rule) */}
-          <V7Step tone="when" tag="When" title="Pick the event and when it runs">
+          <V7Step tone="when" tag="When" title="this rule should run and when it should execute">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className="mb-1.5 block text-[12.5px] font-medium text-slate-500">Select Rule Event <span className="text-rose-400">*</span></label>
@@ -3431,7 +3440,7 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
             const toggleBlock = ()=> onChange({match: (block.match||"all")==="any" ? "all" : "any"});
             return (
             <div className="v10-fade">
-              <V7Step tone="if" tag="Check If" title="set the conditions that must match">
+              <V7Step tone="if" tag="Check if" title="these conditions match">
               {items.length===0 &&
                 <div className="rounded-xl bg-white/80 px-4 py-5">
                   <div className="text-[13px] font-semibold text-slate-700">No conditions yet</div>
@@ -3473,7 +3482,7 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
           {/* ACTION — shown once the trigger is set; conditions are optional (a rule can run with none) */}
           {whenReady &&
             <div className="v10-fade">
-              <V7Step tone="then" tag="Action" title="choose what the rule does">
+              <V7Step tone="then" tag="Then" title="do the following">
               {block.actions.length===0
                 ? <div className="rounded-xl bg-white/80 px-4 py-5">
                     <div className="text-[13px] font-semibold text-slate-700">No actions yet</div>
@@ -3489,7 +3498,7 @@ function V7Block({block, index, total, expanded, onToggle, onChange, onDuplicate
             </div>}
           {/* ADVANCED — reverse-on-exit shown as a labelled toggle (matches the product's switch) */}
           {whenReady && firstActDone &&
-            <div className={"rounded-xl p-4 v10-fade " + STEP_PANEL}>
+            <div className={"ml-[38px] rounded-xl p-4 v10-fade " + STEP_PANEL}>
               <p className="mb-2 text-[13px] text-slate-500">Advanced behavior for this rule</p>
               <div className="flex items-start justify-between gap-3 rounded-xl bg-white px-4 py-3">
                 <span className="min-w-0">

@@ -325,7 +325,7 @@ const actLine = (act, val, fieldLabel) =>
 const WHENS = ["When the form opens","While the form is being filled","When the form opens and while it's being filled","When the form is submitted"];
 const AUDS  = ["Everyone","Requesters only","Technicians only","Signed-in users only"];
 // Rules that drive the hardcoded field-level conflict demo — their conditions/actions surface the ⚠ indicator.
-const DEMO_CONFLICT_RULES = ["HR Rule UI Exp","Critical Incident Handling","R20 - Request Routing Demo","R21 - Request Routing Demo 2","R22 - Conflict Matrix Demo","R23 - Rule Conflict Matrix","R24 - Complex Combinations","R25 - Conflict & Similar Split"];
+const DEMO_CONFLICT_RULES = ["HR Rule UI Exp","Critical Incident Handling","R20 - Request Routing Demo","R21 - Request Routing Demo 2","R22 - Conflict Matrix Demo","R23 - Rule Conflict Matrix","R24 - Complex Combinations","R25 - Conflict & Similar Split","R29 - Conflict Summary Demo"];
 const isDemoConflictRule = n => DEMO_CONFLICT_RULES.indexOf(n)>=0;
 // R26 "Add to existing rule" demo — as the user picks a condition, surface existing rules that already run on
 // that exact condition, so they can add their actions there instead of creating a near-duplicate rule.
@@ -456,16 +456,54 @@ const ACTION_GUIDE = {
 };
 
 const RULE_DB = [
-  { id:"r1",  name:"Require Assignee before In Progress", status:"Active", when:"While the form is being filled", audience:"Technicians only", usedInForms:4, recommended:true,
-    conditions:[{fieldId:"status", op:"Is", value:"In Progress"}], actions:[{behavior:"Mandate", fieldId:"assignee"}] },
+  // The first five rules are deliberately MULTI-BLOCK: precedence is a block-level idea, so the Execution
+  // Order tab is only honest if the inventory actually contains branches that compete for the same fields.
+  // Each rule keeps its flat conditions/actions as a mirror of block 1 for the surfaces that read them.
+  { id:"r1",  name:"Assignee rules", status:"Active", when:"While the form is being filled", audience:"Technicians only", usedInForms:4, recommended:true,
+    conditions:[{fieldId:"status", op:"Is", value:"In Progress"}], actions:[{behavior:"Mandate", fieldId:"assignee"}],
+    blocks:[
+      { match:"all", time:"While the form is being filled", exec:"On Create and Edit", people:"Technicians only",
+        conditions:[{fieldId:"status", op:"Is", value:"In Progress"}], actions:[{behavior:"Mandate", fieldId:"assignee", fieldIds:["assignee"]}] },
+      { match:"all", time:"While the form is being filled", exec:"On Edit", people:"Technicians only",
+        conditions:[{fieldId:"status", op:"Is", value:"Resolved"}], actions:[{behavior:"Disable", fieldId:"assignee", fieldIds:["assignee"]}] },
+    ] },
   { id:"r2",  name:"Auto-set Priority from Impact & Urgency", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:7, recommended:true,
-    conditions:[{fieldId:"impact", op:"Is Not Empty"},{fieldId:"urgency", op:"Is Not Empty"}], actions:[{behavior:"Set Value", fieldId:"priority", value:"the matrix result"}] },
-  { id:"r3",  name:"Capture resolution when Resolved", status:"Active", when:"While the form is being filled", audience:"Technicians only", usedInForms:3, recommended:false,
-    conditions:[{fieldId:"status", op:"Is", value:"Resolved"}], actions:[{behavior:"Mandate", fieldId:"description"}] },
-  { id:"r4",  name:"Hide Status on the portal", status:"Active", when:"When the form opens", audience:"Requesters only", usedInForms:2, recommended:false,
-    conditions:[], actions:[{behavior:"Hide", fieldId:"status"}] },
-  { id:"r5",  name:"Mandatory Category", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:5, recommended:false,
-    conditions:[], actions:[{behavior:"Mandate", fieldId:"category"}] },
+    conditions:[{fieldId:"impact", op:"Is Not Empty"},{fieldId:"urgency", op:"Is Not Empty"}], actions:[{behavior:"Set Value", fieldId:"priority", value:"Medium"}],
+    blocks:[
+      { match:"all", time:"While the form is being filled", exec:"On Create and Edit", people:"Everyone",
+        conditions:[{fieldId:"impact", op:"Is Not Empty"},{fieldId:"urgency", op:"Is Not Empty"}],
+        actions:[{behavior:"Set Value", fieldId:"priority", fieldIds:["priority"], value:"Medium"}] },
+      { match:"all", time:"While the form is being filled", exec:"On Create and Edit", people:"Everyone",
+        conditions:[{fieldId:"impact", op:"Is", value:"High"}],
+        actions:[{behavior:"Set Value", fieldId:"priority", fieldIds:["priority"], value:"High"}] },
+      { match:"all", time:"While the form is being filled", exec:"On Create and Edit", people:"Everyone",
+        conditions:[{fieldId:"impact", op:"Is", value:"High"},{fieldId:"urgency", op:"Is", value:"High"}],
+        actions:[{behavior:"Set Value", fieldId:"priority", fieldIds:["priority"], value:"Urgent"}] },
+    ] },
+  { id:"r3",  name:"Resolution capture", status:"Active", when:"While the form is being filled", audience:"Technicians only", usedInForms:3, recommended:false,
+    conditions:[{fieldId:"status", op:"Is", value:"Resolved"}], actions:[{behavior:"Mandate", fieldId:"description"}],
+    blocks:[
+      { match:"all", time:"While the form is being filled", exec:"On Edit", people:"Technicians only",
+        conditions:[{fieldId:"status", op:"Is", value:"Resolved"}], actions:[{behavior:"Mandate", fieldId:"description", fieldIds:["description"]}] },
+      { match:"all", time:"While the form is being filled", exec:"On Edit", people:"Technicians only",
+        conditions:[{fieldId:"status", op:"Is", value:"Closed"}], actions:[{behavior:"Disable", fieldId:"description", fieldIds:["description"]}] },
+    ] },
+  { id:"r4",  name:"Portal status visibility", status:"Active", when:"When the form opens", audience:"Requesters only", usedInForms:2, recommended:false,
+    conditions:[], actions:[{behavior:"Hide", fieldId:"status"}],
+    blocks:[
+      { match:"all", time:"When the form opens", exec:"On Create", people:"Requesters only",
+        conditions:[], actions:[{behavior:"Hide", fieldId:"status", fieldIds:["status"]}] },
+      { match:"all", time:"When the form opens", exec:"On Edit", people:"Requesters only",
+        conditions:[{fieldId:"status", op:"Is", value:"Resolved"}], actions:[{behavior:"Show", fieldId:"status", fieldIds:["status"]}] },
+    ] },
+  { id:"r5",  name:"Category completeness", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:5, recommended:false,
+    conditions:[], actions:[{behavior:"Mandate", fieldId:"category"}],
+    blocks:[
+      { match:"all", time:"While the form is being filled", exec:"On Create and Edit", people:"Everyone",
+        conditions:[], actions:[{behavior:"Mandate", fieldId:"category", fieldIds:["category"]}] },
+      { match:"all", time:"While the form is being filled", exec:"On Create and Edit", people:"Everyone",
+        conditions:[{fieldId:"category", op:"Is", value:"Other"}], actions:[{behavior:"Mandate", fieldId:"description", fieldIds:["description"]}] },
+    ] },
   { id:"r6",  name:"Default Department from Requester", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:6, recommended:false,
     conditions:[{fieldId:"requester", op:"Is Not Empty"}], actions:[{behavior:"Set Value", fieldId:"department", value:"the requester's department"}] },
   { id:"r7",  name:"Lock Priority after assignment", status:"Active", when:"While the form is being filled", audience:"Technicians only", usedInForms:3, recommended:false, advanced:true,
@@ -718,6 +756,23 @@ const RULE_DB = [
   // (windowed tabs + a "Block X of Y" jump control instead of one long overflow strip).
   { id:"r29", name:"R28 - Block Navigator Demo", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:0, recommended:false, exec:"On Create and Edit",
     conditions:[], actions:[], blocks:[] },
+  // R29 — the field-first conflict summary. Its blocks are authored to produce two REAL clashes of the two
+  // shapes the panel distinguishes: an opposing pair inside one rule (Show vs Hide on Assignee) and a
+  // same-behaviour / different-value pair across rules (Set Value vs Set Value on Priority, against r2).
+  { id:"r30", name:"R29 - Conflict Summary Demo", status:"Active", when:"While the form is being filled", audience:"Everyone", usedInForms:0, recommended:false, exec:"On Create and Edit",
+    description:"Shows every conflict this rule takes part in, grouped by the field it affects.",
+    conditions:[{fieldId:"status", op:"Is", value:"Open"}], actions:[{behavior:"Show", fieldId:"assignee", fieldIds:["assignee"]}],
+    blocks:[
+      { match:"all", time:"While the form is being filled", exec:"On Create and Edit", people:"Everyone",
+        conditions:[{fieldId:"status", op:"Is", value:"Open"}],
+        actions:[{behavior:"Show", fieldId:"assignee", fieldIds:["assignee"]}] },
+      { match:"all", time:"While the form is being filled", exec:"On Create and Edit", people:"Everyone",
+        conditions:[{fieldId:"status", op:"Is", value:"Resolved"}],
+        actions:[{behavior:"Hide", fieldId:"assignee", fieldIds:["assignee"]}] },
+      { match:"all", time:"While the form is being filled", exec:"On Create and Edit", people:"Everyone",
+        conditions:[{fieldId:"department", op:"Is", value:"IT"}],
+        actions:[{behavior:"Set Value", fieldId:"priority", fieldIds:["priority"], value:"Low"}] },
+    ] },
 ];
 // The 10 demo blocks R27 loads on its first "Add block" — mixed complexity (standard / actions-only / multi-group)
 // so horizontal scrolling, hover previews and the status dots can all be exercised immediately.
@@ -1402,7 +1457,7 @@ function execNatural(){
   RULE_DB.forEach((r, ri)=>{
     execBlocksOf(r).forEach((b, bi)=>{
       out.push({ key: execKey(r.id, bi), ruleId:r.id, ruleName:r.name, ruleNo: ri+1,
-                 blockNo: bi+1, block:b, disabled: !!r.disabled });
+                 blockNo: bi+1, blockCount: execBlocksOf(r).length, block:b, disabled: !!r.disabled });
     });
   });
   return out;
@@ -1436,6 +1491,17 @@ const execActCount = block => (block.actions||[]).filter(a=> a && a.behavior).le
 // What the order actually DOES. Walking the sequence top to bottom, when two blocks touch the same field
 // in a way that clashes, the LOWER one wins — that is the existing "last one wins" model, just expressed
 // per block. Recomputed from the live list, so dragging a row changes these immediately.
+// The fields a block WRITES — precedence is only ever decided on these, so they are what the row shows.
+const execWrites = block => { const s={}, o=[]; execActs(block).forEach(a=>{ if(a.fieldId && !s[a.fieldId]){ s[a.fieldId]=1; o.push(a.fieldId); } }); return o; };
+// Fields more than one block writes, and which position ends up deciding them. This is the whole point of
+// the screen stated as data: everything else on the page is a way of reading this.
+function execContested(list){
+  const by = {};
+  list.forEach((u,i)=>{ if(u.disabled) return; execWrites(u.block).forEach(f=>{ (by[f] = by[f] || []).push(i); }); });
+  return Object.keys(by).filter(f=> by[f].length>1)
+    .map(f=> ({ fieldId:f, positions:by[f], winner:by[f][by[f].length-1] }))
+    .sort((a,b)=> b.positions.length - a.positions.length);
+}
 function execOverrides(list){
   const out = list.map(()=> null);
   const seen = {};   // fieldId -> [{i, behavior, value}]
@@ -5033,6 +5099,7 @@ const DEMO_S10 = { dualEntry:true, fields: DEMO_S9.fields, rows: [], ruleMatrix:
 const previewFor = (preview, id) => (preview||[]).find(p => p.id === id) || null;
 // Pick the scenario from the draft — by name, or by its distinctive fields/conditions.
 const demoFor = draft => { const s = JSON.stringify(draft||{}).toLowerCase(); const name=((draft&&draft.name)||"").toLowerCase();
+  if(name.indexOf("conflict summary")>=0) return DEMO_S10;   // R29 — the standard drawer, unchanged
   if(name.indexOf("similar split")>=0) return DEMO_S10;
   if(name.indexOf("complex combinations")>=0) return DEMO_S9;
   if(name.indexOf("rule conflict matrix")>=0) return DEMO_S8;
@@ -5046,7 +5113,7 @@ const demoFor = draft => { const s = JSON.stringify(draft||{}).toLowerCase(); co
 // Only the seeded demo rules carry a scripted conflict scenario. A NEW, user-created rule (or any rule whose
 // name isn't one of the demo names) must show NO conflicts — the conflict banner, the field pips and the
 // Run-Test drawer are all gated on this so user testing starts from a clean slate.
-const DEMO_NAME_KEYS = ["similar split","complex combinations","rule conflict matrix","conflict matrix","routing demo 2","request routing","critical incident","hr rule ui exp","hr requests"];
+const DEMO_NAME_KEYS = ["conflict summary","similar split","complex combinations","rule conflict matrix","conflict matrix","routing demo 2","request routing","critical incident","hr rule ui exp","hr requests"];
 const isConflictDemo = draft => { const n=((draft&&draft.name)||"").toLowerCase(); return DEMO_NAME_KEYS.some(k=> n.indexOf(k)>=0); };
 // Collapsed-row roles for a demo conflicting rule: the field is an Action if the conflicting rule
 // changes it (a `their` behavior), and a Condition if its label heads any of that block's condition
@@ -5499,6 +5566,9 @@ function buildClashEntries(preview){
       out.push({ rule: pr.rule, fieldId: p.id, fieldLabel: labelOf(p.id), verdict,
                  cur: actShort(p.cur, p.curVal, labelOf(p.id)),
                  con: actShort(pr.act, pr.val, labelOf(p.id)),
+                 // raw behaviours too — the card names the field once, in its title, so each column can
+                 // then say what it does WITHOUT repeating it
+                 curAct: p.cur, curVal: p.curVal, conAct: pr.act, conVal: pr.val,
                  scope: pr.scope || null, curScope: p.curScope || null,
                  ruleActions: pr.ruleActions || null });   // the other rule's FULL action set (duplicates)
     });
@@ -5508,16 +5578,22 @@ function buildClashEntries(preview){
 // One clash as a two-column compare — this rule's action vs the other rule's — the other side tinted by verdict
 // (red conflict / gold duplicate), with the firing-window overlap spelled out when the two rules run on
 // different scopes (the "conflicting trigger" — e.g. Show on Create vs Hide on Create + Edit).
-// A small execution-window pill: "🕘 on Create". Shown beside a column's label so each side carries its own
-// trigger (the current rule's and the other rule's, respectively).
-function TriggerPill({ scope }){
-  if(!scope) return null;
-  return <span className="inline-flex shrink-0 items-center gap-1 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10.5px] font-medium text-slate-500"><Ico name="history" size={10}/>{scopePhrase(scope)}</span>;
-}
-// A clash card. CONFLICT: the compact single-field compare — this rule's action vs the other's, each column
-// carrying its own trigger pill, with the overlap spelled out when the windows differ. DUPLICATE: the whole
-// rule is redundant, so both columns list EVERY action of each rule side by side — that's the comparison that
+// A clash card. CONFLICT: a compact single-field compare — the field named once as the title, then the two
+// rules side by side with what each does to it, and a one-line reason only when their windows differ.
+// DUPLICATE: the whole rule is redundant, so both columns list EVERY action of each rule side by side —
+// that's the comparison that
 // justifies merging.
+// What a behaviour does, with the FIELD left out — the card already names the field in its title, so
+// repeating it in both columns is the main source of the old card's noise.
+const CLASH_VERB = { "Show":"Shows", "Hide":"Hides", "Mandate":"Makes mandatory", "Non-Mandate":"Makes optional",
+  "Enable":"Enables", "Disable":"Disables", "Clear Value":"Clears", "Show Options":"Shows options", "Hide Options":"Hides options" };
+const clashVerb = (act, val) => act==="Set Value" ? ("Sets to " + (val || "a value")) : (CLASH_VERB[act] || act || "Changes");
+// What KIND of clash it is, from the behaviours involved — one badge replaces a sentence of explanation.
+const CLASH_FAMILY = { "Show":"Visibility", "Hide":"Visibility", "Show Options":"Visibility", "Hide Options":"Visibility",
+  "Mandate":"Requirement", "Non-Mandate":"Requirement", "Enable":"Availability", "Disable":"Availability",
+  "Set Value":"Value", "Clear Value":"Value" };
+const clashKind = e => { const a=CLASH_FAMILY[e.curAct], b=CLASH_FAMILY[e.conAct];
+  return (a && a===b) ? (a + " conflict") : "Conflict"; };
 function ClashCard({ e, title, editName, curActions }){
   const dup = e.verdict==="duplicate";
   const conCls = dup ? "text-amber-700" : "text-rose-700";
@@ -5540,39 +5616,42 @@ function ClashCard({ e, title, editName, curActions }){
     </ul>
   );
   return (
-    <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2.5">
-      {/* header — a field title for conflicts (which field clashes); duplicates are whole-rule, so no field title.
-          Edit (Field view only) rides here. */}
-      {((!dup && title) || editName) &&
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <div className="min-w-0 truncate text-[12px] font-semibold text-slate-800" title={title}>{dup ? "" : title}</div>
-          {editName && <button type="button" onClick={()=> window.open(window.location.pathname + "?editRule=" + encodeURIComponent(editName), "_blank")} title={"Edit " + editName + " in a new tab"} className="inline-flex shrink-0 items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11.5px] font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-800"><Ico name="pencil" size={12}/> Edit</button>}
-        </div>}
-      <div className="grid grid-cols-2 divide-x divide-slate-200/70">
+    <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-3.5 py-3">
+      {/* 1 · WHICH FIELD — named once, here, and never repeated below. The badge says what kind of clash it
+          is, which is what the removed explanation paragraph was mostly spending its words on. */}
+      <div className="flex items-center gap-2">
+        {!dup && title && <div className="min-w-0 truncate text-[13.5px] font-semibold text-slate-900" title={title}>{title}</div>}
+        {!dup && title && <span className="shrink-0 rounded-full bg-rose-50 px-2 py-0.5 text-[10.5px] font-semibold text-rose-600 ring-1 ring-rose-100">{clashKind(e)}</span>}
+        {editName &&
+          <button type="button" onClick={()=> window.open(window.location.pathname + "?editRule=" + encodeURIComponent(editName), "_blank")} title={"Edit " + editName + " in a new tab"}
+            className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11.5px] font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-800"><Ico name="pencil" size={12}/> Edit</button>}
+      </div>
+      {/* The two sides are deliberately ASYMMETRIC. The current rule's name is not shown: the user is
+          editing it, so it is the one thing they already know, and printing it costs a line on both the
+          eye and the card. The conflicting rule's name is the only real unknown, so it gets the weight. */}
+      <div className={"grid grid-cols-2 divide-x divide-slate-200/70 " + ((!dup && title) ? "mt-2.5" : "")}>
         <div className="min-w-0 pr-4">
-          <div className="flex items-center gap-1.5">
-            <div className="text-[10px] font-medium uppercase tracking-wide text-slate-400">This rule</div>
-            {/* triggers shown only when the two windows DIFFER — identical windows add nothing */}
-            <TriggerPill scope={scoped ? e.curScope : null}/>
-          </div>
+          <div className="text-[9.5px] font-semibold uppercase tracking-wide text-[#1180c1]">Current rule</div>
           {dup
             ? <ActionList items={curActions||[]} otherSet={conSet}/>
-            : <div className="mt-1 text-[13px] font-medium leading-snug text-slate-900">{e.cur}</div>}
+            : <div className="mt-1 text-[13px] font-semibold leading-snug text-slate-800">{clashVerb(e.curAct, e.curVal)}</div>}
+          {e.curScope && <div className="mt-0.5 truncate text-[11px] text-slate-400">{cap(scopePhrase(e.curScope))}</div>}
         </div>
         <div className="min-w-0 pl-4">
-          <div className="flex items-center gap-1.5">
-            <div className="text-[10px] font-medium uppercase tracking-wide text-slate-400">{dup ? "Similar rule" : "Conflicting rule"}</div>
-            <TriggerPill scope={scoped ? e.scope : null}/>
-          </div>
+          <div className={"text-[9.5px] font-semibold uppercase tracking-wide " + (dup ? "text-amber-600" : "text-rose-600")}>{dup ? "Similar rule" : "Conflicting rule"}</div>
+          {/* the identifier the user is actually here to find */}
+          <div className={"mt-1 truncate text-[13px] font-semibold " + conCls} title={e.rule || ""}>{e.rule || (dup ? "Similar rule" : "Conflicting rule")}</div>
           {dup
             ? <ActionList items={conActions} otherSet={curSet}/>
-            : <div className={"mt-1 text-[13px] font-semibold leading-snug " + conCls}>{e.con}</div>}
+            : <div className={"mt-0.5 text-[12.5px] font-medium leading-snug " + (dup ? "text-amber-600" : "text-rose-600")}>{clashVerb(e.conAct, e.conVal)}</div>}
+          {e.scope && <div className="mt-0.5 truncate text-[11px] text-slate-400">{cap(scopePhrase(e.scope))}</div>}
         </div>
       </div>
-      {!dup && scoped && shared.length>0 &&
-        <div className="mt-2 flex items-start gap-1.5 border-t border-slate-100 pt-2 text-[11px] leading-snug text-slate-500">
-          <Ico name="history" size={12} cls="mt-0.5 shrink-0 text-slate-400"/>
-          <span>This rule runs {scopePhrase(e.curScope)}, the other {scopePhrase(e.scope)} — they overlap on {shared.join(" and ")}, so both fire.</span>
+      {/* One line, no paragraph. When the windows differ it names the overlap; when they match it just
+          states it — either way the point is the same: both of these fire. */}
+      {!dup && (e.curScope || e.scope) &&
+        <div className="mt-2 truncate border-t border-slate-200/70 pt-1.5 text-[11px] text-slate-400">
+          Both rules run on {scoped ? shared.join(" and ") : (SCOPE_PARTS[e.curScope || e.scope] || []).join(" and ")}, so both execute.
         </div>}
     </div>
   );
@@ -6710,6 +6789,25 @@ function ConflictInspector({draft, conflicts, onClose, onEdit, onDisable, onTogg
             );
             return (
               <div>
+                {/* OVERVIEW — the total and what it actually means, before any grouping choice is offered.
+                    Header → this → Group by: you learn there is a problem and why it matters, and only then
+                    pick how to slice it. */}
+                {fv!=="duplicate" && nConf>0 &&
+                  <div className="mb-4 flex items-start gap-2.5 rounded-xl border border-rose-200 bg-rose-50/70 px-4 py-3">
+                    <span className="mt-0.5 shrink-0 text-rose-500"><Ico name="warn" size={16}/></span>
+                    <div className="min-w-0">
+                      <div className="text-[13.5px] font-semibold text-rose-700">{nConf} conflict{nConf===1?"":"s"} found</div>
+                      <div className="mt-0.5 text-[12.5px] leading-relaxed text-rose-600/90">A field can only end up in one state. Resolve these to avoid unexpected behaviour in the form.</div>
+                    </div>
+                  </div>}
+                {fv==="duplicate" && nDup>0 &&
+                  <div className="mb-4 flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3">
+                    <span className="mt-0.5 shrink-0 text-amber-500"><Ico name="warn" size={16}/></span>
+                    <div className="min-w-0">
+                      <div className="text-[13.5px] font-semibold text-amber-700">{nDup} similar rule{nDup===1?"":"s"} found</div>
+                      <div className="mt-0.5 text-[12.5px] leading-relaxed text-amber-700/90">These rules already do what this one does. Merging or removing one keeps the same behaviour without running it twice.</div>
+                    </div>
+                  </div>}
                 {/* VIEW SWITCHER — left-aligned. (Section 1 removed; its summary now rides beside the drawer title.)
                     Custom narrow tooltips wrap to 3–4 lines rather than the wide single-line native title. */}
                 {/* Group-by switcher — hidden in duplicate-only mode (duplicates are whole-rule, so Rule view only) */}
@@ -7648,7 +7746,7 @@ function FieldRulesDrawer({fieldId, onClose}){
 // The authoritative runtime sequence. NOT an editor: it never touches a block's logic, only where that
 // block sits in the chain. Rule authoring stays in the rule editor; precedence lives here and nowhere
 // else, so there is no second, hidden place where order is implied.
-function ExecRow({u, idx, over, dragging, dropBefore, dropAfter, onDragStart, onDragEnd, onDragOver, onDrop,
+function ExecRow({u, idx, over, wins, contestedSet, dragging, dropBefore, dropAfter, onDragStart, onDragEnd, onDragOver, onDrop,
                   onMove, onOpen, first, last}){
   const b = u.block;
   const nc = execCondCount(b), na = execActCount(b);
@@ -7656,6 +7754,7 @@ function ExecRow({u, idx, over, dragging, dropBefore, dropAfter, onDragStart, on
                  nc + " condition" + (nc===1?"":"s"),
                  na + " action" + (na===1?"":"s") ].join(" · ");
   const summary = summarizeBlock(b, b.people) || "No actions configured yet.";
+  const writes = execWrites(b);
   return (
     <li className="relative" onDragOver={onDragOver} onDrop={onDrop}>
       {/* drop indicator — a single brand line in the gap, so the landing spot is never ambiguous */}
@@ -7673,19 +7772,42 @@ function ExecRow({u, idx, over, dragging, dropBefore, dropAfter, onDragStart, on
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
             <span className="truncate text-[13.5px] font-semibold text-slate-800">{u.ruleName}</span>
-            <span className="text-slate-300">·</span>
-            <span className="whitespace-nowrap text-[13px] font-medium text-slate-600">Block {u.blockNo}</span>
+            {/* the block is a chip, not more sentence — a rule's branches interleave here, so which branch
+                this row is has to be readable without parsing the line */}
+            <span className="shrink-0 whitespace-nowrap rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600">Block {u.blockNo}{u.blockCount>1 ? " of " + u.blockCount : ""}</span>
             {u.disabled &&
               <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">Disabled</span>}
+            {/* both sides of the relationship are labelled — a row that loses says so, and the row that
+                actually decides the field says so too, so the outcome is readable in one pass */}
             {over &&
-              <span title={"Later blocks change " + over.fields.map(labelOf).join(", ") + " after this one runs, so their result is what the user sees."}
+              <span title={"Position " + (over.by+1) + " changes " + over.fields.map(labelOf).join(", ") + " after this block runs, so its result is what the user sees."}
                 className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10.5px] font-semibold text-amber-700 ring-1 ring-amber-200">
                 <span className="h-[5px] w-[5px] rotate-45 rounded-[1px] bg-amber-500"/>
                 Overridden by #{over.by+1}
               </span>}
+            {!over && wins && wins.length>0 &&
+              <span title={"Nothing after this block changes " + wins.map(labelOf).join(", ") + ", so this is the value the user ends up with."}
+                className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10.5px] font-semibold text-emerald-700 ring-1 ring-emerald-200">
+                <Ico name="tick" size={10}/> Final say on {wins.map(labelOf).join(", ")}
+              </span>}
           </div>
           <div className="mt-1 truncate text-[12px] text-slate-500">{meta}</div>
-          <div className="mt-0.5 truncate text-[12px] text-slate-400" title={summary}>{summary}</div>
+          {/* WHAT THIS BLOCK WRITES — order only ever matters for these, so they are the scannable part.
+              A field another block also writes is marked, so competing rows can be spotted down the list. */}
+          {writes.length>0 &&
+            <div className="mt-1.5 flex flex-wrap items-center gap-1">
+              <span className="text-[11px] text-slate-400">Writes</span>
+              {writes.map(f=>{ const hot = contestedSet && contestedSet.has(f);
+                return (
+                  <span key={f} title={hot ? labelOf(f) + " is written by more than one block — position decides it." : labelOf(f) + " is only written here."}
+                    className={"inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium " +
+                      (hot ? "bg-amber-50 text-amber-700 ring-1 ring-amber-200" : "bg-slate-100 text-slate-600")}>
+                    {hot && <span className="h-[4px] w-[4px] rotate-45 rounded-[1px] bg-amber-500"/>}{labelOf(f)}
+                  </span>
+                );
+              })}
+            </div>}
+          <div className="mt-1 truncate text-[12px] text-slate-400" title={summary}>{summary}</div>
         </div>
         {/* keyboard / pointer alternative to dragging — reordering must not require a mouse */}
         <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition group-hover:opacity-100 focus-within:opacity-100">
@@ -7715,6 +7837,11 @@ function ExecutionOrder({onOpenRule, onToast}){
   const [dropAt, setDropAt] = useState(-1);   // insertion index while dragging
   const list = execList();
   const over = execOverrides(list);
+  const contested = execContested(list);
+  const contestedSet = new Set(contested.map(c=>c.fieldId));
+  // Which contested fields each position ends up deciding — the mirror image of the override map.
+  const winsAt = list.map(()=> []);
+  contested.forEach(c=> winsAt[c.winner].push(c.fieldId));
   const keys = list.map(u=>u.key);
   const commit = (next, msg)=>{ setExecOrder(next); bump(); onToast && onToast(msg); };
   // Move by one place. Kept separate from the drag path so the buttons stay exact at the ends.
@@ -7756,14 +7883,33 @@ function ExecutionOrder({onOpenRule, onToast}){
         <div className="mb-4">
           <h1 className="text-[19px] font-bold text-slate-800">Execution Order</h1>
           <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-slate-500">
-            Blocks run from top to bottom. When two blocks change the same field, the one <span className="font-medium text-slate-600">lower in this list</span> runs
-            last, so its result is what the user sees. Drag a block to change when it runs — this list is the runtime order.
+            Every block in every rule runs from top to bottom. Order only matters where two blocks write the
+            <span className="font-medium text-slate-600"> same field</span> — there, the one lower in the list runs last, so its value is what the user sees.
+            Drag a block to change when it runs.
           </p>
           <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-slate-500">
             <span><span className="font-semibold text-slate-700">{list.length}</span> block{list.length===1?"":"s"} across <span className="font-semibold text-slate-700">{nRules}</span> rule{nRules===1?"":"s"}</span>
             {nOver>0 && <span className="inline-flex items-center gap-1.5"><span className="h-[5px] w-[5px] rotate-45 rounded-[1px] bg-amber-500"/>{nOver} block{nOver===1?"":"s"} overridden by a later block</span>}
             <span className="text-slate-400">{execIsCustomOrder() ? "Custom order" : "Authoring order"}</span>
           </div>
+          {/* WHAT THE ORDER DECIDES — the contested fields and the position that ends up winning each.
+              Everything else on this screen is a way of reading this one table, so it leads. */}
+          {contested.length>0 &&
+            <div className="mt-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
+              <div className="text-[12px] font-semibold text-slate-700">This order decides {contested.length} field{contested.length===1?"":"s"}</div>
+              <p className="mt-0.5 text-[11.5px] leading-relaxed text-slate-500">Each of these is written by more than one block. The position listed is the one that runs last, so its value is the one the user ends up with.</p>
+              <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1.5">
+                {contested.map(c=>(
+                  <span key={c.fieldId} className="inline-flex items-center gap-1.5 text-[12px]">
+                    <span className="font-medium text-slate-700">{labelOf(c.fieldId)}</span>
+                    <span className="text-slate-400">written by {c.positions.length} blocks →</span>
+                    <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-200">
+                      #{c.winner+1} wins
+                    </span>
+                  </span>
+                ))}
+              </div>
+            </div>}
         </div>
         <div className="mb-3 flex items-center gap-2">
           <div className="relative flex-1">
@@ -7788,7 +7934,7 @@ function ExecutionOrder({onOpenRule, onToast}){
             </div>
           : <ol className="space-y-2" onDragOver={e=>{ if(drag) e.preventDefault(); }}>
               {shown.map(({u,i})=>(
-                <ExecRow key={u.key} u={u} idx={i} over={over[i]}
+                <ExecRow key={u.key} u={u} idx={i} over={over[i]} wins={winsAt[i]} contestedSet={contestedSet}
                   dragging={drag===u.key}
                   dropBefore={!ql && drag && dropAt===i}
                   dropAfter={!ql && drag && dropAt===i+1 && i===list.length-1}
