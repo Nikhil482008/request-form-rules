@@ -3,127 +3,150 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Request Form Rules — Prototype Hub</title>
+<title>Motadata Prototypes — Hub</title>
 <style>
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  body { display: flex; flex-direction: column; background: #0f172a; }
-  header { flex: 0 0 auto; display: flex; align-items: center; gap: 16px; padding: 8px 16px;
-           background: #0f172a; color: #e2e8f0; border-bottom: 1px solid #1e293b; }
-  .brand { font-weight: 600; font-size: 13px; color: #f1f5f9; white-space: nowrap; }
-  .tabs { display: flex; gap: 6px; flex: 1 1 auto; overflow-x: auto; }
-  .tab { appearance: none; border: 1px solid #334155; background: #1e293b; color: #cbd5e1;
-         padding: 6px 12px; border-radius: 9999px; font-size: 13px; font-weight: 500; cursor: pointer;
-         white-space: nowrap; transition: background .12s, color .12s, border-color .12s; }
-  .tab:hover { background: #334155; color: #fff; }
-  .tab.active { background: #0ea5e9; border-color: #0ea5e9; color: #fff; }
-  .tab .sub { opacity: .7; font-weight: 400; }
-  .tab .star { color: #fde047; margin-left: 4px; }
-  .pop { flex: 0 0 auto; color: #94a3b8; text-decoration: none; font-size: 12px; padding: 6px 8px;
-         border-radius: 6px; white-space: nowrap; }
+  body { display: flex; background: #0f172a; color: #e2e8f0; }
+
+  /* ── side strip ─────────────────────────────────────────────
+     Replaces the old pill tab bar: the catalogue outgrew a single
+     horizontal row, and grouping is what makes Admin · BOM findable. */
+  aside { flex: 0 0 236px; display: flex; flex-direction: column; min-height: 0;
+          background: #0f172a; border-right: 1px solid #1e293b; }
+  .brand { flex: 0 0 auto; display: flex; align-items: center; gap: 8px;
+           padding: 14px 16px 12px; border-bottom: 1px solid #1e293b; }
+  .brand b { font-size: 13px; font-weight: 600; color: #f1f5f9; letter-spacing: -.2px; }
+  .brand span { font-size: 11px; color: #64748b; display: block; margin-top: 2px; }
+  .rail { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 10px 8px 16px; }
+  .grp { font-size: 10px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase;
+         color: #64748b; padding: 14px 8px 6px; }
+  .grp:first-child { padding-top: 4px; }
+  .item { display: block; width: 100%; text-align: left; appearance: none; border: 0; background: none;
+          color: #cbd5e1; font-size: 13px; padding: 7px 10px; border-radius: 6px; cursor: pointer;
+          transition: background .12s, color .12s; }
+  .item:hover { background: #1e293b; color: #fff; }
+  .item.active { background: #0ea5e9; color: #fff; }
+  .item .sub { opacity: .6; font-size: 11px; margin-left: 6px; }
+  .item.active .sub { opacity: .85; }
+
+  /* ── content ───────────────────────────────────────────────── */
+  main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+  header { flex: 0 0 auto; display: flex; align-items: center; gap: 12px;
+           padding: 10px 16px; border-bottom: 1px solid #1e293b; }
+  .now { font-size: 13px; font-weight: 600; color: #f1f5f9; }
+  .now em { font-style: normal; font-weight: 400; color: #64748b; margin-left: 6px; }
+  .pop { margin-left: auto; color: #94a3b8; text-decoration: none; font-size: 12px;
+         padding: 6px 9px; border-radius: 6px; white-space: nowrap; }
   .pop:hover { color: #fff; background: #1e293b; }
-  .picker { flex: 0 0 auto; background: #1e293b; color: #e2e8f0; border: 1px solid #334155;
-            border-radius: 8px; font-size: 12px; padding: 6px 8px; cursor: pointer; max-width: 220px; }
-  .picker:hover { border-color: #475569; }
-  .picker:focus { outline: none; border-color: #0ea5e9; }
-  main { flex: 1 1 auto; min-height: 0; background: #fff; }
+  .frame-wrap { flex: 1 1 auto; min-height: 0; background: #fff; }
   iframe { width: 100%; height: 100%; border: 0; display: block; }
 </style>
 </head>
 <body>
-<header>
-  <span class="brand">Request Form Rules · Prototypes</span>
-  <nav class="tabs" id="tabs"></nav>
-  <select class="picker" id="picker" title="Jump to any version (incl. older ones)"></select>
-  <a class="pop" id="pop" href="#" target="_blank" rel="noopener">Open full screen ↗</a>
-</header>
+
+<aside>
+  <div class="brand">
+    <div><b>Motadata · Prototypes</b><span>Request Form Rules · BOM</span></div>
+  </div>
+  <nav class="rail" id="rail"></nav>
+</aside>
+
 <main>
-  <iframe id="frame" title="Rule Studio prototype" src="about:blank"></iframe>
+  <header>
+    <span class="now" id="now"></span>
+    <a class="pop" id="pop" href="#" target="_blank" rel="noopener">Open full screen ↗</a>
+  </header>
+  <div class="frame-wrap"><iframe id="frame" title="Prototype" src="about:blank"></iframe></div>
 </main>
 
 <script>
-  var VERSIONS = [
-    { id:"v11", label:"Field Rule Workspace",   sub:"V11", src:"rule-studio-v11.html" },
-    { id:"v112", label:"Field Rule Workspace",  sub:"V11.2", src:"rule-studio-v11-2.html" },
-    { id:"v12", label:"Multi-Field Rule Workspace",  sub:"V12", src:"rule-studio-v12.html" },
-    { id:"v0",  label:"Rules without Blocks",   sub:"V0",  src:"rule-studio-v0.html" },
-    { id:"v01", label:"Block Recommendations", sub:"V0.1", src:"rule-studio-v0-1.html" },
-    { id:"v03", label:"Smart Block Recommendations", sub:"V0.3", src:"rule-studio-v0-3.html" },
-    { id:"v10", label:"Form Builder",           sub:"V10", src:"rule-studio-v10.html" },
-    { id:"v102", label:"Rule Block Display",    sub:"V10.2", src:"rule-studio-v10-2.html" },
-    { id:"v103", label:"Rule Landmarks",        sub:"V10.3", src:"rule-studio-v10-3.html" },
-    { id:"v7", label:"Progressive Workspace",   sub:"V7", src:"rule-studio-v7.html" },
-    { id:"v8", label:"Guided Form Canvas",      sub:"V8", src:"rule-studio-v8.html" },
-    { id:"v9", label:"Rule Sequence Workspace", sub:"V9", src:"rule-studio-v9.html" },
+  /* One catalogue, grouped. The BOM module is a separate effort living in
+     BOM/ — it joins the hub as its own group rather than being mixed into
+     the rule-studio version list. */
+  var GROUPS = [
+    { name: "Form Rules · current", items: [
+      { id:"v11",  label:"Field Rule Workspace",        sub:"V11",   src:"rule-studio-v11.html" },
+      { id:"v112", label:"Field Rule Workspace",        sub:"V11.2", src:"rule-studio-v11-2.html" },
+      { id:"v12",  label:"Multi-Field Rule Workspace",  sub:"V12",   src:"rule-studio-v12.html" },
+      { id:"v0",   label:"Rules without Blocks",        sub:"V0",    src:"rule-studio-v0.html" },
+      { id:"v01",  label:"Block Recommendations",       sub:"V0.1",  src:"rule-studio-v0-1.html" },
+      { id:"v03",  label:"Smart Block Recommendations", sub:"V0.3",  src:"rule-studio-v0-3.html" },
+      { id:"v10",  label:"Form Builder",                sub:"V10",   src:"rule-studio-v10.html" },
+      { id:"v102", label:"Rule Block Display",          sub:"V10.2", src:"rule-studio-v10-2.html" },
+      { id:"v103", label:"Rule Landmarks",              sub:"V10.3", src:"rule-studio-v10-3.html" }
+    ]},
+
+    /* Admin · BOM — one prototype, deep-linked to each screen so every
+       surface is reachable from the rail without hunting inside it. */
+    { name: "Admin · BOM", items: [
+      { id:"bom",     label:"Component Intelligence", sub:"BOM", src:"BOM/concepts/component-inventory.html#/bom/components" },
+      { id:"bomadm",  label:"BOM Management",         sub:"Admin", src:"BOM/concepts/component-inventory.html#/admin" },
+      { id:"bomlic",  label:"BOM Licensing",          sub:"Admin", src:"BOM/concepts/component-inventory.html#/admin/bom-licensing" },
+      { id:"bomsch",  label:"BOM Scheduler",          sub:"Admin", src:"BOM/concepts/component-inventory.html#/admin/bom-scheduler" },
+      { id:"bomret",  label:"BOM Retention",          sub:"Admin", src:"BOM/concepts/component-inventory.html#/admin/bom-retention" }
+    ]},
+
+    { name: "Form Rules · earlier", items: [
+      { id:"v1",  label:"Sentence-First Builder",  sub:"V1",   src:"rule-studio-v1.html" },
+      { id:"v2",  label:"Structured Form",         sub:"V2",   src:"rule-studio-demo.html" },
+      { id:"v3",  label:"Block Workspace",         sub:"V3",   src:"rule-studio-v3.html" },
+      { id:"v4",  label:"Starter Cards",           sub:"V4",   src:"rule-studio-v4.html" },
+      { id:"v5",  label:"Guided Composer",         sub:"V5",   src:"rule-studio-v5.html" },
+      { id:"v6",  label:"Refined Classic Form",    sub:"V6",   src:"rule-studio-v6.html" },
+      { id:"v7",  label:"Progressive Workspace",   sub:"V7",   src:"rule-studio-v7.html" },
+      { id:"v8",  label:"Guided Form Canvas",      sub:"V8",   src:"rule-studio-v8.html" },
+      { id:"v9",  label:"Rule Sequence Workspace", sub:"V9",   src:"rule-studio-v9.html" },
+      { id:"v92", label:"Guided Sequence Editor",  sub:"V9.2", src:"rule-studio-v9-2.html" },
+      { id:"v101",label:"Service Catalog + Rules", sub:"V10.1",src:"rule-studio-v10-1.html" }
+    ]}
   ];
 
-  // Full catalogue (incl. older versions) — used by the dropdown so EVERY version is reachable.
-  // The tab bar above still renders only the VERSIONS subset (unchanged).
-  var ALL_VERSIONS = [
-    { id:"v1",  label:"Sentence-First Builder",     sub:"V1",   src:"rule-studio-v1.html" },
-    { id:"v2",  label:"Structured Form",            sub:"V2",   src:"rule-studio-demo.html" },
-    { id:"v3",  label:"Block Workspace",            sub:"V3",   src:"rule-studio-v3.html" },
-    { id:"v4",  label:"Starter Cards",              sub:"V4",   src:"rule-studio-v4.html" },
-    { id:"v5",  label:"Guided Composer",            sub:"V5",   src:"rule-studio-v5.html" },
-    { id:"v6",  label:"Refined Classic Form",       sub:"V6",   src:"rule-studio-v6.html" },
-    { id:"v7",  label:"Progressive Workspace",      sub:"V7",   src:"rule-studio-v7.html" },
-    { id:"v8",  label:"Guided Form Canvas",         sub:"V8",   src:"rule-studio-v8.html" },
-    { id:"v9",  label:"Rule Sequence Workspace",    sub:"V9",   src:"rule-studio-v9.html" },
-    { id:"v92", label:"Guided Sequence Editor",     sub:"V9.2", src:"rule-studio-v9-2.html" },
-    { id:"v0",  label:"Rules without Blocks",        sub:"V0",   src:"rule-studio-v0.html" },
-    { id:"v01", label:"Block Recommendations",       sub:"V0.1", src:"rule-studio-v0-1.html" },
-    { id:"v03", label:"Smart Block Recommendations", sub:"V0.3", src:"rule-studio-v0-3.html" },
-    { id:"v10", label:"Form Builder",               sub:"V10",  src:"rule-studio-v10.html" },
-    { id:"v101",label:"Service Catalog + Rules",     sub:"V10.1",src:"rule-studio-v10-1.html" },
-    { id:"v102",label:"Rule Block Display",          sub:"V10.2",src:"rule-studio-v10-2.html" },
-    { id:"v103",label:"Rule Landmarks",              sub:"V10.3",src:"rule-studio-v10-3.html" },
-    { id:"v11", label:"Field Rule Workspace",       sub:"V11",  src:"rule-studio-v11.html" },
-    { id:"v112",label:"Field Rule Workspace",       sub:"V11.2",src:"rule-studio-v11-2.html" },
-    { id:"v12", label:"Multi-Field Rule Workspace", sub:"V12",  src:"rule-studio-v12.html" },
-  ];
+  var ALL = GROUPS.reduce(function(a, g){ return a.concat(g.items); }, []);
+  var railEl = document.getElementById("rail");
+  var frame  = document.getElementById("frame");
+  var pop    = document.getElementById("pop");
+  var nowEl  = document.getElementById("now");
+  var lookup = function(id){ return ALL.filter(function(x){ return x.id === id; })[0] || ALL[0]; };
+  var known  = function(id){ return ALL.some(function(x){ return x.id === id; }); };
 
-  var tabsEl = document.getElementById("tabs");
-  var frame = document.getElementById("frame");
-  var pop = document.getElementById("pop");
-  var picker = document.getElementById("picker");
-  var vlookup = function(id){ return ALL_VERSIONS.find(function(x){ return x.id === id; }) || VERSIONS[0]; };
-  var known = function(id){ return ALL_VERSIONS.some(function(v){ return v.id === id; }); };
+  /* bump on each deploy to bust the browser cache of the iframed prototype */
+  var BUILD = "20260808a";
+  /* the BOM entries carry their own hash, so the cache-buster has to go
+     BEFORE it or the inner router never sees the route */
+  function withBuild(src){
+    var i = src.indexOf("#");
+    return i < 0 ? src + "?b=" + BUILD
+                 : src.slice(0, i) + "?b=" + BUILD + src.slice(i);
+  }
 
-  // bump on each deploy to bust the browser cache of the iframed prototype (stale cache was loading
-  // an old version that still pointed at blocked CDNs → blank iframe)
-  var BUILD = "20260619e";
   function select(id, push){
-    var v = vlookup(id);
-    frame.src = v.src + "?b=" + BUILD;
-    pop.href = v.src + "?b=" + BUILD;
-    Array.prototype.forEach.call(tabsEl.children, function(btn){
+    var v = lookup(id), url = withBuild(v.src);
+    frame.src = url;
+    pop.href  = url;
+    Array.prototype.forEach.call(railEl.querySelectorAll(".item"), function(btn){
       btn.classList.toggle("active", btn.dataset.id === v.id);
     });
-    if (picker) picker.value = v.id;
+    nowEl.innerHTML = v.label + "<em>" + v.sub + "</em>";
     if (push && location.hash !== "#" + v.id) history.replaceState(null, "", "#" + v.id);
     document.title = "Hub · " + v.label + " " + v.sub;
   }
 
-  VERSIONS.forEach(function(v){
-    var b = document.createElement("button");
-    b.className = "tab";
-    b.dataset.id = v.id;
-    b.innerHTML = "<strong>" + v.label + "</strong> <span class='sub'>" + v.sub + "</span>" +
-                  (v.star ? "<span class='star' title='Recommended'>★</span>" : "");
-    b.addEventListener("click", function(){ select(v.id, true); });
-    tabsEl.appendChild(b);
+  GROUPS.forEach(function(g){
+    var h = document.createElement("div");
+    h.className = "grp";
+    h.textContent = g.name;
+    railEl.appendChild(h);
+    g.items.forEach(function(v){
+      var b = document.createElement("button");
+      b.className = "item";
+      b.dataset.id = v.id;
+      b.innerHTML = v.label + "<span class='sub'>" + v.sub + "</span>";
+      b.addEventListener("click", function(){ select(v.id, true); });
+      railEl.appendChild(b);
+    });
   });
 
-  // Dropdown — lists ALL versions (this is how older versions stay reachable).
-  ALL_VERSIONS.forEach(function(v){
-    var o = document.createElement("option");
-    o.value = v.id;
-    o.textContent = v.sub + " — " + v.label;
-    picker.appendChild(o);
-  });
-  picker.addEventListener("change", function(){ select(picker.value, true); });
-
-  // honor #v1…#v12 deep-links; default to V11 (current focus)
   var start = (location.hash || "").replace("#", "");
   select(known(start) ? start : "v11", false);
   window.addEventListener("hashchange", function(){
