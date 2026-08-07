@@ -15,10 +15,7 @@
      module icons navigate; the rest are the product's furniture. */
   .rail { flex: 0 0 56px; background: #fff; border-right: 1px solid #DFE5ED;
           display: flex; flex-direction: column; align-items: center;
-          padding: 8px 0 10px; gap: 3px; position: relative; z-index: 30; }
-  .rail .burger { width: 32px; height: 32px; border: 0; background: none; border-radius: 4px;
-                  display: grid; place-items: center; color: #364658; cursor: pointer; margin-bottom: 4px; }
-  .rail .burger:hover { background: #F5F7FA; }
+          padding: 12px 0 10px; gap: 3px; position: relative; z-index: 30; }
   .rail hr { width: 22px; border: 0; border-top: 1px solid #DFE5ED; margin: 4px 0; }
   .rail .sp { flex: 1 1 auto; }
   .ic { width: 32px; height: 32px; border: 0; background: none; border-radius: 4px; color: #7B8FA5;
@@ -144,7 +141,24 @@
   var frame  = document.getElementById("frame");
   var current = null, openGroup = null;
 
-  var BUILD = "20260808c";
+  /* The hub now owns the rail, so the prototype must not draw its own or you
+     get two. Ten of them render `nav.w-14`, the BOM file renders `nav.rail`;
+     V1–V9.2 have no rail and are unaffected. Same origin on Pages, so a style
+     injected into the frame does it without touching 20+ files. CSS applies to
+     DOM rendered later, so this survives React mounting after load. */
+  var HIDE_INNER_RAIL = "nav.rail,nav.w-14{display:none!important}";
+  frame.addEventListener("load", function(){
+    try {
+      var d = frame.contentDocument;
+      if (!d || d.getElementById("hubRailFix")) return;
+      var s = d.createElement("style");
+      s.id = "hubRailFix";
+      s.textContent = HIDE_INNER_RAIL;
+      (d.head || d.documentElement).appendChild(s);
+    } catch (e) { /* file:// treats the frame as cross-origin — inner rail stays */ }
+  });
+
+  var BUILD = "20260808d";
   /* BOM entries carry their own hash, so the cache-buster goes BEFORE it
      or the inner router never sees the route. */
   function withBuild(src){
@@ -173,18 +187,15 @@
   function openFly(g){
     openGroup = g;
     flyEl.innerHTML = "";
-    var keys = g ? [g] : Object.keys(GROUPS);
-    keys.forEach(function(k){
-      var h = document.createElement("h4");
-      h.textContent = GROUPS[k].name;
-      flyEl.appendChild(h);
-      GROUPS[k].items.forEach(function(v){
-        var b = document.createElement("button");
-        b.className = v.id === current ? "active" : "";
-        b.innerHTML = v.label + (v.sub ? "<span class='sub'>" + v.sub + "</span>" : "");
-        b.addEventListener("click", function(){ select(v.id, true); });
-        flyEl.appendChild(b);
-      });
+    var h = document.createElement("h4");
+    h.textContent = GROUPS[g].name;
+    flyEl.appendChild(h);
+    GROUPS[g].items.forEach(function(v){
+      var b = document.createElement("button");
+      b.className = v.id === current ? "active" : "";
+      b.innerHTML = v.label + (v.sub ? "<span class='sub'>" + v.sub + "</span>" : "");
+      b.addEventListener("click", function(){ select(v.id, true); });
+      flyEl.appendChild(b);
     });
     flyEl.classList.add("open");
     scrim.classList.add("open");
@@ -193,20 +204,8 @@
   scrim.addEventListener("click", closeFly);
   document.addEventListener("keydown", function(e){ if (e.key === "Escape") closeFly(); });
 
-  /* burger lists every module at once */
-  var burger = document.createElement("button");
-  burger.className = "burger";
-  burger.title = "All prototypes";
-  burger.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M1 3h14M1 8h14M1 13h14"/></svg>';
-  burger.addEventListener("click", function(e){
-    e.stopPropagation();
-    if (openGroup === "all") { closeFly(); return; }
-    openFly(null);
-    openGroup = "all";                 // openFly(null) leaves it null; name it so re-click closes
-  });
-  railEl.appendChild(burger);
-  railEl.appendChild(document.createElement("hr"));
-
+  /* No burger here — the product draws its own in the topbar, and the three lit
+     icons already reach every prototype. */
   RAIL.forEach(function(r){
     if (r.spacer){
       var sp = document.createElement("div"); sp.className = "sp"; railEl.appendChild(sp);
