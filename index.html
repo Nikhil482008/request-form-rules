@@ -12,8 +12,15 @@
   /* ── side strip ─────────────────────────────────────────────
      Replaces the old pill tab bar: the catalogue outgrew a single
      horizontal row, and grouping is what makes Admin · BOM findable. */
+  /* Hidden by default so a shared link opens on the prototype alone —
+     the rail is scaffolding for us, not part of what is being reviewed. */
   aside { flex: 0 0 236px; display: flex; flex-direction: column; min-height: 0;
           background: #0f172a; border-right: 1px solid #1e293b; }
+  body.norail aside { display: none; }
+  .railtoggle { flex: 0 0 auto; appearance: none; border: 1px solid #334155; background: #1e293b;
+                color: #cbd5e1; width: 30px; height: 30px; border-radius: 6px; cursor: pointer;
+                display: grid; place-items: center; transition: background .12s, color .12s; }
+  .railtoggle:hover { background: #334155; color: #fff; }
   .brand { flex: 0 0 auto; display: flex; align-items: center; gap: 8px;
            padding: 14px 16px 12px; border-bottom: 1px solid #1e293b; }
   .brand b { font-size: 13px; font-weight: 600; color: #f1f5f9; letter-spacing: -.2px; }
@@ -54,6 +61,9 @@
 
 <main>
   <header>
+    <button class="railtoggle" id="railtoggle" title="Show or hide the prototype list" aria-label="Toggle prototype list">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M1.5 3.5h13M1.5 8h13M1.5 12.5h13"/></svg>
+    </button>
     <span class="now" id="now"></span>
     <a class="pop" id="pop" href="#" target="_blank" rel="noopener">Open full screen ↗</a>
   </header>
@@ -145,6 +155,21 @@
       b.addEventListener("click", function(){ select(v.id, true); });
       railEl.appendChild(b);
     });
+  });
+
+  /* Rail visibility: hidden unless the viewer has asked for it. The choice
+     sticks per browser, so toggling it open for a working session survives
+     reloads without changing what a shared link shows anyone else. */
+  var RAILKEY = "hub_rail_open";
+  function setRail(open){
+    document.body.classList.toggle("norail", !open);
+    try { localStorage.setItem(RAILKEY, open ? "1" : "0"); } catch(e){}
+  }
+  var railOpen = false;
+  try { railOpen = localStorage.getItem(RAILKEY) === "1"; } catch(e){}
+  setRail(railOpen);
+  document.getElementById("railtoggle").addEventListener("click", function(){
+    setRail(document.body.classList.contains("norail"));
   });
 
   var start = (location.hash || "").replace("#", "");
