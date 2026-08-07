@@ -7,176 +7,230 @@
 <style>
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  body { display: flex; background: #0f172a; color: #e2e8f0; }
+  body { display: flex; background: #fff; color: #364658; }
 
-  /* ── side strip ─────────────────────────────────────────────
-     Replaces the old pill tab bar: the catalogue outgrew a single
-     horizontal row, and grouping is what makes Admin · BOM findable. */
-  /* Hidden by default so a shared link opens on the prototype alone —
-     the rail is scaffolding for us, not part of what is being reviewed. */
-  aside { flex: 0 0 236px; display: flex; flex-direction: column; min-height: 0;
-          background: #0f172a; border-right: 1px solid #1e293b; }
-  body.norail aside { display: none; }
-  .railtoggle { flex: 0 0 auto; appearance: none; border: 1px solid #334155; background: #1e293b;
-                color: #cbd5e1; width: 30px; height: 30px; border-radius: 6px; cursor: pointer;
-                display: grid; place-items: center; transition: background .12s, color .12s; }
-  .railtoggle:hover { background: #334155; color: #fff; }
-  .brand { flex: 0 0 auto; display: flex; align-items: center; gap: 8px;
-           padding: 14px 16px 12px; border-bottom: 1px solid #1e293b; }
-  .brand b { font-size: 13px; font-weight: 600; color: #f1f5f9; letter-spacing: -.2px; }
-  .brand span { font-size: 11px; color: #64748b; display: block; margin-top: 2px; }
-  .rail { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 10px 8px 16px; }
-  .grp { font-size: 10px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase;
-         color: #64748b; padding: 14px 8px 6px; }
-  .grp:first-child { padding-top: 4px; }
-  .item { display: block; width: 100%; text-align: left; appearance: none; border: 0; background: none;
-          color: #cbd5e1; font-size: 13px; padding: 7px 10px; border-radius: 6px; cursor: pointer;
-          transition: background .12s, color .12s; }
-  .item:hover { background: #1e293b; color: #fff; }
-  .item.active { background: #0ea5e9; color: #fff; }
-  .item .sub { opacity: .6; font-size: 11px; margin-left: 6px; }
-  .item.active .sub { opacity: .85; }
+  /* ── universal rail ─────────────────────────────────────────
+     The product's own icon rail, drawn by the HUB rather than by each
+     prototype — so it stays put when you move between them. Only the
+     module icons navigate; the rest are the product's furniture. */
+  .rail { flex: 0 0 56px; background: #fff; border-right: 1px solid #DFE5ED;
+          display: flex; flex-direction: column; align-items: center;
+          padding: 8px 0 10px; gap: 3px; position: relative; z-index: 30; }
+  .rail .burger { width: 32px; height: 32px; border: 0; background: none; border-radius: 4px;
+                  display: grid; place-items: center; color: #364658; cursor: pointer; margin-bottom: 4px; }
+  .rail .burger:hover { background: #F5F7FA; }
+  .rail hr { width: 22px; border: 0; border-top: 1px solid #DFE5ED; margin: 4px 0; }
+  .rail .sp { flex: 1 1 auto; }
+  .ic { width: 32px; height: 32px; border: 0; background: none; border-radius: 4px; color: #7B8FA5;
+        display: grid; place-items: center; cursor: pointer; position: relative;
+        transition: background .12s, color .12s; }
+  .ic:hover { background: #F5F7FA; color: #364658; }
+  .ic.on { background: #3D8BD0; color: #fff; }
+  .ic[data-tip]:hover::after { content: attr(data-tip); position: absolute; left: calc(100% + 8px);
+        top: 50%; transform: translateY(-50%); background: #364658; color: #fff; font-size: 12px;
+        padding: 5px 9px; border-radius: 4px; white-space: nowrap; z-index: 40; }
+  .ic.nav::before { content: ""; position: absolute; right: 3px; top: 4px; width: 4px; height: 4px;
+        border-radius: 50%; background: #3D8BD0; }
+  .ic.nav.on::before { background: #fff; }
 
-  /* ── content ───────────────────────────────────────────────── */
+  /* ── flyout ─────────────────────────────────────────────────── */
+  .fly { position: fixed; left: 56px; top: 0; bottom: 0; width: 248px; background: #fff;
+         border-right: 1px solid #DFE5ED; box-shadow: 8px 0 24px -12px rgba(16,24,40,.25);
+         z-index: 25; overflow-y: auto; padding: 12px 8px 16px; display: none; }
+  .fly.open { display: block; }
+  .fly h4 { margin: 0; font-size: 11px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase;
+            color: #7B8FA5; padding: 12px 10px 6px; }
+  .fly h4:first-child { padding-top: 4px; }
+  .fly button { display: block; width: 100%; text-align: left; border: 0; background: none; cursor: pointer;
+                font-size: 13px; color: #364658; padding: 8px 10px; border-radius: 4px;
+                transition: background .12s, color .12s; }
+  .fly button:hover { background: #F9FAFB; }
+  .fly button.active { background: #EBF5FF; color: #3D8BD0; font-weight: 600; }
+  .fly button .sub { color: #9CA3AF; font-size: 11px; margin-left: 6px; font-weight: 400; }
+  .scrim { position: fixed; inset: 0 0 0 56px; z-index: 20; display: none; }
+  .scrim.open { display: block; }
+
   main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
-  header { flex: 0 0 auto; display: flex; align-items: center; gap: 12px;
-           padding: 10px 16px; border-bottom: 1px solid #1e293b; }
-  .now { font-size: 13px; font-weight: 600; color: #f1f5f9; }
-  .now em { font-style: normal; font-weight: 400; color: #64748b; margin-left: 6px; }
-  .pop { margin-left: auto; color: #94a3b8; text-decoration: none; font-size: 12px;
-         padding: 6px 9px; border-radius: 6px; white-space: nowrap; }
-  .pop:hover { color: #fff; background: #1e293b; }
-  .frame-wrap { flex: 1 1 auto; min-height: 0; background: #fff; }
-  iframe { width: 100%; height: 100%; border: 0; display: block; }
+  iframe { width: 100%; height: 100%; border: 0; display: block; flex: 1 1 auto; }
 </style>
 </head>
 <body>
 
-<aside>
-  <div class="brand">
-    <div><b>Motadata · Prototypes</b><span>Request Form Rules · BOM</span></div>
-  </div>
-  <nav class="rail" id="rail"></nav>
-</aside>
+<nav class="rail" id="rail"></nav>
+<div class="scrim" id="scrim"></div>
+<aside class="fly" id="fly"></aside>
 
-<main>
-  <header>
-    <button class="railtoggle" id="railtoggle" title="Show or hide the prototype list" aria-label="Toggle prototype list">
-      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M1.5 3.5h13M1.5 8h13M1.5 12.5h13"/></svg>
-    </button>
-    <span class="now" id="now"></span>
-    <a class="pop" id="pop" href="#" target="_blank" rel="noopener">Open full screen ↗</a>
-  </header>
-  <div class="frame-wrap"><iframe id="frame" title="Prototype" src="about:blank"></iframe></div>
-</main>
+<main><iframe id="frame" title="Prototype" src="about:blank"></iframe></main>
 
 <script>
-  /* One catalogue, grouped. The BOM module is a separate effort living in
-     BOM/ — it joins the hub as its own group rather than being mixed into
-     the rule-studio version list. */
-  var GROUPS = [
-    { name: "Form Rules · current", items: [
-      { id:"v11",  label:"Field Rule Workspace",        sub:"V11",   src:"rule-studio-v11.html" },
-      { id:"v112", label:"Field Rule Workspace",        sub:"V11.2", src:"rule-studio-v11-2.html" },
-      { id:"v12",  label:"Multi-Field Rule Workspace",  sub:"V12",   src:"rule-studio-v12.html" },
-      { id:"v0",   label:"Rules without Blocks",        sub:"V0",    src:"rule-studio-v0.html" },
-      { id:"v01",  label:"Block Recommendations",       sub:"V0.1",  src:"rule-studio-v0-1.html" },
-      { id:"v03",  label:"Smart Block Recommendations", sub:"V0.3",  src:"rule-studio-v0-3.html" },
-      { id:"v10",  label:"Form Builder",                sub:"V10",   src:"rule-studio-v10.html" },
-      { id:"v102", label:"Rule Block Display",          sub:"V10.2", src:"rule-studio-v10-2.html" },
-      { id:"v103", label:"Rule Landmarks",              sub:"V10.3", src:"rule-studio-v10-3.html" }
+  /* Every prototype lives under one of these module groups. The rail shows
+     the module; the flyout shows what is inside it. */
+  var GROUPS = {
+    form: { name: "Request Form Rules", items: [
+      { id:"v0",   label:"Rules without Blocks",        sub:"V0" },
+      { id:"v01",  label:"Block Recommendations",       sub:"V0.1" },
+      { id:"v03",  label:"Smart Block Recommendations", sub:"V0.3" },
+      { id:"v11",  label:"Field Rule Workspace",        sub:"V11" },
+      { id:"v112", label:"Field Rule Workspace",        sub:"V11.2" },
+      { id:"v12",  label:"Multi-Field Rule Workspace",  sub:"V12" },
+      { id:"v10",  label:"Form Builder",                sub:"V10" },
+      { id:"v102", label:"Rule Block Display",          sub:"V10.2" },
+      { id:"v103", label:"Rule Landmarks",              sub:"V10.3" },
+      { id:"v1",   label:"Sentence-First Builder",      sub:"V1" },
+      { id:"v2",   label:"Structured Form",             sub:"V2" },
+      { id:"v3",   label:"Block Workspace",             sub:"V3" },
+      { id:"v4",   label:"Starter Cards",               sub:"V4" },
+      { id:"v5",   label:"Guided Composer",             sub:"V5" },
+      { id:"v6",   label:"Refined Classic Form",        sub:"V6" },
+      { id:"v7",   label:"Progressive Workspace",       sub:"V7" },
+      { id:"v8",   label:"Guided Form Canvas",          sub:"V8" },
+      { id:"v9",   label:"Rule Sequence Workspace",     sub:"V9" },
+      { id:"v92",  label:"Guided Sequence Editor",      sub:"V9.2" },
+      { id:"v101", label:"Service Catalog + Rules",     sub:"V10.1" }
     ]},
-
-    /* Admin · BOM — one prototype, deep-linked to each screen so every
-       surface is reachable from the rail without hunting inside it. */
-    { name: "Admin · BOM", items: [
-      { id:"bom",     label:"Component Intelligence", sub:"BOM", src:"BOM/concepts/component-inventory.html#/bom/components" },
-      { id:"bomadm",  label:"BOM Management",         sub:"Admin", src:"BOM/concepts/component-inventory.html#/admin" },
-      { id:"bomlic",  label:"BOM Licensing",          sub:"Admin", src:"BOM/concepts/component-inventory.html#/admin/bom-licensing" },
-      { id:"bomsch",  label:"BOM Scheduler",          sub:"Admin", src:"BOM/concepts/component-inventory.html#/admin/bom-scheduler" },
-      { id:"bomret",  label:"BOM Retention",          sub:"Admin", src:"BOM/concepts/component-inventory.html#/admin/bom-retention" }
+    bom:   { name: "BOM", items: [
+      { id:"bom", label:"Component Intelligence", sub:"SBOM · CBOM" }
     ]},
-
-    { name: "Form Rules · earlier", items: [
-      { id:"v1",  label:"Sentence-First Builder",  sub:"V1",   src:"rule-studio-v1.html" },
-      { id:"v2",  label:"Structured Form",         sub:"V2",   src:"rule-studio-demo.html" },
-      { id:"v3",  label:"Block Workspace",         sub:"V3",   src:"rule-studio-v3.html" },
-      { id:"v4",  label:"Starter Cards",           sub:"V4",   src:"rule-studio-v4.html" },
-      { id:"v5",  label:"Guided Composer",         sub:"V5",   src:"rule-studio-v5.html" },
-      { id:"v6",  label:"Refined Classic Form",    sub:"V6",   src:"rule-studio-v6.html" },
-      { id:"v7",  label:"Progressive Workspace",   sub:"V7",   src:"rule-studio-v7.html" },
-      { id:"v8",  label:"Guided Form Canvas",      sub:"V8",   src:"rule-studio-v8.html" },
-      { id:"v9",  label:"Rule Sequence Workspace", sub:"V9",   src:"rule-studio-v9.html" },
-      { id:"v92", label:"Guided Sequence Editor",  sub:"V9.2", src:"rule-studio-v9-2.html" },
-      { id:"v101",label:"Service Catalog + Rules", sub:"V10.1",src:"rule-studio-v10-1.html" }
+    admin: { name: "Admin · BOM Management", items: [
+      { id:"bomadm", label:"BOM Management", sub:"hub" },
+      { id:"bomlic", label:"BOM Licensing",  sub:"" },
+      { id:"bomsch", label:"BOM Scheduler",  sub:"" },
+      { id:"bomret", label:"BOM Retention",  sub:"" }
     ]}
+  };
+
+  var SRC = {
+    v0:"rule-studio-v0.html", v01:"rule-studio-v0-1.html", v03:"rule-studio-v0-3.html",
+    v11:"rule-studio-v11.html", v112:"rule-studio-v11-2.html", v12:"rule-studio-v12.html",
+    v10:"rule-studio-v10.html", v102:"rule-studio-v10-2.html", v103:"rule-studio-v10-3.html",
+    v1:"rule-studio-v1.html", v2:"rule-studio-demo.html", v3:"rule-studio-v3.html",
+    v4:"rule-studio-v4.html", v5:"rule-studio-v5.html", v6:"rule-studio-v6.html",
+    v7:"rule-studio-v7.html", v8:"rule-studio-v8.html", v9:"rule-studio-v9.html",
+    v92:"rule-studio-v9-2.html", v101:"rule-studio-v10-1.html",
+    bom:   "BOM/concepts/component-inventory.html#/bom/components",
+    bomadm:"BOM/concepts/component-inventory.html#/admin",
+    bomlic:"BOM/concepts/component-inventory.html#/admin/bom-licensing",
+    bomsch:"BOM/concepts/component-inventory.html#/admin/bom-scheduler",
+    bomret:"BOM/concepts/component-inventory.html#/admin/bom-retention"
+  };
+
+  /* The product rail, icon for icon. `group` makes an icon navigate; the
+     rest are the surrounding module set and stay inert, as in the app. */
+  var S = 'width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4"';
+  var RAIL = [
+    { tip:"Dashboard",     svg:'<svg '+S+'><circle cx="9" cy="9" r="7"/><path d="M9 9l3.5-3.5"/></svg>' },
+    { tip:"Request Form Rules", group:"form", svg:'<svg '+S+'><rect x="2" y="4" width="14" height="10" rx="2"/><path d="M6 4v10"/></svg>' },
+    { tip:"Users",         svg:'<svg '+S+'><circle cx="7" cy="6" r="2.6"/><path d="M2.5 15c0-2.6 2-4.2 4.5-4.2s4.5 1.6 4.5 4.2"/></svg>' },
+    { tip:"Workflow",      svg:'<svg '+S+'><path d="M4 3v8a3 3 0 003 3h7"/><path d="M11 11l3 3-3 3"/></svg>' },
+    { tip:"Releases",      svg:'<svg '+S+'><path d="M9 12V3M5.5 6.5L9 3l3.5 3.5"/><path d="M3 12v3h12v-3"/></svg>' },
+    { tip:"Assets",        svg:'<svg '+S+'><rect x="2.5" y="4" width="13" height="8.5" rx="1.6"/><path d="M6 15h6"/></svg>' },
+    { tip:"Contracts",     svg:'<svg '+S+'><rect x="3.5" y="2.5" width="11" height="13" rx="1.6"/><path d="M6 6h6M6 9h6M6 12h3.5"/></svg>' },
+    { tip:"Vulnerability", svg:'<svg '+S+'><path d="M9 2l5.5 2.4v4.3c0 3.4-2.3 6-5.5 7-3.2-1-5.5-3.6-5.5-7V4.4L9 2z"/></svg>' },
+    { tip:"Patch Management", svg:'<svg '+S+'><circle cx="9" cy="9" r="2.4"/><path d="M9 1.6v2.2M9 14.2v2.2M1.6 9h2.2M14.2 9h2.2"/></svg>' },
+    { tip:"CMDB",          svg:'<svg '+S+'><path d="M9 2l6 3.4v7.2L9 16l-6-3.4V5.4L9 2z"/></svg>' },
+    { tip:"BOM", group:"bom", svg:'<svg '+S+' stroke-width="1.5"><path d="M9 2.5l6 3v7l-6 3-6-3v-7l6-3z"/><path d="M3.4 5.6L9 8.4l5.6-2.8M9 8.4V15"/></svg>' },
+    { tip:"Discovery",     svg:'<svg '+S+'><circle cx="9" cy="5.5" r="2"/><circle cx="4.5" cy="13" r="2"/><circle cx="13.5" cy="13" r="2"/><path d="M9 7.5v2M7.5 11l-1.4-1M10.5 11l1.4-1"/></svg>' },
+    { tip:"Automation",    svg:'<svg '+S+'><path d="M9 2.5v3M9 12.5v3M2.5 9h3M12.5 9h3"/><circle cx="9" cy="9" r="3"/></svg>' },
+    { tip:"Reports",       svg:'<svg '+S+'><rect x="3" y="3" width="12" height="12" rx="1.8"/><path d="M6 11.5V8M9 11.5v-5M12 11.5v-2.5"/></svg>' },
+    { tip:"Approvals",     svg:'<svg '+S+'><circle cx="7" cy="6" r="2.4"/><path d="M2.5 14.5c0-2.4 2-4 4.5-4"/><path d="M10.5 12.5l1.8 1.8 3.2-3.6"/></svg>' },
+    { tip:"Tasks",         svg:'<svg '+S+'><path d="M3 5l1.6 1.6L7.5 3.7M3 12l1.6 1.6 2.9-2.9M10 5.5h5M10 12.5h5"/></svg>' },
+    { spacer:true },
+    { tip:"Admin", group:"admin", svg:'<svg '+S+' stroke-width="1.5"><path d="M3 5h5M11.5 5H15M3 13h3.5M10 13h5"/><circle cx="9.6" cy="5" r="1.9"/><circle cx="8.2" cy="13" r="1.9"/></svg>' }
   ];
 
-  var ALL = GROUPS.reduce(function(a, g){ return a.concat(g.items); }, []);
   var railEl = document.getElementById("rail");
+  var flyEl  = document.getElementById("fly");
+  var scrim  = document.getElementById("scrim");
   var frame  = document.getElementById("frame");
-  var pop    = document.getElementById("pop");
-  var nowEl  = document.getElementById("now");
-  var lookup = function(id){ return ALL.filter(function(x){ return x.id === id; })[0] || ALL[0]; };
-  var known  = function(id){ return ALL.some(function(x){ return x.id === id; }); };
+  var current = null, openGroup = null;
 
-  /* bump on each deploy to bust the browser cache of the iframed prototype */
-  var BUILD = "20260808a";
-  /* the BOM entries carry their own hash, so the cache-buster has to go
-     BEFORE it or the inner router never sees the route */
+  var BUILD = "20260808c";
+  /* BOM entries carry their own hash, so the cache-buster goes BEFORE it
+     or the inner router never sees the route. */
   function withBuild(src){
     var i = src.indexOf("#");
-    return i < 0 ? src + "?b=" + BUILD
-                 : src.slice(0, i) + "?b=" + BUILD + src.slice(i);
+    return i < 0 ? src + "?b=" + BUILD : src.slice(0, i) + "?b=" + BUILD + src.slice(i);
   }
+  function groupOf(id){
+    for (var g in GROUPS) if (GROUPS[g].items.some(function(x){ return x.id === id; })) return g;
+    return "form";
+  }
+  function known(id){ return !!SRC[id]; }
 
   function select(id, push){
-    var v = lookup(id), url = withBuild(v.src);
-    frame.src = url;
-    pop.href  = url;
-    Array.prototype.forEach.call(railEl.querySelectorAll(".item"), function(btn){
-      btn.classList.toggle("active", btn.dataset.id === v.id);
+    if (!known(id)) id = "v0";
+    current = id;
+    frame.src = withBuild(SRC[id]);
+    var g = groupOf(id), item = GROUPS[g].items.filter(function(x){ return x.id === id; })[0];
+    Array.prototype.forEach.call(railEl.querySelectorAll(".ic"), function(b){
+      b.classList.toggle("on", b.dataset.group === g);
     });
-    nowEl.innerHTML = v.label + "<em>" + v.sub + "</em>";
-    if (push && location.hash !== "#" + v.id) history.replaceState(null, "", "#" + v.id);
-    document.title = "Hub · " + v.label + " " + v.sub;
+    if (push && location.hash !== "#" + id) history.replaceState(null, "", "#" + id);
+    document.title = "Hub · " + item.label;
+    closeFly();
   }
 
-  GROUPS.forEach(function(g){
-    var h = document.createElement("div");
-    h.className = "grp";
-    h.textContent = g.name;
-    railEl.appendChild(h);
-    g.items.forEach(function(v){
-      var b = document.createElement("button");
-      b.className = "item";
-      b.dataset.id = v.id;
-      b.innerHTML = v.label + "<span class='sub'>" + v.sub + "</span>";
-      b.addEventListener("click", function(){ select(v.id, true); });
-      railEl.appendChild(b);
+  function openFly(g){
+    openGroup = g;
+    flyEl.innerHTML = "";
+    var keys = g ? [g] : Object.keys(GROUPS);
+    keys.forEach(function(k){
+      var h = document.createElement("h4");
+      h.textContent = GROUPS[k].name;
+      flyEl.appendChild(h);
+      GROUPS[k].items.forEach(function(v){
+        var b = document.createElement("button");
+        b.className = v.id === current ? "active" : "";
+        b.innerHTML = v.label + (v.sub ? "<span class='sub'>" + v.sub + "</span>" : "");
+        b.addEventListener("click", function(){ select(v.id, true); });
+        flyEl.appendChild(b);
+      });
     });
+    flyEl.classList.add("open");
+    scrim.classList.add("open");
+  }
+  function closeFly(){ openGroup = null; flyEl.classList.remove("open"); scrim.classList.remove("open"); }
+  scrim.addEventListener("click", closeFly);
+  document.addEventListener("keydown", function(e){ if (e.key === "Escape") closeFly(); });
+
+  /* burger lists every module at once */
+  var burger = document.createElement("button");
+  burger.className = "burger";
+  burger.title = "All prototypes";
+  burger.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M1 3h14M1 8h14M1 13h14"/></svg>';
+  burger.addEventListener("click", function(e){
+    e.stopPropagation();
+    if (openGroup === "all") { closeFly(); return; }
+    openFly(null);
+    openGroup = "all";                 // openFly(null) leaves it null; name it so re-click closes
   });
+  railEl.appendChild(burger);
+  railEl.appendChild(document.createElement("hr"));
 
-  /* Rail visibility: hidden unless the viewer has asked for it. The choice
-     sticks per browser, so toggling it open for a working session survives
-     reloads without changing what a shared link shows anyone else. */
-  var RAILKEY = "hub_rail_open";
-  function setRail(open){
-    document.body.classList.toggle("norail", !open);
-    try { localStorage.setItem(RAILKEY, open ? "1" : "0"); } catch(e){}
-  }
-  var railOpen = false;
-  try { railOpen = localStorage.getItem(RAILKEY) === "1"; } catch(e){}
-  setRail(railOpen);
-  document.getElementById("railtoggle").addEventListener("click", function(){
-    setRail(document.body.classList.contains("norail"));
+  RAIL.forEach(function(r){
+    if (r.spacer){
+      var sp = document.createElement("div"); sp.className = "sp"; railEl.appendChild(sp);
+      railEl.appendChild(document.createElement("hr"));
+      return;
+    }
+    var b = document.createElement("button");
+    b.className = "ic" + (r.group ? " nav" : "");
+    b.setAttribute("data-tip", r.tip);
+    if (r.group) b.dataset.group = r.group;
+    b.innerHTML = r.svg;
+    b.addEventListener("click", function(e){
+      e.stopPropagation();
+      if (!r.group) return;                      // inert module, as in the product
+      openGroup === r.group ? closeFly() : openFly(r.group);
+    });
+    railEl.appendChild(b);
   });
 
   var start = (location.hash || "").replace("#", "");
-  select(known(start) ? start : "v11", false);
+  select(known(start) ? start : "v0", false);    // V0 is the default
   window.addEventListener("hashchange", function(){
     var id = (location.hash || "").replace("#", "");
-    if (known(id)) select(id, false);
+    if (known(id) && id !== current) select(id, false);
   });
 </script>
 </body>
