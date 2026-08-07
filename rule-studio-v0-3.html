@@ -6805,7 +6805,7 @@ function AppV10(){
     <div className="v10 h-screen flex flex-col bg-slate-100 text-slate-800 overflow-hidden">
       <TopBar/>
       <div className="flex flex-1 min-h-0">
-        <IconRail/>
+        {/* Module rail removed: it lives in the app shell (index.html). Drawing it here too duplicated the module icons and stole 56px from the canvas. */}
         <main className="flex-1 flex flex-col min-w-0">
           <HeaderRow/>
           <TabsRow tab={tab} onBuilder={openBuilder} onRules={openTab} total={totalRules()} onCreateForm={createForm} onCreateCustom={openCustom} onCreateDemo={createDemo}/>

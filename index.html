@@ -85,14 +85,15 @@
       { id:"v92",  label:"Guided Sequence Editor",      sub:"V9.2" },
       { id:"v101", label:"Service Catalog + Rules",     sub:"V10.1" }
     ]},
-    bom:   { name: "BOM", items: [
-      { id:"bom", label:"Component Intelligence", sub:"SBOM · CBOM" }
-    ]},
-    admin: { name: "Admin · BOM Management", items: [
-      { id:"bomadm", label:"BOM Management", sub:"hub" },
-      { id:"bomlic", label:"BOM Licensing",  sub:"" },
-      { id:"bomsch", label:"BOM Scheduler",  sub:"" },
-      { id:"bomret", label:"BOM Retention",  sub:"" }
+    /* Clicking BOM lands on BOM Administration (`landing`) with the module menu
+       open beside it — dismiss the menu and you are on the hub, or pick a
+       section directly. The hub's three cards reach the same three sections. */
+    bom: { name: "BOM", landing: "bomadm", items: [
+      { id:"bomadm", label:"BOM Administration",   sub:"" },
+      { id:"bomlic", label:"BOM Licensing",        sub:"" },
+      { id:"bomsch", label:"BOM Scheduler",        sub:"" },
+      { id:"bomret", label:"BOM Retention",        sub:"" },
+      { id:"bom",    label:"Component Intelligence", sub:"SBOM · CBOM" }
     ]}
   };
 
@@ -132,7 +133,9 @@
     { tip:"Approvals",     svg:'<svg '+S+'><circle cx="7" cy="6" r="2.4"/><path d="M2.5 14.5c0-2.4 2-4 4.5-4"/><path d="M10.5 12.5l1.8 1.8 3.2-3.6"/></svg>' },
     { tip:"Tasks",         svg:'<svg '+S+'><path d="M3 5l1.6 1.6L7.5 3.7M3 12l1.6 1.6 2.9-2.9M10 5.5h5M10 12.5h5"/></svg>' },
     { spacer:true },
-    { tip:"Admin", group:"admin", svg:'<svg '+S+' stroke-width="1.5"><path d="M3 5h5M11.5 5H15M3 13h3.5M10 13h5"/><circle cx="9.6" cy="5" r="1.9"/><circle cx="8.2" cy="13" r="1.9"/></svg>' }
+    /* Direct shortcut to BOM Administration — the landing page whose cards
+       reach Licensing, Scheduler and Retention. */
+    { tip:"Admin", go:"bomadm", svg:'<svg '+S+' stroke-width="1.5"><path d="M3 5h5M11.5 5H15M3 13h3.5M10 13h5"/><circle cx="9.6" cy="5" r="1.9"/><circle cx="8.2" cy="13" r="1.9"/></svg>' }
   ];
 
   var railEl = document.getElementById("rail");
@@ -141,29 +144,41 @@
   var frame  = document.getElementById("frame");
   var current = null, openGroup = null;
 
-  /* The hub now owns the rail, so the prototype must not draw its own or you
-     get two. Ten of them render `nav.w-14`, the BOM file renders `nav.rail`;
-     V1–V9.2 have no rail and are unaffected. Same origin on Pages, so a style
-     injected into the frame does it without touching 20+ files. CSS applies to
-     DOM rendered later, so this survives React mounting after load. */
-  var HIDE_INNER_RAIL = "nav.rail,nav.w-14{display:none!important}";
-  frame.addEventListener("load", function(){
-    try {
-      var d = frame.contentDocument;
-      if (!d || d.getElementById("hubRailFix")) return;
-      var s = d.createElement("style");
-      s.id = "hubRailFix";
-      s.textContent = HIDE_INNER_RAIL;
-      (d.head || d.documentElement).appendChild(s);
-    } catch (e) { /* file:// treats the frame as cross-origin — inner rail stays */ }
-  });
+  /* No style is injected into the frame any more. The rail was being hidden
+     with CSS, which left it in the markup and depended on same-origin access —
+     it is now deleted from the prototypes themselves, so this shell is the only
+     place module icons are drawn. */
+  var BUILD = "20260808o";
+  /* Cache-buster goes BEFORE the fragment, or the route is lost. The counter
+     makes every URL unique, so assigning it to .src is always a real document
+     load — two URLs differing only after the "#" would not reload at all, and
+     that silence is how the frame kept showing the previous screen. */
+  var navSeq = 0;
+  function frameUrl(id){
+    var src = SRC[id], i = src.indexOf("#"), q = "?b=" + BUILD + "&n=" + (++navSeq);
+    return i < 0 ? src + q : src.slice(0, i) + q + src.slice(i);
+  }
+  /* The five BOM entries are ONE document at different hashes, so moving
+     between them must not reload — enrolling a CI in Licensing is what gates
+     Scheduler and Retention, and a reload would wipe it.
 
-  var BUILD = "20260808d";
-  /* BOM entries carry their own hash, so the cache-buster goes BEFORE it
-     or the inner router never sees the route. */
-  function withBuild(src){
-    var i = src.indexOf("#");
-    return i < 0 ? src + "?b=" + BUILD : src.slice(0, i) + "?b=" + BUILD + src.slice(i);
+     Writing the frame's hash was the obvious way and it is unreliable: the
+     assignment is a no-op when the value has not literally changed, so a page
+     whose address already said "#/admin" while showing something else simply
+     stayed put. Call the document's own router instead, and fall back to a
+     full load when it isn't reachable (file://, or a stale cached copy). */
+  function navFrame(id){
+    var url = frameUrl(id), i = url.indexOf("#"), target = i > -1 ? url.slice(i) : "";
+    try {
+      var w = frame.contentWindow;
+      /* Same document already mounted: ask its router to switch view and report
+         back which view it settled on. Only a matching answer counts as done —
+         anything else drops through to the reload below. */
+      if (w && target && typeof w.bomNavigate === "function" &&
+          w.location.pathname === new URL(url, location.href).pathname &&
+          w.bomNavigate(target) === w.bomViewOf(target)) return;
+    } catch (e) { /* cross-origin frame — fall through to a full load */ }
+    frame.src = url;
   }
   function groupOf(id){
     for (var g in GROUPS) if (GROUPS[g].items.some(function(x){ return x.id === id; })) return g;
@@ -174,10 +189,14 @@
   function select(id, push){
     if (!known(id)) id = "v0";
     current = id;
-    frame.src = withBuild(SRC[id]);
+    navFrame(id);
     var g = groupOf(id), item = GROUPS[g].items.filter(function(x){ return x.id === id; })[0];
     Array.prototype.forEach.call(railEl.querySelectorAll(".ic"), function(b){
-      b.classList.toggle("on", b.dataset.group === g);
+      var on = b.dataset.group === g;
+      /* The Admin shortcut lights for the admin screens themselves, not for
+         the rest of the module it happens to live in. */
+      if (b.dataset.go) on = g === "bom" && id !== "bom";
+      b.classList.toggle("on", on);
     });
     if (push && location.hash !== "#" + id) history.replaceState(null, "", "#" + id);
     document.title = "Hub · " + item.label;
@@ -213,14 +232,22 @@
       return;
     }
     var b = document.createElement("button");
-    b.className = "ic" + (r.group ? " nav" : "");
+    b.className = "ic" + (r.group || r.go ? " nav" : "");
     b.setAttribute("data-tip", r.tip);
     if (r.group) b.dataset.group = r.group;
+    if (r.go)    b.dataset.go = r.go;
     b.innerHTML = r.svg;
     b.addEventListener("click", function(e){
       e.stopPropagation();
+      if (r.go){ select(r.go, true); return; }   // Admin → BOM Administration
       if (!r.group) return;                      // inert module, as in the product
-      openGroup === r.group ? closeFly() : openFly(r.group);
+      if (openGroup === r.group){ closeFly(); return; }
+      /* A module opens ON its landing page AND offers its menu — the landing
+         renders behind the flyout, so dismissing the menu leaves you on the
+         module's hub rather than wherever you came from. */
+      var G = GROUPS[r.group];
+      if (G.landing) select(G.landing, true);
+      openFly(r.group);
     });
     railEl.appendChild(b);
   });

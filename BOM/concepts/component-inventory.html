@@ -72,12 +72,7 @@ button{font:inherit;color:inherit;cursor:pointer}
 .tb .plus:hover{background:var(--brand-ink)!important;color:#fff!important}
 .avatar{width:32px;height:32px;border-radius:4px;background:var(--brand);color:#fff;display:grid;place-items:center;font-size:11px;font-weight:600;letter-spacing:.4px}
 .shell{display:flex;min-height:calc(100vh - 52px)}
-.rail{width:56px;background:#fff;border-right:1px solid var(--line);padding:10px 0;display:flex;flex-direction:column;align-items:center;gap:3px;position:sticky;top:52px;height:calc(100vh - 52px)}
-.rail button{width:32px;height:32px;border:0;background:none;border-radius:4px;display:grid;place-items:center;color:var(--dim)}
-.rail button:hover{background:var(--surf-hover);color:var(--ink)}
-.rail button.on{background:var(--brand);color:#fff}
-.main{flex:1;min-width:0;padding:20px 20px 60px;max-width:1760px}
-
+.main{flex:1;min-width:0;padding:20px 24px 60px;max-width:1760px}
 /* ── page head ────────────────────────────────────────────── */
 .crumb{display:flex;align-items:center;gap:6px;color:var(--dim);font-size:12px;margin-bottom:8px}
 .crumb a{color:var(--dim);text-decoration:none}
@@ -164,8 +159,6 @@ h1{margin:0 0 2px;font-size:16px;font-weight:600;letter-spacing:0;line-height:1.
 /* ── admin view ───────────────────────────────────────────────
    Category group + settings cards, matching the product's Admin hub. */
 [hidden]{display:none!important}
-.railsp{flex:1}
-.raildiv{width:22px;height:1px;background:var(--line);margin:4px 0 6px}
 
 .adgroup{background:#fff;border:1px solid var(--line-tbl);border-radius:8px;padding:4px;max-width:1500px}
 .adhead{display:flex;align-items:flex-start;gap:12px;width:100%;border:0;background:none;
@@ -806,29 +799,11 @@ tbody td{padding:12px 16px;vertical-align:middle;font-size:12px;color:var(--ink)
   </div>
 </div>
 
+<!-- The module icon rail lives in the app shell, not in the page. This screen
+     is mounted inside it, so drawing a second one duplicated the module icons
+     and stole 56px from the canvas. Within-module navigation is the admin
+     sub-nav below the page title. -->
 <div class="shell">
-  <nav class="rail" aria-label="Modules">
-    <button class="tip" data-tip="Dashboard"><svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="9" cy="9" r="7"/><path d="M9 9l3.5-3.5"/></svg></button>
-    <button class="tip" data-tip="Tickets"><svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="4" width="14" height="10" rx="2"/><path d="M6 4v10"/></svg></button>
-    <button class="tip" data-tip="Users"><svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="7" cy="6" r="2.6"/><path d="M2.5 15c0-2.6 2-4.2 4.5-4.2s4.5 1.6 4.5 4.2"/></svg></button>
-    <button class="tip" data-tip="Workflow"><svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 3v8a3 3 0 003 3h7"/><path d="M11 11l3 3-3 3"/></svg></button>
-    <button class="tip" data-tip="Releases"><svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M9 12V3M5.5 6.5L9 3l3.5 3.5"/><path d="M3 12v3h12v-3"/></svg></button>
-    <button class="tip" data-tip="Assets"><svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2.5" y="4" width="13" height="8.5" rx="1.6"/><path d="M6 15h6"/></svg></button>
-    <button class="tip" data-tip="Contracts"><svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3.5" y="2.5" width="11" height="13" rx="1.6"/><path d="M6 6h6M6 9h6M6 12h3.5"/></svg></button>
-    <button class="tip" data-tip="Vulnerability"><svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M9 2l5.5 2.4v4.3c0 3.4-2.3 6-5.5 7-3.2-1-5.5-3.6-5.5-7V4.4L9 2z"/></svg></button>
-    <button class="tip" data-tip="Patch Management"><svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="9" cy="9" r="2.4"/><path d="M9 1.6v2.2M9 14.2v2.2M1.6 9h2.2M14.2 9h2.2"/></svg></button>
-    <button class="tip" data-tip="CMDB"><svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M9 2l6 3.4v7.2L9 16l-6-3.4V5.4L9 2z"/></svg></button>
-    <button class="on tip" id="railBom" data-tip="BOM"><svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 2.5l6 3v7l-6 3-6-3v-7l6-3z"/><path d="M3.4 5.6L9 8.4l5.6-2.8M9 8.4V15"/></svg></button>
-    <button class="tip" data-tip="Discovery"><svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="9" cy="5.5" r="2"/><circle cx="4.5" cy="13" r="2"/><circle cx="13.5" cy="13" r="2"/><path d="M9 7.5v2M7.5 11l-1.4-1M10.5 11l1.4-1"/></svg></button>
-    <button class="tip" data-tip="Automation"><svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M9 2.5v3M9 12.5v3M2.5 9h3M12.5 9h3"/><circle cx="9" cy="9" r="3"/></svg></button>
-    <button class="tip" data-tip="Reports"><svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3" y="3" width="12" height="12" rx="1.8"/><path d="M6 11.5V8M9 11.5v-5M12 11.5v-2.5"/></svg></button>
-    <button class="tip" data-tip="Approvals"><svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="7" cy="6" r="2.4"/><path d="M2.5 14.5c0-2.4 2-4 4.5-4"/><path d="M10.5 12.5l1.8 1.8 3.2-3.6"/></svg></button>
-    <button class="tip" data-tip="Tasks"><svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 5l1.6 1.6L7.5 3.7M3 12l1.6 1.6 2.9-2.9M10 5.5h5M10 12.5h5"/></svg></button>
-    <div class="railsp"></div>
-    <div class="raildiv"></div>
-    <button class="tip" id="railAdmin" data-tip="Admin"><svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 5h5M11.5 5H15M3 13h3.5M10 13h5"/><circle cx="9.6" cy="5" r="1.9"/><circle cx="8.2" cy="13" r="1.9"/></svg></button>
-  </nav>
-
   <main class="main">
    <div id="viewInventory">
     <div class="crumb"><a href="#">BOM</a><span>›</span><span>Component Intelligence</span></div>
@@ -904,6 +879,9 @@ tbody td{padding:12px 16px;vertical-align:middle;font-size:12px;color:var(--ink)
       </div>
     </div>
 
+    <!-- No tab row here. This page IS the hub for the three sections, and its
+         cards are how you reach them; a tab bar listing the same three would
+         name every destination twice, with "Overview" pointing at this page. -->
     <section class="adgroup" id="adGroup">
       <button class="adhead" id="adToggle" aria-expanded="true" aria-controls="adBody">
         <span class="adicon"><svg width="22" height="22" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 2.5l6 3v7l-6 3-6-3v-7l6-3z"/><path d="M3.4 5.6L9 8.4l5.6-2.8M9 8.4V15"/></svg></span>
@@ -2054,9 +2032,13 @@ function ddSet(id, val){
   if(id==="defPeriod") { RT_DEFAULT.period = val; toast(`Default retention: delete after ${val.toLowerCase()}`); }
   if(id==="mKeep")     RT_DRAFT.keep = val;
   if(id==="mPeriod")   RT_DRAFT.period = val;
-  if(COND && /^c[fov]-/.test(id)){
+  /* Condition selects belong to whichever surface is showing the group
+     editor: the stacked builder when it is open, else the Auto-enrol Rule
+     drawer, which mounts the same editor inline. */
+  const CG = COND ? COND.groups : LIC_DRAWER ? LIC_DRAWER.groups : null;
+  if(CG && /^c[fov]-/.test(id)){
     const [kind, gi, ri] = id.split("-");
-    const c = COND.groups[+gi].conds[+ri];
+    const c = CG[+gi].conds[+ri];
     if(kind==="cf"){                       // a new field invalidates the value
       c.field = fieldByLab(val).id;        // chosen against the old one
       c.value = "";
@@ -2069,6 +2051,9 @@ function ddSet(id, val){
   DD_OPEN = null;
   if(PICK || COND) renderStack();
   renderRetention(); if(RT_DRAFT) renderModal(); if(BS_DRAFT) renderBsDrawers();
+  /* LAST on purpose: renderRetention() binds [data-dd] document-wide, so the
+     drawer must re-wire after it or its own selects answer to Retention. */
+  if(LIC_DRAWER && !COND) renderLicDrawer();
 }
 
 /* Either limit can be switched off, so the note is composed from the
@@ -2248,6 +2233,118 @@ function openCond(target, back){
 }
 function closeCond(){ const b = COND && COND.back; COND = null; renderStack(); if(b) b(); }
 
+/* ── the condition-group editor, as ONE component ─────────────
+   Markup + wiring for the groups themselves, shared by the stacked
+   builder (Scheduler / Retention) and the Auto-enrol Rule drawer, which
+   renders it inline — same rows, same joins, same handlers, different
+   host. `rerender` is whichever surface owns the groups; `onVal` lets
+   text input update a live preview without a focus-stealing re-render. */
+function cbGroupsHTML(groups){
+  return `<div class="cb">
+    ${groups.length ? groups.map((g,gi)=>{
+      const sum = groupSummary(g);
+      /* A join between two groups only means something when both
+         actually constrain — otherwise it renders inert. */
+      const live = gi>0 && g.conds.some(condDone) && groups[gi-1].conds.some(condDone);
+      return `
+      ${gi ? `<div class="cg-join">
+        <button class="joinbtn${live?"":" muted"}" data-cjoin="${gi}" title="${live?`Switch to ${g.join==="And"?"Or":"And"}`:"Both groups need a condition before this matters"}">
+          ${g.join}
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M13.4 8a5.4 5.4 0 11-1.6-3.8"/><path d="M13.6 2.3v2.9h-2.9"/></svg>
+        </button></div>` : ""}
+      <div class="cb-group">
+        <div class="cg-head">
+          <button class="cg-chev${g.open?" open":""}" data-cgopen="${gi}" aria-expanded="${!!g.open}" aria-label="${g.open?"Collapse":"Expand"} condition group ${gi+1}">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M6 3.5L10.5 8 6 12.5"/></svg>
+          </button>
+          <span class="cb-badge">Condition group ${gi+1}</span>
+          ${g.open ? "" : `<span class="cg-sum${sum?"":" none"}">${sum ? esc(sum) : "No conditions yet"}</span>`}
+          <span class="cg-acts">
+            <button class="cg-ib" data-cgdup="${gi}" title="Duplicate group" aria-label="Duplicate condition group ${gi+1}">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5.5" y="5.5" width="8" height="8" rx="1.6"/><path d="M10.5 5.5v-1a1.6 1.6 0 00-1.6-1.6H4a1.6 1.6 0 00-1.6 1.6v4.9A1.6 1.6 0 004 11h1"/></svg>
+            </button>
+            <button class="cg-ib del" data-cgdel="${gi}" title="Remove group" aria-label="Remove condition group ${gi+1}">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2.8 4.4h10.4M6.4 4.4V3.2a1 1 0 011-1h1.2a1 1 0 011 1v1.2M4.2 4.4l.6 8a1.2 1.2 0 001.2 1.1h4a1.2 1.2 0 001.2-1.1l.6-8"/></svg>
+            </button>
+          </span>
+        </div>
+        ${g.open ? `<div class="cg-body">
+          ${g.conds.map((c,ri)=>{
+            const f = fieldOf(c.field);
+            return `<div class="cb-row">
+              <span class="cb-w">${ri ? "And" : "Where"}</span>
+              ${ddHTML(`cf-${gi}-${ri}`, f ? f.lab : "", COND_FIELDS.map(x=>x.lab), "full", "Choose field")}
+              ${ddHTML(`co-${gi}-${ri}`, c.op, COND_OPS, "full", "Choose")}
+              ${f && f.opts && isPickOp(c.op)
+                ? ddHTML(`cv-${gi}-${ri}`, c.value, f.opts, "full", "Choose value")
+                : `<input class="finput ph" data-cval="${gi}-${ri}" type="text" value="${esc(c.value)}" placeholder="value" autocomplete="off">`}
+              <button class="cb-ib" data-cdup="${gi}-${ri}" title="Duplicate condition" aria-label="Duplicate condition">
+                <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5.5" y="5.5" width="8" height="8" rx="1.6"/><path d="M10.5 5.5v-1a1.6 1.6 0 00-1.6-1.6H4a1.6 1.6 0 00-1.6 1.6v4.9A1.6 1.6 0 004 11h1"/></svg>
+              </button>
+              <button class="cb-ib del" data-cdel="${gi}-${ri}" title="Delete condition" aria-label="Delete condition">
+                <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2.8 4.4h10.4M6.4 4.4V3.2a1 1 0 011-1h1.2a1 1 0 011 1v1.2M4.2 4.4l.6 8a1.2 1.2 0 001.2 1.1h4a1.2 1.2 0 001.2-1.1l.6-8"/></svg>
+              </button>
+            </div>`;
+          }).join("")}
+          <div class="cg-foot">
+            <button class="cb-add" data-caddc="${gi}">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 3.5v9M3.5 8h9"/></svg>Add Condition
+            </button>
+            <span class="gap"></span>
+            <button class="lnk" data-cgdup="${gi}">Duplicate group</button>
+            <button class="lnk danger" data-cgdel="${gi}">Remove group</button>
+          </div>
+        </div>` : ""}
+      </div>`;
+    }).join("")
+    : `<div class="cb-empty">No conditions yet — add a group to start matching CIs.</div>`}
+    <div class="cb-gadd">
+      <button class="btn" id="cbAddG">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="var(--brand)" stroke-width="1.8"><path d="M8 3.5v9M3.5 8h9"/></svg>Add Condition Group
+      </button>
+    </div>
+  </div>`;
+}
+function wireCbGroups(G, rerender, onVal){
+  const ag = document.getElementById("cbAddG");
+  /* A new group opens; the others collapse to their summary, so the
+     one being edited is the only one asking for attention. */
+  if(ag) ag.onclick = ()=>{ G.forEach(g=>g.open=false); G.push(newGroup()); rerender(); };
+  document.querySelectorAll("[data-cgopen]").forEach(b=>b.onclick=()=>{
+    const g = G[+b.dataset.cgopen]; g.open = !g.open; rerender();
+  });
+  document.querySelectorAll("[data-cjoin]").forEach(b=>b.onclick=()=>{
+    const g = G[+b.dataset.cjoin]; g.join = g.join === "And" ? "Or" : "And"; rerender();
+  });
+  document.querySelectorAll("[data-cgdup]").forEach(b=>b.onclick=()=>{
+    const gi = +b.dataset.cgdup;
+    G.forEach(g=>g.open=false);
+    G.splice(gi+1, 0, {join:G[gi].join, open:true, conds:G[gi].conds.map(c=>({...c}))});
+    rerender();
+  });
+  document.querySelectorAll("[data-cgdel]").forEach(b=>b.onclick=()=>{ G.splice(+b.dataset.cgdel,1); rerender(); });
+  document.querySelectorAll("[data-caddc]").forEach(b=>b.onclick=()=>{
+    G[+b.dataset.caddc].conds.push(newCond()); rerender();
+  });
+  document.querySelectorAll("[data-cdup]").forEach(b=>b.onclick=()=>{
+    const [gi,ri] = b.dataset.cdup.split("-").map(Number);
+    G[gi].conds.splice(ri+1, 0, {...G[gi].conds[ri]}); rerender();
+  });
+  /* Removing the last condition leaves the group in place with an
+     empty row — groups are removed explicitly, not by attrition. */
+  document.querySelectorAll("[data-cdel]").forEach(b=>b.onclick=()=>{
+    const [gi,ri] = b.dataset.cdel.split("-").map(Number);
+    G[gi].conds.splice(ri,1);
+    if(!G[gi].conds.length) G[gi].conds.push(newCond());
+    rerender();
+  });
+  document.querySelectorAll("[data-cval]").forEach(inp=>inp.oninput=()=>{
+    const [gi,ri] = inp.dataset.cval.split("-").map(Number);
+    G[gi].conds[ri].value = inp.value;
+    if(onVal) onVal();                            // live, without a re-render
+  });
+}
+
 /* Matched CIs broken down by Origin — the same agent/manual split the
    field offers, so the preview answers "which population did I just
    sweep in" rather than only "how many". */
@@ -2300,41 +2397,8 @@ function wireStack(){
     $("cbCancel").onclick = closeCond;
     $("cbScrim").onclick  = closeCond;
     $("cbAuto").onclick   = ()=>{ COND.auto = !COND.auto; renderStack(); };
-    /* A new group opens; the others collapse to their summary, so the
-       one being edited is the only one asking for attention. */
-    $("cbAddG").onclick = ()=>{ G.forEach(g=>g.open=false); G.push(newGroup()); renderStack(); };
-    document.querySelectorAll("[data-cgopen]").forEach(b=>b.onclick=()=>{
-      const g = G[+b.dataset.cgopen]; g.open = !g.open; renderStack();
-    });
-    document.querySelectorAll("[data-cjoin]").forEach(b=>b.onclick=()=>{
-      const g = G[+b.dataset.cjoin]; g.join = g.join === "And" ? "Or" : "And"; renderStack();
-    });
-    document.querySelectorAll("[data-cgdup]").forEach(b=>b.onclick=()=>{
-      const gi = +b.dataset.cgdup;
-      G.forEach(g=>g.open=false);
-      G.splice(gi+1, 0, {join:G[gi].join, open:true, conds:G[gi].conds.map(c=>({...c}))});
-      renderStack();
-    });
-    document.querySelectorAll("[data-cgdel]").forEach(b=>b.onclick=()=>{ G.splice(+b.dataset.cgdel,1); renderStack(); });
-    document.querySelectorAll("[data-caddc]").forEach(b=>b.onclick=()=>{
-      G[+b.dataset.caddc].conds.push(newCond()); renderStack();
-    });
-    document.querySelectorAll("[data-cdup]").forEach(b=>b.onclick=()=>{
-      const [gi,ri] = b.dataset.cdup.split("-").map(Number);
-      G[gi].conds.splice(ri+1, 0, {...G[gi].conds[ri]}); renderStack();
-    });
-    /* Removing the last condition leaves the group in place with an
-       empty row — groups are removed explicitly, not by attrition. */
-    document.querySelectorAll("[data-cdel]").forEach(b=>b.onclick=()=>{
-      const [gi,ri] = b.dataset.cdel.split("-").map(Number);
-      G[gi].conds.splice(ri,1);
-      if(!G[gi].conds.length) G[gi].conds.push(newCond());
-      renderStack();
-    });
-    document.querySelectorAll("[data-cval]").forEach(inp=>inp.oninput=()=>{
-      const [gi,ri] = inp.dataset.cval.split("-").map(Number);
-      G[gi].conds[ri].value = inp.value;
-      const h = document.getElementById("cbPrevH");   // live, without a re-render
+    wireCbGroups(G, renderStack, ()=>{
+      const h = document.getElementById("cbPrevH");
       if(h) h.innerHTML = cbPrevLine(COND.auto ? autoMatches(G) : []);
     });
     $("cbApply").onclick = ()=>{
@@ -2453,70 +2517,7 @@ function renderStack(){
           </div>
         </div>
 
-        <div class="cb">
-          ${COND.groups.length ? COND.groups.map((g,gi)=>{
-            const sum = groupSummary(g);
-            /* A join between two groups only means something when both
-               actually constrain — otherwise it renders inert. */
-            const live = gi>0 && g.conds.some(condDone) && COND.groups[gi-1].conds.some(condDone);
-            return `
-            ${gi ? `<div class="cg-join">
-              <button class="joinbtn${live?"":" muted"}" data-cjoin="${gi}" title="${live?`Switch to ${g.join==="And"?"Or":"And"}`:"Both groups need a condition before this matters"}">
-                ${g.join}
-                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M13.4 8a5.4 5.4 0 11-1.6-3.8"/><path d="M13.6 2.3v2.9h-2.9"/></svg>
-              </button></div>` : ""}
-            <div class="cb-group">
-              <div class="cg-head">
-                <button class="cg-chev${g.open?" open":""}" data-cgopen="${gi}" aria-expanded="${!!g.open}" aria-label="${g.open?"Collapse":"Expand"} condition group ${gi+1}">
-                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M6 3.5L10.5 8 6 12.5"/></svg>
-                </button>
-                <span class="cb-badge">Condition group ${gi+1}</span>
-                ${g.open ? "" : `<span class="cg-sum${sum?"":" none"}">${sum ? esc(sum) : "No conditions yet"}</span>`}
-                <span class="cg-acts">
-                  <button class="cg-ib" data-cgdup="${gi}" title="Duplicate group" aria-label="Duplicate condition group ${gi+1}">
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5.5" y="5.5" width="8" height="8" rx="1.6"/><path d="M10.5 5.5v-1a1.6 1.6 0 00-1.6-1.6H4a1.6 1.6 0 00-1.6 1.6v4.9A1.6 1.6 0 004 11h1"/></svg>
-                  </button>
-                  <button class="cg-ib del" data-cgdel="${gi}" title="Remove group" aria-label="Remove condition group ${gi+1}">
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2.8 4.4h10.4M6.4 4.4V3.2a1 1 0 011-1h1.2a1 1 0 011 1v1.2M4.2 4.4l.6 8a1.2 1.2 0 001.2 1.1h4a1.2 1.2 0 001.2-1.1l.6-8"/></svg>
-                  </button>
-                </span>
-              </div>
-              ${g.open ? `<div class="cg-body">
-                ${g.conds.map((c,ri)=>{
-                  const f = fieldOf(c.field);
-                  return `<div class="cb-row">
-                    <span class="cb-w">${ri ? "And" : "Where"}</span>
-                    ${ddHTML(`cf-${gi}-${ri}`, f ? f.lab : "", COND_FIELDS.map(x=>x.lab), "full", "Choose field")}
-                    ${ddHTML(`co-${gi}-${ri}`, c.op, COND_OPS, "full", "Choose")}
-                    ${f && f.opts && isPickOp(c.op)
-                      ? ddHTML(`cv-${gi}-${ri}`, c.value, f.opts, "full", "Choose value")
-                      : `<input class="finput ph" data-cval="${gi}-${ri}" type="text" value="${esc(c.value)}" placeholder="value" autocomplete="off">`}
-                    <button class="cb-ib" data-cdup="${gi}-${ri}" title="Duplicate condition" aria-label="Duplicate condition">
-                      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5.5" y="5.5" width="8" height="8" rx="1.6"/><path d="M10.5 5.5v-1a1.6 1.6 0 00-1.6-1.6H4a1.6 1.6 0 00-1.6 1.6v4.9A1.6 1.6 0 004 11h1"/></svg>
-                    </button>
-                    <button class="cb-ib del" data-cdel="${gi}-${ri}" title="Delete condition" aria-label="Delete condition">
-                      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2.8 4.4h10.4M6.4 4.4V3.2a1 1 0 011-1h1.2a1 1 0 011 1v1.2M4.2 4.4l.6 8a1.2 1.2 0 001.2 1.1h4a1.2 1.2 0 001.2-1.1l.6-8"/></svg>
-                    </button>
-                  </div>`;
-                }).join("")}
-                <div class="cg-foot">
-                  <button class="cb-add" data-caddc="${gi}">
-                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 3.5v9M3.5 8h9"/></svg>Add Condition
-                  </button>
-                  <span class="gap"></span>
-                  <button class="lnk" data-cgdup="${gi}">Duplicate group</button>
-                  <button class="lnk danger" data-cgdel="${gi}">Remove group</button>
-                </div>
-              </div>` : ""}
-            </div>`;
-          }).join("")
-          : `<div class="cb-empty">No conditions yet — add a group to start matching CIs.</div>`}
-          <div class="cb-gadd">
-            <button class="btn" id="cbAddG">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="var(--brand)" stroke-width="1.8"><path d="M8 3.5v9M3.5 8h9"/></svg>Add Condition Group
-            </button>
-          </div>
-        </div>
+        ${cbGroupsHTML(COND.groups)}
 
         <div class="cb-prev">
           <div class="cb-prev-h" id="cbPrevH">${cbPrevLine(hits)}</div>
@@ -3642,10 +3643,13 @@ function licRulesClose(){ LIC_RULESPANEL = false; renderLicDrawer(); }
 
 function licRuleOpen(id, fromRules){
   const r = id && ruleOf(id);
+  /* The builder is part of the drawer, so the draft starts with a group
+     ready to edit — the last one open when editing, a blank one when new.
+     There is no "build conditions" step to click through. */
   LIC_DRAWER = r
     ? {id:r.id, name:r.name, auto:r.on, editing:true, err:false, fromRules:!!fromRules,
-       groups:r.groups.map(g=>({join:g.join, conds:g.conds.map(c=>({...c}))}))}
-    : {id:null, name:"", auto:true, editing:false, err:false, fromRules:!!fromRules, groups:[]};
+       groups:r.groups.map((g,i,a)=>({join:g.join||"And", open:i===a.length-1, conds:g.conds.map(c=>({...c}))}))}
+    : {id:null, name:"", auto:true, editing:false, err:false, fromRules:!!fromRules, groups:[newGroup()]};
   LIC_VIEW = null; COND = null; LIC_RULESPANEL = false;
   renderLicDrawer();
 }
@@ -3656,9 +3660,46 @@ function licRuleClose(){
   renderLicDrawer();
 }
 
+/* Compact live preview — replaces the seat-impact table. Answers the
+   only three questions rule creation raises: what matches, what that
+   enrols, and what it leaves in the seat pool. Regenerated on every
+   keystroke, so it is patched into #licPrev rather than re-rendered. */
+function licPrevInner(d){
+  const hits  = ruleHits(d);
+  const fresh = hits.filter(c=>!c.enrolled);
+  const left  = licLeft();
+  const would = d.auto ? fresh.length : 0;
+  const after = left - would;
+  const over  = would - left;
+  if(!hits.length) return `
+    <div class="cb-prev-h">Rule preview</div>
+    <div class="avail" style="line-height:1.6">No CIs currently match this rule.<br>${d.auto
+      ? "Future matching CIs will be enrolled automatically as they are discovered."
+      : "Rule is disabled — conditions are kept, nothing is enrolled."}</div>`;
+  return `
+    <div class="cb-prev-h">Rule preview — <b>${hits.length}</b> of ${ALL_CIS.length} discovered CI${hits.length===1?"":"s"} match</div>
+    <div class="seatimpact${over>0?" over":""}">
+      <div class="si-row"><span>Will be newly enrolled</span><b>${would}</b></div>
+      <div class="si-row"><span>Already enrolled</span><b>${hits.length-fresh.length}</b></div>
+      <div class="si-row tot"><span>Seats available after save</span>
+        <b class="${over>0?"n-red":after<=2?"n-amber":""}">${after}</b></div>
+    </div>
+    ${over>0 ? `<div class="ferr" style="margin-top:10px;padding:11px 13px;background:var(--crit-soft);border-radius:6px;line-height:1.55">
+      <b>Over limit by ${over} seat${over===1?"":"s"}.</b> Narrow the conditions, free seats by removing CIs, or buy more before saving.
+    </div>` : ""}`;
+}
+const licFootLine = d => {
+  const fresh = ruleHits(d).filter(c=>!c.enrolled);
+  return d.auto ? `${fresh.length} CI${fresh.length===1?"":"s"} would be enrolled on save`
+                : "Rule is disabled — nothing changes";
+};
+
 function renderLicDrawer(){
   const host = document.getElementById("licHost");
   if(!LIC_DRAWER && !LIC_VIEW && !LIC_RULESPANEL){ host.innerHTML=""; return; }
+  /* The inline builder re-renders on every structural edit — keep the
+     reader where they were, same as the stacked drawers do. */
+  const keepScroll = [...host.querySelectorAll(".dw-body")].map(el=>el.scrollTop);
 
   /* ── rules management panel ─────────────────────────────── */
   let rules = "";
@@ -3740,14 +3781,13 @@ function renderLicDrawer(){
   if(LIC_DRAWER){
     const d = LIC_DRAWER;
     const dwIn = d._mounted ? "" : " in"; d._mounted = true;
-    const hits  = ruleHits(d);
-    const fresh = hits.filter(c=>!c.enrolled);
-    const agent = fresh.filter(c=>c.origin==="Agent").length;
-    const left  = licLeft();
-    const would = d.auto ? fresh.length : 0;
-    const over  = would - left;
-    const nGroups = d.groups.length;
+    const fresh = ruleHits(d).filter(c=>!c.enrolled);
+    const over  = (d.auto ? fresh.length : 0) - licLeft();
 
+    /* One straight read: name → enabled → the condition builder itself →
+       a compact live preview. The builder is the same component the
+       stacked drawers use, mounted inline — every rule needs conditions,
+       so there is nothing to click through to reach them. */
     main = `<div class="dw-scrim${dwIn}" id="licScrim"></div>
     <aside class="dw${dwIn}" style="width:${DW_W}px;max-width:95vw" role="dialog" aria-modal="true" aria-label="Auto-enrol rule">
       <div class="dw-head">
@@ -3769,36 +3809,12 @@ function renderLicDrawer(){
               ? "Every discovered CI matching the conditions below is enrolled and consumes a seat."
               : "Conditions are kept, but nothing is enrolled by this rule."}</div></div>
         </div>
-        <div class="tile dyn${nGroups?" act":""}" style="margin:0 0 14px">
-          <div class="tile-top">
-            <span class="tile-i"><svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2.6 4.6h12.8M5 9h8M7.4 13.4h3.2"/></svg></span>
-            <span class="tile-hd"><span class="tile-t">Conditions <span class="tile-tag">Dynamic</span></span>
-              <span class="tile-d">A CI is enrolled when it matches. Conditions in a group must all match; any group matching is enough.</span></span>
-          </div>
-          <div class="tile-x">
-            <div class="tile-stat${hits.length?"":" zero"}"><b>${hits.length}</b> of ${ALL_CIS.length} discovered CIs match</div>
-            <div class="tile-state">${nGroups
-              ? d.groups.map((g,i)=>groupSummary(g)||`Group ${i+1} · incomplete`).join(" · ")
-              : "No conditions built yet"}</div>
-          </div>
-          <div class="tile-b"><button class="btn sm" id="licDCond">${nGroups?"Edit conditions":"Build conditions"}</button></div>
-        </div>
-        <div class="sechead">Seat impact</div>
-        <div class="seatimpact${over>0?" over":""}">
-          <div class="si-row"><span>Matching CIs already enrolled</span><b>${hits.length-fresh.length}</b></div>
-          <div class="si-row"><span>Would be newly enrolled</span><b>${would}</b></div>
-          <div class="si-row"><span class="ind">of which agent-scanned</span><b>${d.auto?agent:0}</b></div>
-          <div class="si-row"><span class="ind">of which manually ingested</span><b>${d.auto?fresh.length-agent:0}</b></div>
-          <div class="si-row tot"><span>Seats remaining after this rule</span>
-            <b class="${over>0?"n-red":left-would<=2?"n-amber":""}">${left-would}</b></div>
-        </div>
-        ${over>0 ? `<div class="ferr" style="margin-top:10px;padding:11px 13px;background:var(--crit-soft);border-radius:6px;line-height:1.55">
-          <b>Over limit by ${over} seat${over===1?"":"s"}.</b> This rule matches ${fresh.length} unenrolled CI${fresh.length===1?"":"s"}
-          but only ${Math.max(0,left)} seat${left===1?"":"s"} remain. Narrow the conditions, free seats by removing CIs, or buy more before saving.
-        </div>` : ""}
+        <div class="sechead">Conditions <span>all must match within a group · any group matching is enough</span></div>
+        ${cbGroupsHTML(d.groups)}
+        <div class="cb-prev" id="licPrev">${licPrevInner(d)}</div>
       </div>
       <div class="dw-foot">
-        <span class="avail">${d.auto ? `${fresh.length} CI${fresh.length===1?"":"s"} would be enrolled on save` : "Rule is disabled — nothing changes"}</span>
+        <span class="avail" id="licFoot">${licFootLine(d)}</span>
         <span class="gap"></span>
         <button class="btn lg" id="licDCancel">Cancel</button>
         <button class="btn pri lg" id="licDSave"${over>0?" disabled":""}>${d.editing?"Save changes":"Create rule"}</button>
@@ -3807,6 +3823,9 @@ function renderLicDrawer(){
   }
 
   host.innerHTML = main + rules + view;
+  [...host.querySelectorAll(".dw-body")].forEach((el,i)=>{
+    if(keepScroll[i] != null) el.scrollTop = keepScroll[i];
+  });
   const $ = i => document.getElementById(i);
 
   if(LIC_RULESPANEL){
@@ -3849,19 +3868,42 @@ function renderLicDrawer(){
   }
   if(!LIC_DRAWER) return;
   const d = LIC_DRAWER;
-  const fresh = ruleHits(d).filter(c=>!c.enrolled);
-  const over  = (d.auto ? fresh.length : 0) - licLeft();
   $("licDClose").onclick  = licRuleClose;
   $("licDCancel").onclick = licRuleClose;
   $("licScrim").onclick   = ()=>{ if(!COND && !LIC_VIEW) licRuleClose(); };
   $("licRName").oninput   = e => { d.name = e.target.value; };
   $("licDSw").onclick     = ()=>{ d.auto = !d.auto; renderLicDrawer(); };
-  $("licDCond").onclick   = ()=>openCond(d, renderLicDrawer);
+
+  /* Typing a value re-computes the preview, the footer line and the save
+     gate in place — a full re-render here would steal the caret. */
+  const licSync = ()=>{
+    const p = $("licPrev"); if(p) p.innerHTML = licPrevInner(d);
+    const f = $("licFoot"); if(f) f.textContent = licFootLine(d);
+    const s = $("licDSave");
+    if(s) s.disabled = (d.auto ? ruleHits(d).filter(c=>!c.enrolled).length : 0) - licLeft() > 0;
+  };
+  wireCbGroups(d.groups, renderLicDrawer, licSync);
+  /* The builder's selects live in this drawer, not the stack — bind them
+     here so #stackHost's own wiring is never involved. */
+  document.querySelectorAll("#licHost [data-dd]").forEach(b=>b.onclick=e=>{
+    e.stopPropagation(); DD_OPEN = DD_OPEN===b.dataset.dd ? null : b.dataset.dd; renderLicDrawer();
+  });
+  document.querySelectorAll("#licHost [data-ddpick]").forEach(b=>b.onclick=e=>{
+    e.stopPropagation(); ddSet(b.dataset.ddpick, b.dataset.ddval);
+  });
+  document.querySelectorAll("#licHost [data-ddclose]").forEach(b=>b.onclick=e=>{
+    e.stopPropagation(); DD_OPEN=null; renderLicDrawer();
+  });
+
   $("licDSave").onclick = ()=>{
     if(!d.name.trim()){ d.err = true; renderLicDrawer(); $("licRName").focus(); return; }
-    if(over > 0) return;
+    const fresh = ruleHits(d).filter(c=>!c.enrolled);
+    if((d.auto ? fresh.length : 0) - licLeft() > 0) return;
+    /* Same contract the stacked builder's Apply enforced: half-written
+       conditions never make it into a saved rule. */
     const rule = {id:d.id || licNextRuleId(), name:d.name.trim(), on:d.auto, updated:todayLabel(),
-                  groups:d.groups.map(g=>({join:g.join, conds:g.conds.map(c=>({...c}))}))};
+                  groups:d.groups.filter(g=>g.conds.some(condDone))
+                         .map(g=>({join:g.join, conds:g.conds.filter(condDone).map(c=>({...c}))}))};
     if(d.editing) LIC_RULES = LIC_RULES.map(x=>x.id===rule.id ? rule : x);
     else LIC_RULES.push(rule);
     if(rule.on) ruleFresh(rule).forEach(c=>{ c.enrolled=true; c.by="Auto"; c.byRule=rule.id; });
@@ -3880,23 +3922,36 @@ function renderLicDrawer(){
 const ROUTES = {inventory:"#/bom/components", admin:"#/admin",
                 retention:"#/admin/bom-retention", scheduler:"#/admin/bom-scheduler",
                 licensing:"#/admin/bom-licensing"};
+/* Longest prefix first — "#/admin" is a prefix of every admin sub-route, so
+   testing it early would swallow all of them. */
+function viewFromHash(h){
+  h = h || "";
+  if(h.indexOf(ROUTES.licensing) === 0) return "licensing";
+  if(h.indexOf(ROUTES.retention) === 0) return "retention";
+  if(h.indexOf(ROUTES.scheduler) === 0) return "scheduler";
+  if(h.indexOf(ROUTES.admin)     === 0) return "admin";
+  return "inventory";
+}
+let VIEW = null;
 function setView(v){
   document.getElementById("viewInventory").hidden = v!=="inventory";
   document.getElementById("viewAdmin").hidden     = v!=="admin";
   document.getElementById("viewRetention").hidden = v!=="retention";
   document.getElementById("viewScheduler").hidden = v!=="scheduler";
   document.getElementById("viewLicensing").hidden = v!=="licensing";
-  document.getElementById("railBom").classList.toggle("on", v==="inventory");
-  document.getElementById("railAdmin").classList.toggle("on", v!=="inventory");
+  VIEW = v;
   location.hash = ROUTES[v] || ROUTES.inventory;
   window.scrollTo(0,0);
-  if(v!=="inventory" && state.sel) closeDrawer();
-  if(v==="retention") renderRetention();
-  if(v==="scheduler") renderScheduler();
-  if(v==="licensing") renderLicensing();
+  /* The view has already been switched above. Painting it is allowed to fail
+     without dragging the switch down with it — and without throwing back into
+     the shell, which would take the reported view for a failed navigation. */
+  try {
+    if(v!=="inventory" && state.sel) closeDrawer();
+    if(v==="retention") renderRetention();
+    if(v==="scheduler") renderScheduler();
+    if(v==="licensing") renderLicensing();
+  } catch(err){ console.error("BOM: painting " + v + " failed —", err); }
 }
-document.getElementById("railAdmin").onclick = ()=>setView("admin");
-document.getElementById("railBom").onclick   = ()=>setView("inventory");
 document.getElementById("crumbBom").onclick  = e=>{ e.preventDefault(); setView("inventory"); };
 document.querySelectorAll("[data-nav]").forEach(a=>a.onclick=e=>{ e.preventDefault(); setView(a.dataset.nav); });
 document.getElementById("rtNew").onclick = ()=>rtOpen(null);
@@ -3915,13 +3970,41 @@ document.querySelectorAll(".adcard").forEach(c=>c.onclick=()=>{
 });
 document.getElementById("bsQ").addEventListener("input", e=>{ BS_Q=e.target.value; renderScheduler(); });
 document.getElementById("bsNew").onclick = ()=>bsOpen(null);
-document.getElementById("licQ").addEventListener("input", e=>{ LIC_Q=e.target.value; renderLicensing(); });
+/* No licQ wiring here: that input is CREATED by renderLicensing(), which binds
+   it (guarded) on every re-render. Reaching for it at load time dereferenced
+   null and killed the whole script — nothing after this line ran, so no view
+   ever rendered, no router registered, and the markup's default view
+   (Component Intelligence) is what every navigation appeared to land on. */
 
-renderKpis(); renderChips(); render(); renderRetention(); renderScheduler(); renderLicensing();
-if(location.hash.indexOf("#/admin/bom-licensing") === 0) setView("licensing");
-else if(location.hash.indexOf("#/admin/bom-retention") === 0) setView("retention");
-else if(location.hash.indexOf("#/admin/bom-scheduler") === 0) setView("scheduler");
-else if(location.hash.indexOf("#/admin") === 0) setView("admin");
+/* Route FIRST, render second — and never let the second decide the first.
+   Only #viewInventory is visible in the raw markup; every other view is `hidden`
+   until setView reveals it. So while routing ran last, any error thrown while
+   painting the inventory left the page showing the inventory regardless of which
+   route was asked for — the admin route in particular could not win an argument
+   with a render bug. Routing now happens before a single pixel is drawn, and the
+   painting is isolated so one failure cannot take the rest of the screen with it. */
+setView(viewFromHash(location.hash));
+[renderKpis, renderChips, render, renderRetention, renderScheduler, renderLicensing]
+  .forEach(fn=>{ try { fn(); } catch(err){ console.error("BOM: " + fn.name + "() failed —", err); } });
+
+/* Routing used to happen once, here, so arriving at a second route without a
+   document load — the browser's back button, or a host swapping the hash —
+   changed the address and nothing else. setView writes the hash itself, so the
+   listener only acts when the hash names a view we are not already on. */
+window.addEventListener("hashchange", function(){
+  const v = viewFromHash(location.hash);
+  if(v !== VIEW) setView(v);
+});
+
+/* The app shell mounts this file in a frame and moves between its five routes.
+   Doing that by writing our hash is a silent handoff — it is a no-op whenever
+   the value has not literally changed, and `go()` can leave the hash naming a
+   route no view owns, so the two ends disagree about what "changed" means.
+   Expose the router instead: one call, one view, no guessing. It returns the
+   view it actually switched to so the shell can check the move landed rather
+   than assume it, and reload us if it did not. */
+window.bomViewOf  = viewFromHash;
+window.bomNavigate = function(hash){ const v = viewFromHash(hash); setView(v); return VIEW; };
 </script>
 </body>
 </html>
